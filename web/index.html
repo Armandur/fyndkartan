@@ -71,6 +71,8 @@
       <div class="p-3 border-bottom">
         <input id="search" type="search" class="form-control form-control-sm"
                placeholder="Sök butik, ort eller adress&hellip;">
+        <input id="productSearch" type="search" class="form-control form-control-sm mt-2"
+               placeholder="Sök produkt (namn)&hellip;">
         <div class="form-check form-switch mt-2 small">
           <input class="form-check-input" type="checkbox" id="onlyOffers">
           <label class="form-check-label" for="onlyOffers">Bara butiker med erbjudanden</label>
@@ -156,6 +158,20 @@
           </select>
         </div>
         <div id="compareList" class="offers-list"></div>
+      </div>
+
+      <!-- Produktsök-panel (namnsök + kategori-bläddring, ur erbjudande-cachen) -->
+      <div id="productsPanel" class="offers-panel d-none">
+        <div class="offers-head">
+          <button id="productsBack" class="btn btn-sm btn-link p-0">&larr; Tillbaka</button>
+          <div id="productsTitle" class="offers-title">Produkter</div>
+        </div>
+        <div class="d-flex gap-2 mb-2">
+          <input id="productsFilter" type="search" class="form-control form-control-sm"
+                 placeholder="Sök produkt&hellip;">
+          <select id="productsCategory" class="form-select form-select-sm" style="width:auto"></select>
+        </div>
+        <div id="productsList" class="offers-list"></div>
       </div>
 
       <div class="p-2 border-top text-muted xsmall">

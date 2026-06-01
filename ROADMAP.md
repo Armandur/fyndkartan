@@ -259,7 +259,11 @@ domäner:
   normaliserade fält (brand/origin, package, deal_type, kanonisk category via samma
   berikning som get_store_offers) + kedjor + prisintervall + antal. Relevans-sort
   (prefix-träff, flest kedjor/erbjudanden). Begränsning: bara butiker vars offers hämtats
-  (lazy-cache) - full täckning kräver sortiment-jobbet. Kvar: ev. frontend-sökruta.
+  (lazy-cache) - full täckning kräver sortiment-jobbet.
+  - [x] **Frontend-produktsök BYGGT.** Sökruta i sidopanelen + egen produktpanel som gör
+    både namnsök och kategori-bläddring (dropdown med kanoniska kategorier). Produktkort:
+    bild, märke/förpackning/ursprung, kategori-chip, kedje-chips, prisintervall, deal-badge;
+    klick öppnar produktinfo-modalen (EAN). Ej webbläsartestad.
 - [x] **Kategori-endpoint BYGGT** (`GET /v1/products/by-category?category=&chain=&limit=`).
   Bläddrar distinkta produkter i en kanonisk kategori ur erbjudande-cachen, samma form som
   produktsöket (delar `database.list_products`). Okänd kategori -> 400.

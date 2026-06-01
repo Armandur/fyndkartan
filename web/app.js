@@ -361,6 +361,7 @@ async function loadCategories() {
   try {
     const d = await (await fetch("/v1/categories")).json();
     catLabels = Object.fromEntries((d.categories || []).map((c) => [c.key, c.label]));
+    populateProductsCategory();
   } catch (e) { catLabels = {}; }
 }
 
@@ -619,6 +620,99 @@ document.getElementById("compareCategory").addEventListener("change", () => {
 });
 document.getElementById("compareDeal").addEventListener("change", () => {
   compareRender(document.getElementById("compareFilter").value.trim());
+});
+
+// ---- Global produktsök + kategori-bläddring (ur erbjudande-cachen) ----
+function productCard(p) {
+  const imgSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
+  const img = imgSrc
+    ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
+    : `<div class="o-img o-img--ph"></div>`;
+  const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
+  const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
+  const catChip = p.category ? `<span class="o-cat">${esc(catLabels[p.category] || p.category)}</span>` : "";
+  const chains = (p.chains || []).map((c) => {
+    const m = state.chains[c] || {};
+    return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)}</span>`;
+  }).join("");
+  const price = p.price_min != null
+    ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
+    : "";
+  return `<div class="offer-card${p.ean ? " prod-click" : ""}"${p.ean ? ` data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}"` : ""}>
+    ${img}
+    <div class="o-body">
+      <div class="o-name">${esc(p.name || "")}</div>
+      <div class="o-meta">${meta}</div>
+      <div class="o-price-row"><span class="o-price">${esc(price)}</span>${dealBadge(p)}</div>
+      <div class="o-foot">${catChip}${chains}</div>
+    </div>
+  </div>`;
+}
+
+function populateProductsCategory() {
+  const sel = document.getElementById("productsCategory");
+  const opts = Object.entries(catLabels)
+    .map(([k, label]) => ({ k, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "sv"));
+  sel.innerHTML = `<option value="">Alla kategorier</option>` +
+    opts.map((o) => `<option value="${esc(o.k)}">${esc(o.label)}</option>`).join("");
+}
+
+function openProductsPanel() {
+  document.getElementById("offersPanel").classList.add("d-none");
+  document.getElementById("comparePanel").classList.add("d-none");
+  document.getElementById("productsPanel").classList.remove("d-none");
+  openNav();
+}
+
+async function loadProducts() {
+  const q = document.getElementById("productsFilter").value.trim();
+  const cat = document.getElementById("productsCategory").value;
+  const list = document.getElementById("productsList");
+  const title = document.getElementById("productsTitle");
+  let url;
+  if (cat) url = `/v1/products/by-category?category=${encodeURIComponent(cat)}&limit=100`;
+  else if (q.length >= 2) url = `/v1/products/search?q=${encodeURIComponent(q)}&limit=60`;
+  else {
+    title.textContent = "Produkter";
+    list.innerHTML = `<div class="text-muted small p-2">Skriv minst 2 tecken eller välj kategori.</div>`;
+    return;
+  }
+  list.innerHTML = `<div class="text-muted small p-2">Söker&hellip;</div>`;
+  try {
+    const d = await (await fetch(url)).json();
+    let products = d.products || [];
+    if (cat && q) {
+      const ql = q.toLowerCase();
+      products = products.filter((p) => `${p.name} ${p.brand}`.toLowerCase().includes(ql));
+    }
+    title.textContent = `Produkter (${products.length})`;
+    list.innerHTML = products.length
+      ? products.map(productCard).join("")
+      : `<div class="text-muted small p-2">Inga produkter.</div>`;
+  } catch (e) {
+    list.innerHTML = `<div class="text-danger small p-2">Kunde inte hämta produkter.</div>`;
+  }
+}
+
+let productsTimer = null;
+document.getElementById("productSearch").addEventListener("input", (e) => {
+  document.getElementById("productsFilter").value = e.target.value.trim();
+  openProductsPanel();
+  clearTimeout(productsTimer);
+  productsTimer = setTimeout(loadProducts, 250);
+});
+document.getElementById("productsFilter").addEventListener("input", () => {
+  clearTimeout(productsTimer);
+  productsTimer = setTimeout(loadProducts, 250);
+});
+document.getElementById("productsCategory").addEventListener("change", loadProducts);
+document.getElementById("productsBack").addEventListener("click", () => {
+  document.getElementById("productsPanel").classList.add("d-none");
+});
+document.getElementById("productsList").addEventListener("click", (e) => {
+  const card = e.target.closest(".prod-click");
+  if (card && card.dataset.ean) openProductModal(card.dataset.ean, "", card.dataset.name);
 });
 
 // ---- Mobil: sidopanel som overlay ----
