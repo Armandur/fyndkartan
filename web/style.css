@@ -163,6 +163,15 @@ body {
 }
 .store-pop .pop-addr { font-size: .82rem; color: #444; }
 .store-pop .pop-hours { font-size: .8rem; color: #1c7d4d; font-weight: 600; margin-top: .2rem; }
+.store-pop .pop-week { margin-top: .3rem; font-size: .78rem; }
+.store-pop .pop-week > summary { cursor: pointer; color: #1c7d4d; font-weight: 600; list-style: revert; }
+.store-pop .wk-table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
+.store-pop .wk-table td { padding: 1px 0; color: #444; }
+.store-pop .wk-table td:last-child { text-align: right; }
+.store-pop .wk-table .wk-today { font-weight: 700; color: #111; }
+.store-pop .wk-excs { margin-top: .3rem; border-top: 1px solid #eee; padding-top: .2rem; }
+.store-pop .wk-exc-h { font-weight: 600; color: #555; margin-bottom: .1rem; }
+.store-pop .wk-exc { color: #666; }
 .store-pop .pop-tags { margin-top: .4rem; display: flex; flex-wrap: wrap; gap: 3px; }
 .store-pop .tag {
   font-size: .66rem; background: #eef1f4; color: #46505c;

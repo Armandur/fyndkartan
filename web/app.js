@@ -61,6 +61,32 @@ function markerIcon(chain) {
   });
 }
 
+const DOW = ["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"];
+
+function fmtDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}/${m[2]}` : iso;
+}
+
+function weekHtml(oh) {
+  const week = oh.week || [];
+  if (!week.length) return "";
+  const todayIdx = (new Date().getDay() + 6) % 7; // JS 0=sön -> 0=mån
+  const rows = week.map((d) => {
+    const hrs = d.closed ? "Stängt" : `${esc(d.opens || "")}-${esc(d.closes || "")}`;
+    return `<tr class="${d.day === todayIdx ? "wk-today" : ""}"><td>${DOW[d.day] || d.day}</td><td>${hrs}</td></tr>`;
+  }).join("");
+  const exc = (oh.exceptions || []).slice(0, 8).map((e) => {
+    const hrs = e.closed ? "Stängt" : `${esc(e.opens || "")}-${esc(e.closes || "")}`;
+    const when = [e.date ? fmtDate(e.date) : "", e.label ? esc(e.label) : ""].filter(Boolean).join(" ");
+    return `<div class="wk-exc">${when || "?"}: ${hrs}</div>`;
+  }).join("");
+  return `<details class="pop-week"><summary>Veckans öppettider</summary>
+    <table class="wk-table"><tbody>${rows}</tbody></table>
+    ${exc ? `<div class="wk-excs"><div class="wk-exc-h">Avvikande dagar</div>${exc}</div>` : ""}
+  </details>`;
+}
+
 function popupHtml(s) {
   const color = chainColor(s.chain);
   const brand = BRAND_LABELS[s.brand] || (state.chains[s.chain] || {}).label || s.chain;
@@ -84,6 +110,7 @@ function popupHtml(s) {
     <h6>${esc(s.name)}</h6>
     <div class="pop-addr">${esc(addr)}</div>
     ${oh.today ? `<div class="pop-hours">Idag: ${esc(oh.today)}</div>` : ""}
+    ${weekHtml(oh)}
     ${tags ? `<div class="pop-tags">${tags}</div>` : ""}
     ${offersBtn}
     ${linkHtml ? `<div class="pop-links">${linkHtml}</div>` : ""}
