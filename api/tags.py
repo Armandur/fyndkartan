@@ -27,7 +27,13 @@ def valid_type(t):
 
 
 def effective_types(label):
-    return TAG_MAP.get(label) or seed_types(label)
+    """Kanoniska typer för en etikett. Filtrerar mot vokabulären så att en seed-
+    producerad typ som tagits bort (inte längre i CANONICAL) faller till 'other'."""
+    types = TAG_MAP.get(label) or seed_types(label)
+    valid = [t for t in types if t in CANONICAL]
+    if valid:
+        return valid
+    return ["other"] if "other" in CANONICAL else []
 
 
 def build_tag(label):

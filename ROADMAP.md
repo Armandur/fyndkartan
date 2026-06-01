@@ -285,10 +285,16 @@ domäner:
       `del_tag` returnerar auto-typerna så även återställning sker in-place.
     - [x] **Sökfält för råetiketter i #tags BYGGT.** Filtrerar listan på råetikett/kedja
       (klient-sida, behåller ordning).
-    - [ ] **Tillåt borttagning även av inbyggda tagg-typer.** Nu skyddas
-      `BUILTIN_TAG_TYPES` från radering (annars kan `seed_types` producera en typ
-      som inte finns i vokabulären). Vill att användaren ska kunna ta bort dem ändå
-      - hantera följden (seedad typ utan vokabulär-post visas som omappad/other).
+    - [x] **Borttagning av inbyggda tagg-typer BYGGT.** BUILTIN-guarden borttagen i
+      DELETE-routen. Följden hanteras: `effective_types` filtrerar mot vokabulären så en
+      seedad typ utan vokabulär-post faller till `other`. Tombstone-tabell
+      (`tag_types_removed`) hindrar att init_db återskapar borttagna inbyggda vid omstart;
+      återskapande (POST) un-tombstonar. Manuella mappningar (tag_map) skyddas fortfarande.
+    - [ ] **Administrera speditörslistan (`provider`) + knyt till taggar.** `classify_provider`
+      (adapters/base.py) sätter speditör (DHL/PostNord/...) på paket-/post-taggar via hårdkodad
+      regelmatchning. Vill kunna redigera listan av speditörer och mappa råetiketter -> rätt
+      speditör i admin-UI:t (spegla tagg-typ-/kategori-mönstret: editerbar vokabulär +
+      derive-at-read-override, ev. `provider_map`-tabell).
 - **Favoritbutiker: BYGGD (endast inloggad).** Stjärn-toggle i butikslistan kräver
   inloggning (öppnar login-modal annars); "Bara favoriter"-filter + "Jämför mina
   favoriter" -> `GET /v1/compare/stores?stores=chain:id,...` döljs helt utloggad

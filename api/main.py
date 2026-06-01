@@ -598,8 +598,10 @@ async def add_type(payload: dict = Body(...), _=Depends(require_admin)):
 
 @app.delete("/v1/tags/types/{type_}")
 async def remove_type(type_: str, _=Depends(require_admin)):
-    if type_ in config.BUILTIN_TAG_TYPES:
-        return JSONResponse({"detail": "Inbyggd typ kan inte tas bort."}, status_code=400)
+    # Även inbyggda typer får tas bort. Följden: en seed-producerad typ utan vokabulär-
+    # post faller till 'other' (effective_types filtrerar mot vokabulären). Tombstone
+    # (remove_tag_type) hindrar att den återskapas vid omstart. Manuella mappningar
+    # (tag_map) skyddas dock fortfarande.
     if database.tag_type_in_use(type_):
         return JSONResponse({"detail": "Typen används i en mappning."}, status_code=400)
     database.remove_tag_type(type_)

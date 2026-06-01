@@ -101,11 +101,15 @@ def init_db():
     )
     # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
     conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
+    # Tombstone: typer användaren tagit bort. Hindrar att inbyggda återskapas vid omstart.
+    conn.execute("CREATE TABLE IF NOT EXISTS tag_types_removed (type TEXT PRIMARY KEY)")
     if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
         conn.executemany("INSERT INTO tag_types (type) VALUES (?)", [(t,) for t in DEFAULT_TAG_TYPES])
-    # Säkerställ att inbyggda (seed-producerade) typer alltid finns.
+    # Säkerställ att inbyggda (seed-producerade) typer finns - utom de användaren tagit bort.
+    _removed = {r[0] for r in conn.execute("SELECT type FROM tag_types_removed")}
     conn.executemany(
-        "INSERT OR IGNORE INTO tag_types (type) VALUES (?)", [(t,) for t in BUILTIN_TAG_TYPES]
+        "INSERT OR IGNORE INTO tag_types (type) VALUES (?)",
+        [(t,) for t in BUILTIN_TAG_TYPES if t not in _removed],
     )
     # Konton + favoriter + nyckel/värde-settings.
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
@@ -294,6 +298,7 @@ def load_tag_types():
 def add_tag_type(type_):
     conn = get_conn()
     conn.execute("INSERT OR IGNORE INTO tag_types (type) VALUES (?)", (type_,))
+    conn.execute("DELETE FROM tag_types_removed WHERE type=?", (type_,))  # un-tombstone vid återskapande
     conn.commit()
     conn.close()
 
@@ -301,6 +306,7 @@ def add_tag_type(type_):
 def remove_tag_type(type_):
     conn = get_conn()
     conn.execute("DELETE FROM tag_types WHERE type=?", (type_,))
+    conn.execute("INSERT OR IGNORE INTO tag_types_removed (type) VALUES (?)", (type_,))  # överlever omstart
     conn.commit()
     conn.close()
 

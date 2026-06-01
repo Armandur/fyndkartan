@@ -368,12 +368,13 @@
       const d = await (await api("/v1/tags/types")).json();
       const builtin = new Set(d.builtin);
       const chips = d.types.map(t => {
-        const x = builtin.has(t) ? "" : `<span class="type-del" data-type="${t}" title="ta bort">&times;</span>`;
+        const title = builtin.has(t) ? "ta bort (inbyggd: seedas till 'other' om den ändå produceras)" : "ta bort";
+        const x = `<span class="type-del" data-type="${t}" title="${title}">&times;</span>`;
         return `<span class="typechip${builtin.has(t) ? " bi" : ""}">${esc(t)}${x}</span>`;
       }).join(" ");
       document.getElementById("typesPanel").innerHTML = `
         <div class="d-flex align-items-center mb-1"><h6 class="mb-0">Kanoniska typer</h6>
-          <span class="ms-2 small text-muted">inbyggda (grå) kan inte tas bort</span></div>
+          <span class="ms-2 small text-muted">inbyggda (grå) kan tas bort - en seedad typ utan vokabulär-post faller till 'other'</span></div>
         <div class="mb-2">${chips}</div>
         <div class="input-group input-group-sm" style="max-width:320px">
           <input id="newType" class="form-control" placeholder="ny typ (a-z, _)">
