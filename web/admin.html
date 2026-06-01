@@ -566,6 +566,7 @@
       const x = d.info, P = [];
       if (x.description) P.push(`<div>${esc(x.description)}</div>`);
       if (x.ingredients) P.push(`<div><span class="fw-semibold">Innehåll:</span> ${esc(x.ingredients)}</div>`);
+      if (x.allergens && x.allergens.length) P.push(`<div><span class="fw-semibold">Allergener:</span> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</div>`);
       const orig = [x.origin, x.province].filter(Boolean).join(" · ");
       if (orig) P.push(`<div><span class="fw-semibold">Ursprung:</span> ${esc(orig)}</div>`);
       if (x.storage) P.push(`<div><span class="fw-semibold">Förvaring:</span> ${esc(x.storage)}</div>`);
@@ -574,7 +575,7 @@
         P.push(`<div><span class="fw-semibold">Näring${b}:</span> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</div>`);
       }
       if (x.labels && x.labels.length) P.push(`<div class="mt-1">${x.labels.map(l => `<span class="badge bg-light text-dark">${esc(l)}</span>`).join(" ")}</div>`);
-      if (x.source && x.source !== chain) P.push(`<div class="text-muted fst-italic mt-1">Metadata via ${esc(x.source)} (samma EAN)</div>`);
+      if (x.sources && x.sources.length) P.push(`<div class="text-muted fst-italic mt-1">Källa: ${x.sources.map(esc).join(", ")} (samma EAN)</div>`);
       return P.join("") || `<span class="text-muted">Ingen detaljdata.</span>`;
     }
 

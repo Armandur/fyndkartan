@@ -112,14 +112,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **Erbjudande-info-modal i konsument-appen BYGGT** ("Innehåll & näring" på
       erbjudandekort med EAN -> modal). OBS: bara där EAN finns klient-sida (ICA/Coop
       inline; Axfood-EAN resolvas lazy, saknas ofta på kortet).
-    - [ ] **Normalisera + berika produktinfon (större produktinfo-API-jobb).** Nu
-      first-hit-vinner per EAN (Axfood = näring, Coop = ingredienser/ursprung). Bör:
-      - slå ihop fält över källor (näring från Axfood + ingredienser från Coop för
-        samma EAN) eller välja på rikedom, inte bara "först vinner";
-      - **strukturera näring** till enhetliga fält;
-      - **plocka ut allergener** ur ingredienslistan (svenska listor versaliserar dem,
-        t.ex. "SMÖR (pastöriserad GRÄDDE...), ... MJÖLK") -> strukturerad allergenlista
-        att visa/filtrera på (>= 2 versala bokstäver, hantera E-nummer/förkortningar).
+    - [x] **Normalisera + berika produktinfon BYGGT.** `details.fetch_for_ean` hämtar
+      Axfood + Coop och **mergar fält-för-fält** (`_merge`): textfält = längsta icke-tom,
+      näring = rikaste listan, labels = union, `sources` listar bidragande källor. Coop
+      hämtas även när Axfood har gles näring. **Coop-näring fixad** (låg i `nutrientLinks`,
+      inte `nutrientInformation` - 8-12 poster). **Allergener** extraheras ur VERSALA ord
+      i ingredienserna (`extract_allergens`). Visas i paringsvyn + erbjudande-modalen.
+      - [ ] Strukturera/mappa näring till kanoniska fält + ordna (nu rå label/value/unit).
+      - [ ] Allergener via vokabulär-match (nu alla VERSALA ord; ingen kedja har rent
+        strukturerat allergen-fält - dietTypeInformation/labels är diet/ursprung).
     - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
       täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/

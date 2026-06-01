@@ -1,12 +1,15 @@
-"""Lazy rik produktdetalj (ingredienser, näring, ursprung) per (chain, ean) för
-paringsvyn. Normaliserat schema per kedja; cachas i product_details.
+"""Lazy rik produktinfo per EAN (ingredienser, näring, ursprung, allergener),
+normaliserad och sammanslagen över källor (`_merge`). Cachas EAN-nyckat i product_info.
 
-Axfood (Willys/Hemköp) byggt: `/axfood/rest/p/{code}` (code slås upp via ean_cache).
-ICA/Coop: ej byggt än (kräver egen produkt-API-research) -> None.
+Källor: Axfood (`/axfood/rest/p/{code}`, code via ean_cache; har näringsvärden) +
+Coop personalization-API (EAN-DB; ingredienser/ursprung, täcker branded varor i alla
+kedjor inkl. ICA vars ehandel är bot-skyddad). Coop hämtas bara när Axfood saknas/är
+ofullständig. Allergener plockas ur de VERSALA orden i ingredienslistan.
 """
 
 import json
 import logging
+import re
 
 from . import config, database as db
 from .adapters import keys
@@ -16,6 +19,20 @@ log = logging.getLogger("matbutiker")
 _AXFOOD = ("willys", "hemkop")
 
 _coop_key = None  # skrapad personalization-nyckel (cache), scrape-on-401
+
+# Svenska ingredienslistor VERSALISERAR allergener (t.ex. "SMÖR (pastöriserad GRÄDDE
+# ...), ... MJÖLK"). Plocka ut VERSALA ord (>=2 bokstäver), filtrera bort rubrik/stopp.
+_ALLERGEN_STOP = {"INGREDIENSER", "INNEHÅLL", "INNEHÅLLER", "KAN", "SPÅR", "AV", "OCH", "EU", "EG"}
+
+
+def extract_allergens(ingredients):
+    if not ingredients:
+        return []
+    out = []
+    for w in re.findall(r"[A-ZÅÄÖ]{2,}", ingredients):
+        if w not in _ALLERGEN_STOP and w not in out:
+            out.append(w)
+    return out
 
 
 def _axfood_code(ean):
@@ -55,6 +72,7 @@ async def _fetch_axfood(client, chain, ean):
             "unit": basis.get("nutrientBasisQuantityMeasurementUnitCode"),
         } if nutrition else None,
         "labels": d.get("labels") or [],
+        "source": chain,
     }
 
 
@@ -100,33 +118,58 @@ async def _fetch_coop(client, ean):
     s = lambda v: (v or "").strip() or None
     origin = ", ".join(x.get("value") for x in (p.get("countryOfOriginCodes") or []) if x.get("value")) or None
     storage = (p.get("consumerInstructions") or {}).get("storageInstructions")
+    # Näringsvärdena ligger i nutrientLinks (description/amount/unit), inte nutrientInformation.
+    nutrition = [
+        {"label": n.get("description"), "value": (n.get("amount") or [None])[0], "unit": n.get("unit")}
+        for n in (p.get("nutrientLinks") or []) if (n.get("amount") or [None])[0]
+    ]
+    basis_q = (p.get("nutrientBasis") or {}).get("quantity")
     return {
         "description": s(p.get("description")),
         "ingredients": s(p.get("listOfIngredients")),
         "origin": origin,
         "province": None,
         "storage": s(storage),
-        "nutrition": [],  # näringsvärden saknas oftast i denna respons; ej parsad i v1
-        "nutrition_basis": None,
+        "nutrition": nutrition,
+        "nutrition_basis": {"value": basis_q, "unit": "g"} if nutrition and basis_q else None,
         "labels": [],
+        "source": "coop",
     }
 
 
+def _merge(parts):
+    """Slå ihop produktinfo från flera källor per fält (näring från Axfood +
+    ingredienser/ursprung från Coop osv). Textfält: längsta icke-tomma. `sources`
+    listar bidragande källor. Allergener härleds ur (sammanslagna) ingredienserna."""
+    merged = {"sources": [p["source"] for p in parts if p.get("source")]}
+    for f in ("description", "ingredients", "origin", "province", "storage"):
+        vals = [p.get(f) for p in parts if p.get(f)]
+        merged[f] = max(vals, key=len) if vals else None
+    best = max((p for p in parts if p.get("nutrition")), key=lambda p: len(p["nutrition"]), default=None)
+    merged["nutrition"] = best["nutrition"] if best else []
+    merged["nutrition_basis"] = best.get("nutrition_basis") if best else None
+    labels = []
+    for p in parts:
+        for lbl in p.get("labels") or []:
+            if lbl not in labels:
+                labels.append(lbl)
+    merged["labels"] = labels
+    merged["allergens"] = extract_allergens(merged.get("ingredients"))
+    return merged
+
+
 async def fetch_for_ean(client, ean, prefer_chain=None):
-    """Produktinfo för en EAN (EAN-global). Axfood-native först om EAN finns i
-    ean_cache (rikare - har näring), annars Coops EAN-DB (täcker branded varor i alla
-    kedjor; egna märkesvaror finns bara i sin kedja). `source` = varifrån datan kom.
-    First-hit vinner (cachen är EAN-nyckad; senare berikning kan skriva över)."""
+    """Produktinfo för en EAN (EAN-global), normaliserad + sammanslagen över källor.
+    Axfood-native (rikast, har näring) hämtas om EAN finns i ean_cache; Coop (EAN-DB,
+    täcker branded varor i alla kedjor) hämtas om Axfood saknas/är ofullständig.
+    Resultatet mergas fält-för-fält. `sources` anger bidragande källor."""
     ax_chain = prefer_chain if prefer_chain in _AXFOOD else "willys"
-    native = await _fetch_axfood(client, ax_chain, ean)  # no-op (ingen HTTP) om EAN ej i ean_cache
-    if native and native.get("ingredients"):
-        native["source"] = ax_chain
-        return native
-    fb = await _fetch_coop(client, ean)
-    if fb and (fb.get("ingredients") or fb.get("description")):
-        fb["source"] = "coop"
-        return fb
-    if native:
-        native["source"] = ax_chain
-        return native
-    return None
+    ax = await _fetch_axfood(client, ax_chain, ean)  # no-op (ingen HTTP) om EAN ej i ean_cache
+    # Hämta Coop när Axfood saknas, saknar ingredienser, eller har GLES näring (Axfood
+    # ger ofta bara energi; Coops nutrientLinks är fylligare).
+    need_more = not ax or not ax.get("ingredients") or len(ax.get("nutrition") or []) < 4
+    co = await _fetch_coop(client, ean) if need_more else None
+    parts = [p for p in (ax, co) if p and (p.get("ingredients") or p.get("description"))]
+    if not parts:
+        return None
+    return _merge(parts)

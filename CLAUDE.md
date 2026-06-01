@@ -106,13 +106,15 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (`product_matches`) skickas EAN-nycklad som `manual_groups` till `build_comparisons`.
   Endast offers-data (v1): inte fulla sortiment.
 - **EAN-produktinfo som egen domän (`details.py` + `GET /v1/products/{ean}`):** rik
-  produktinfo (ingredienser/näring/ursprung) nyckad på EAN, **publik** (utanför admin-
-  routern) så både konsument-appen (erbjudande-info-modal) och konsolen delar den. EAN-
-  nyckad cache `product_info` (first-hit-vinner, `source` sparas). Källor: Axfood
-  `/p/{code}` (rikast, har näring; EAN->code via `ean_cache`) + Coops personalization-API
-  (POST EAN-array; nyckel skrapas via `keys.scrape_coop_perso_key`, scrape-on-401). Coop
-  är EAN-global -> fallback för branded varor i alla kedjor inkl. ICA (vars ehandel är
-  AWS-WAF-bot-skyddad). ICA:s egna märken (ICA-intern EAN) saknas dock.
+  produktinfo (ingredienser/näring/ursprung/allergener) nyckad på EAN, **publik** (utanför
+  admin-routern) så både konsument-appen (erbjudande-info-modal) och konsolen delar den.
+  EAN-nyckad cache `product_info`. **Normaliserad + sammanslagen över källor** (`_merge`):
+  Axfood `/p/{code}` (EAN->code via `ean_cache`) + Coops personalization-API (POST EAN-array;
+  näring i `nutrientLinks`; nyckel skrapas via `keys.scrape_coop_perso_key`, scrape-on-401).
+  Coop hämtas även när Axfood har gles näring; merge tar längsta textfält + rikaste näring,
+  `sources` listar bidragande källor. Allergener (`extract_allergens`) ur VERSALA ord i
+  ingredienserna. Coop är EAN-global -> täcker branded varor i alla kedjor inkl. ICA (vars
+  ehandel är AWS-WAF-bot-skyddad). ICA:s egna märken (ICA-intern EAN) saknas dock.
 - **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
   ur cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (källorna
   är cloudinary; `c_limit,w_400` -> små filer i stället för full-res), cachar bytes lokalt

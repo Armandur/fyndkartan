@@ -270,6 +270,7 @@ function renderProductInfo(d, chain) {
   const x = d.info, P = [];
   if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
   if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
+  if (x.allergens && x.allergens.length) P.push(`<p class="small mb-1"><strong>Allergener:</strong> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</p>`);
   const orig = [x.origin, x.province].filter(Boolean).join(" · ");
   if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${esc(orig)}</p>`);
   if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
@@ -277,7 +278,7 @@ function renderProductInfo(d, chain) {
     const b = x.nutrition_basis ? ` (per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")})` : "";
     P.push(`<p class="small mb-1"><strong>Näring${b}:</strong> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</p>`);
   }
-  if (x.source && x.source !== chain) P.push(`<p class="text-muted fst-italic small mb-0">Metadata via ${esc(x.source)} (samma EAN)</p>`);
+  if (x.sources && x.sources.length) P.push(`<p class="text-muted fst-italic small mb-0">Källa: ${x.sources.map(esc).join(", ")} (samma EAN)</p>`);
   return P.join("") || '<div class="text-muted small">Ingen detaljdata.</div>';
 }
 
