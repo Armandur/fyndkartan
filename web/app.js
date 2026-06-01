@@ -236,7 +236,7 @@ function offerCard(o) {
     ${img}
     <div class="o-body">
       <div class="o-name">${esc(o.name || "")}</div>
-      <div class="o-meta">${esc(o.brand || "")}${o.package ? " &middot; " + esc(o.package) : ""}</div>
+      <div class="o-meta">${esc(o.brand || "")}${o.package ? " &middot; " + esc(o.package) : ""}${o.store_name ? ` &middot; <span class="o-store">${esc(o.store_name)}</span>` : ""}</div>
       <div class="o-price-row">
         <span class="o-price">${esc(o.price_text || "")}</span>
         ${member}
@@ -383,6 +383,7 @@ function renderCompare(filterText) {
 }
 
 async function showCompare() {
+  compareRender = renderCompare;
   const c = map.getCenter();
   const radius = document.getElementById("compareRadius").value;
   const panel = document.getElementById("comparePanel");
@@ -438,12 +439,57 @@ async function showCompareFavorites() {
 }
 
 document.getElementById("compareBtn").addEventListener("click", showCompare);
-document.getElementById("compareFavBtn").addEventListener("click", showCompareFavorites);
+let favOffersData = null;
+let compareRender = renderCompare;
+
+async function showFavoriteOffers() {
+  const panel = document.getElementById("comparePanel");
+  document.getElementById("offersPanel").classList.add("d-none");
+  document.getElementById("compareFilter").value = "";
+  document.getElementById("compareTitle").textContent = "Mina favoriters erbjudanden…";
+  panel.classList.remove("d-none");
+  openNav();
+  if (!state.favorites.size) {
+    document.getElementById("compareList").innerHTML =
+      `<div class="text-muted small p-2">Inga favoritbutiker valda. Markera butiker med &#9733; i listan.</div>`;
+    return;
+  }
+  document.getElementById("compareList").innerHTML =
+    `<div class="text-muted small p-2">Laddar dina favoriters erbjudanden&hellip;</div>`;
+  compareRender = renderFavOffers;
+  try {
+    const d = await (await fetch("/v1/favorites/offers")).json();
+    favOffersData = d;
+    document.getElementById("compareTitle").textContent =
+      `${d.count} erbjudanden (${(d.stores || []).length} favoriter)`;
+    renderFavOffers("");
+  } catch (e) {
+    document.getElementById("compareList").innerHTML =
+      `<div class="text-danger small p-2">Kunde inte hämta dina favoriters erbjudanden.</div>`;
+  }
+}
+
+function renderFavOffers(filterText) {
+  const q = (filterText || "").toLowerCase();
+  const d = favOffersData || { offers: [], compared: [] };
+  const hit = (s) => !q || s.toLowerCase().includes(q);
+  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`));
+  const offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`));
+  const parts = [];
+  if (compared.length)
+    parts.push(`<div class="fav-sec">Finns hos flera av dina favoriter</div>` + compared.map(compareCard).join(""));
+  parts.push(`<div class="fav-sec">Alla erbjudanden (${offers.length})</div>` +
+    (offers.length ? offers.map(offerCard).join("") : `<div class="text-muted small p-2">Inga erbjudanden.</div>`));
+  document.getElementById("compareList").innerHTML = parts.join("");
+}
+
+document.getElementById("compareFavBtn").addEventListener("click", () => { compareRender = renderCompare; showCompareFavorites(); });
+document.getElementById("favOffersBtn").addEventListener("click", showFavoriteOffers);
 document.getElementById("compareBack").addEventListener("click", () => {
   document.getElementById("comparePanel").classList.add("d-none");
 });
 document.getElementById("compareFilter").addEventListener("input", (e) => {
-  renderCompare(e.target.value.trim());
+  compareRender(e.target.value.trim());
 });
 
 // ---- Mobil: sidopanel som overlay ----

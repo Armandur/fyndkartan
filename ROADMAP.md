@@ -153,9 +153,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       utgående httpx-anrop mot kedjorna via apilog). Lägg till middleware som loggar
       inkommande requests mot vårt eget API, och **filtrera "senaste anrop" på källa**
       (kedja/egen + status).
-    - [ ] **API-testverktyg i konsolen (#sources-fliken):** sökfält/testexempel för att
-      köra API:erna direkt (t.ex. EAN -> produktinfo, butik -> erbjudanden) och se svaret,
-      så man kan utforska datakällorna interaktivt.
+    - [x] **API-testverktyg i konsolen (#sources-fliken) BYGGT.** Kör egna endpoints
+      (förinställda exempel + fri sökväg) och kedjornas upstream-API:er via admin-proxy
+      (`/v1/admin/proxy`, whitelistade hostar, server-side nyckel/token).
+    - [ ] **Externa API-nycklar (förbered för publik konsumtion).** API:t/konsolen ska
+      kunna utfärda/återkalla API-nycklar så externa konsumenter kan anropa vårt API
+      autentiserat (t.ex. `/v1/products`, `/v1/stores`). Nyckel-tabell + utfärdande i
+      konsolen + nyckelvalidering (header) + ev. rate limiting/scope per nyckel. Hänger
+      ihop med att `products` redan bröts ut som egen publik domän.
     - [ ] **/admin#tags: ladda inte om/sortera om vid klick.** Idag kör varje
       typ-toggle `loadTags()` som re-fetchar + re-sorterar, så en tagg man precis
       mappat "försvinner" ner i listan (sorten lägger omappade först). Uppdatera
@@ -174,6 +179,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     tabeller, `auth.py`, `/v1/auth/*` (inkl. `/v1/auth/password` för lösenordsbyte) +
     `/v1/favorites`. Favoriter är serverbundna -> synk mellan enheter.
     - [ ] Ev. magic-link/lösenordsåterställning (kräver SMTP) - ej byggt i v1.
+    - [ ] **Prenumerera på produkter + erbjudande-notiser.** Användare ska kunna
+      "prenumerera" på produkter (per EAN) och få notis när de finns på erbjudande,
+      och/eller notis om vilka butiker inom X km som har erbjudanden. Prenumeration
+      markeras på aktuella erbjudanden (nu) och framåt via produktsök/EAN-API:t. Kräver
+      notis-kanal (e-post/push), bevakningstabell per användare och ett jobb som matchar
+      nya erbjudanden mot prenumerationer.
     - [ ] **Visa ALLA favoriters erbjudanden, inte bara matchade.** "Jämför mina
       favoriter" visar nu bara produkter som matchas mellan kedjor. Användaren bör
       kunna se hela listan av sina favoritbutikers erbjudanden. Är en produkt
@@ -193,6 +204,9 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - **Kategorinormalisering:** varje kedja har egen taxonomi (ICA `articleGroup`,
   Axfood `N0x`-koder) -> kanoniskt träd, LLM-stödd mappning. Behövs även för
   bläddring i steg 3.
+  - [ ] **Filtrera erbjudanden på kategori** (i erbjudande-/favorit-/jämförelse-vyer)
+    när kategorinormaliseringen är på plats - kräver kanoniska kategorier, inte
+    kedjornas råa `category_raw`.
 
 ---
 

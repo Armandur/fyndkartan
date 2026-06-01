@@ -235,6 +235,12 @@ body {
   background: #e7f7ef; color: #137a4d; padding: 1px 6px; border-radius: 4px;
 }
 .o-foot { font-size: .68rem; color: #9aa4b2; margin-top: .1rem; }
+.o-store { color: #46505c; font-weight: 600; }
+.fav-sec {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+  color: #8b95a4; margin: .6rem .1rem .3rem; padding-bottom: .2rem; border-bottom: 1px solid #e8ecf0;
+}
+.fav-sec:first-child { margin-top: 0; }
 .o-info {
   margin-top: .35rem; background: none; border: 1px solid #d4dae0; color: #46505c;
   font-size: .68rem; font-weight: 600; padding: 1px 8px; border-radius: 20px; cursor: pointer;

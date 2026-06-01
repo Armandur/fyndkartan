@@ -53,10 +53,12 @@ def _metric(o):
     return v if v is not None else float("inf")
 
 
-def build_comparisons(entries, min_chains=2, manual_groups=None):
-    """Produktgrupper som finns hos >= min_chains olika kedjor, sorterade på
-    prisspridning (störst besparing först). Grupperas per EAN; offers vars
-    (chain, ean) tillhör samma manuella märkesvaru-grupp slås ihop trots olika EAN.
+def build_comparisons(entries, min_chains=2, manual_groups=None, min_stores=1):
+    """Produktgrupper som finns hos >= min_chains olika kedjor (och >= min_stores
+    butiker), sorterade på prisspridning (störst besparing först). Grupperas per EAN;
+    offers vars (chain, ean) tillhör samma manuella märkesvaru-grupp slås ihop trots
+    olika EAN. min_stores>1 fångar "samma vara hos flera butiker" oavsett kedja
+    (t.ex. favoriter i samma kedja).
 
     manual_groups: {ean: group_id}. EAN-nycklad så en paring täcker varje kedja som
     bär samma EAN (t.ex. Willys+Hemköp som delar Axfood-EAN). Tom = ren EAN-matchning."""
@@ -83,7 +85,7 @@ def build_comparisons(entries, min_chains=2, manual_groups=None):
             if cur is None or _metric(o) < _metric(cur):
                 by_store[k] = o
         stores = list(by_store.values())
-        if len({o["chain"] for o in stores}) < min_chains:
+        if len(stores) < min_stores or len({o["chain"] for o in stores}) < min_chains:
             continue
 
         # Jämför på enhetspris om alla butiker har det + samma enhet, annars råpris.

@@ -617,6 +617,61 @@ async def _compare_rows(client, rows_with_dist, min_chains):
     return matching.build_comparisons(entries, min_chains=min_chains, manual_groups=manual)
 
 
+_FAV_OFFER_FIELDS = (
+    "chain", "store_id", "store_name", "name", "brand", "package", "price", "price_text",
+    "comparison_value", "comparison_unit", "member_price", "image", "valid_to",
+    "category_raw", "eans",
+)
+
+
+@app.get("/v1/favorites/offers")
+async def favorites_offers(user=Depends(auth.current_user)):
+    """Alla erbjudanden från användarens favoritbutiker (hela listan), plus `compared`:
+    produkter som finns hos >= 2 av favoritbutikerna (samma EAN, oavsett kedja), med
+    pris per butik billigast först."""
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    pairs = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
+    if not pairs:
+        return {"stores": [], "count": 0, "offers": [], "compared": []}
+
+    conn = get_conn()
+    rows = []
+    for c, sid in pairs:
+        r = conn.execute(
+            "SELECT chain, store_id, name, link_offers, native FROM stores WHERE chain=? AND store_id=?",
+            (c, sid),
+        ).fetchone()
+        if r:
+            rows.append(r)
+    conn.close()
+
+    entries, store_summ = [], []
+    async with apilog.make_client(follow_redirects=True) as client:
+        results = await asyncio.gather(
+            *(_ensure_offers(client, r["chain"], r["store_id"], r["link_offers"], r["native"]) for r in rows),
+            return_exceptions=True,
+        )
+        for r, offs in zip(rows, results):
+            n = 0
+            if isinstance(offs, Exception):
+                log.warning("favoriter-offers %s/%s: %s", r["chain"], r["store_id"], offs)
+            else:
+                for o in offs:
+                    e = dict(o)
+                    e["store_name"] = r["name"]
+                    entries.append(e)
+                    n += 1
+            store_summ.append({"chain": r["chain"], "store_id": r["store_id"], "name": r["name"], "offer_count": n})
+        await _resolve_axfood_eans(client, entries)
+
+    manual = {m["ean"]: m["group_id"] for m in database.load_match_members()}
+    compared = matching.build_comparisons(entries, min_chains=1, min_stores=2, manual_groups=manual)
+    offers = [{k: e.get(k) for k in _FAV_OFFER_FIELDS} for e in entries]
+    offers.sort(key=lambda o: (o.get("name") or "").lower())
+    return {"stores": store_summ, "count": len(offers), "offers": offers, "compared": compared}
+
+
 @app.get("/v1/compare/near")
 async def compare_near(
     lat: float = Query(...),
