@@ -248,7 +248,10 @@ domäner:
     `warm_axfood_eans` fångar nu Axfoods `googleAnalyticsCategory` i samma `/p/{code}`-anrop
     som EAN-warmingen. get_store_offers fyller Willys saknade kategori därifrån. Willys
     gick 0% -> 70% täckning (warmas mot ~100% över fler körningar; koderna är nationella).
-  - [ ] **Admin-flik för kategori-mappning** (spegla tagg-fliken: redigera category_map).
+  - [x] **Admin-flik för kategori-mappning BYGGT** (speglar tagg-fliken: redigerar
+    `category_map` in-place, omappade sorteras först/markeras). Avslöjade att
+    produktdetaljens `googleAnalyticsCategory` använder andra segment-namn än kampanjen
+    (t.ex. `kott-chark-och-fagel` vs `kott-fagel-och-chark`) - varianterna seedade.
   - [ ] **Kategori-filter även i compare/favorit-vyer** (nu bara enskild butiks offers).
   - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).
 

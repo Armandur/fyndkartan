@@ -4,7 +4,7 @@ import sqlite3
 from .config import (
     BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES,
 )
-from .categories import category_for, category_from_detail
+from .categories import category_for, category_from_detail, raw_key
 from .tags import build_tag
 
 
@@ -223,6 +223,38 @@ def delete_tag_map(label):
     conn.execute("DELETE FROM tag_map WHERE label=?", (label,))
     conn.commit()
     conn.close()
+
+
+def category_label_counts():
+    """Distinkta (chain_key, raw_key) ur offers + förvärmd ean_cache, med antal och
+    nuvarande kanonisk mappning. För admin-fliken. Omappade först."""
+    conn = get_conn()
+    counts = {}
+    for r in conn.execute(
+        "SELECT chain, category_raw, COUNT(*) c FROM offers "
+        "WHERE category_raw IS NOT NULL AND category_raw != '' GROUP BY chain, category_raw"
+    ):
+        ck, rk = raw_key(r["chain"], r["category_raw"])
+        if rk:
+            counts[(ck, rk)] = counts.get((ck, rk), 0) + r["c"]
+    for r in conn.execute(
+        "SELECT category, COUNT(*) c FROM ean_cache WHERE category IS NOT NULL AND category != '' GROUP BY category"
+    ):
+        rk = r["category"].split("|")[0]
+        counts[("axfood", rk)] = counts.get(("axfood", rk), 0) + r["c"]
+    mapping = {
+        (r["chain_key"], r["raw_key"]): r["canonical"]
+        for r in conn.execute("SELECT chain_key, raw_key, canonical FROM category_map")
+    }
+    conn.close()
+    for k in mapping:
+        counts.setdefault(k, 0)
+    items = [
+        {"chain_key": ck, "raw_key": rk, "count": n, "canonical": mapping.get((ck, rk))}
+        for (ck, rk), n in counts.items()
+    ]
+    items.sort(key=lambda x: (x["canonical"] is not None, -x["count"]))
+    return items
 
 
 def load_category_map():

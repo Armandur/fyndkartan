@@ -80,6 +80,14 @@ DEFAULT_CATEGORY_MAP = {
     ("axfood", "apotek-och-lakemedel"): "halsa_skonhet",
     ("axfood", "blommor-och-tillbehor"): "hem_hushall",
     ("axfood", "delikatessen"): "skafferi",
+    # Produktdetaljens googleAnalyticsCategory använder delvis andra segment-namn än
+    # kampanjen (samma kategorier, annan stavning) - mappa även dem.
+    ("axfood", "kott-chark-och-fagel"): "kott_chark",
+    ("axfood", "glass-godis-och-snacks"): "godis_snacks",
+    ("axfood", "hem-och-stad"): "hem_hushall",
+    ("axfood", "apotek"): "halsa_skonhet",
+    ("axfood", "blommor-och-tradgard"): "hem_hushall",
+    ("axfood", "kott-och-chark"): "kott_chark",
     ("ica", "Färskvaror"): "farskvaror",
     ("ica", "Mejeri"): "mejeri_agg",
     ("ica", "Frukt & Grönt"): "frukt_gront",

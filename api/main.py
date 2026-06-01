@@ -401,6 +401,23 @@ async def admin_sources(_=Depends(require_admin)):
     return {"sources": config.DATA_SOURCES}
 
 
+@app.get("/v1/admin/categories")
+async def admin_categories(_=Depends(require_admin)):
+    return {"canonical": categories.CANONICAL, "items": database.category_label_counts()}
+
+
+@app.post("/v1/admin/categories/map")
+async def set_category(payload: dict = Body(...), _=Depends(require_admin)):
+    ck = (payload.get("chain_key") or "").strip()
+    rk = (payload.get("raw_key") or "").strip()
+    canon = (payload.get("canonical") or "").strip()
+    if not ck or not rk or canon not in {c["key"] for c in categories.CANONICAL}:
+        return JSONResponse({"detail": "Ogiltig mappning."}, status_code=400)
+    database.set_category_map(ck, rk, canon)
+    categories.set_map(database.load_category_map())  # ladda om -> slår igenom direkt
+    return {"chain_key": ck, "raw_key": rk, "canonical": canon}
+
+
 # ---- API-nycklar för externa integratörer (konsol-utfärdade) ----
 @app.get("/v1/admin/api-keys")
 async def list_api_keys(_=Depends(require_admin)):

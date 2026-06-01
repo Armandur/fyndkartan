@@ -99,6 +99,7 @@
       <li class="nav-item"><button class="nav-link" data-tab="calls">API-anrop</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="sources">Datakällor</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="tags">Taggar</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="cats">Kategorier</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="marques">Märkesvaror</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="keys">API-nycklar</button></li>
     </ul>
@@ -107,6 +108,7 @@
     <section id="calls" class="tab d-none"></section>
     <section id="sources" class="tab d-none"></section>
     <section id="tags" class="tab d-none"></section>
+    <section id="cats" class="tab d-none"></section>
     <section id="marques" class="tab d-none"></section>
     <section id="keys" class="tab d-none"></section>
   </div>
@@ -675,7 +677,55 @@
       await renderKeyTable();
     }
 
-    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, marques: loadMarques, keys: loadKeys };
+    // ---- Kategori-mappning ----
+    let catData = { items: [], canonical: [] };
+
+    function catRow(it) {
+      const opts = catData.canonical.map(c =>
+        `<option value="${c.key}" ${it.canonical === c.key ? "selected" : ""}>${esc(c.label)}</option>`).join("");
+      return `<tr class="${it.canonical == null ? "attn" : ""}" data-ck="${esc(it.chain_key)}" data-rk="${esc(it.raw_key)}">
+        <td>${esc(it.chain_key)}</td><td class="mono">${esc(it.raw_key)}</td><td>${it.count}</td>
+        <td><select class="form-select form-select-sm cat-sel" style="max-width:210px">
+          <option value="" ${it.canonical == null ? "selected" : ""}>— omappad (övrigt) —</option>${opts}</select></td></tr>`;
+    }
+
+    function bindCatRows() {
+      document.querySelectorAll("#catBody .cat-sel").forEach(sel => sel.addEventListener("change", async () => {
+        const tr = sel.closest("tr"), ck = tr.dataset.ck, rk = tr.dataset.rk, canon = sel.value;
+        if (!canon) return;
+        const r = await api("/v1/admin/categories/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain_key: ck, raw_key: rk, canonical: canon }) });
+        if (r.ok) {
+          const it = catData.items.find(x => x.chain_key === ck && x.raw_key === rk);
+          if (it) { it.canonical = canon; tr.classList.remove("attn"); }  // in-place, ingen omladdning
+        }
+      }));
+    }
+
+    function renderCatRows() {
+      const q = (document.getElementById("catSearch").value || "").trim().toLowerCase();
+      const rows = catData.items.filter(it => !q || (it.raw_key || "").toLowerCase().includes(q) || it.chain_key.includes(q));
+      document.getElementById("catBody").innerHTML = rows.map(catRow).join("")
+        || '<tr><td colspan="4" class="text-muted small">Inga kategorier.</td></tr>';
+      bindCatRows();
+    }
+
+    async function loadCategoriesTab() {
+      catData = await (await api("/v1/admin/categories")).json();
+      document.getElementById("cats").innerHTML = `
+        <div class="card p-3">
+          <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Kategori-mappning</h6>
+            <input id="catSearch" class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Sök råkategori…"></div>
+          <div class="small text-muted mb-2">Råkategori per kedja → kanonisk. Axfood = pipe-pathens första segment
+            ("axfood"-nyckel), ICA/Coop = hela råsträngen, Coop navCategories-toppar under "coop_nav".
+            Gulmarkerade är omappade (→ övrigt). Ändring slår igenom direkt utan omladdning.</div>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Kedja</th><th>Råkategori</th><th>Antal</th><th>Kanonisk</th></tr></thead>
+            <tbody id="catBody"></tbody></table></div>`;
+      document.getElementById("catSearch").addEventListener("input", renderCatRows);
+      renderCatRows();
+    }
+
+    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, marques: loadMarques, keys: loadKeys };
 
     function show(tab) {
       active = tab;
