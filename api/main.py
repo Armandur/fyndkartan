@@ -344,12 +344,16 @@ async def _proxy_auth_headers(client, kind):
     return {}
 
 
-@app.get("/v1/admin/proxy")
-async def admin_proxy(url: str, auth_kind: str = "none", _=Depends(require_admin)):
+@app.post("/v1/admin/proxy")
+async def admin_proxy(payload: dict = Body(...), _=Depends(require_admin)):
     """Testa kedjornas upstream-API:er från konsolen (rätt nyckel/token läggs på
-    server-side). Endast whitelistade kedje-hostar - ingen öppen proxy."""
+    server-side). GET eller POST (med body). Endast whitelistade kedje-hostar."""
     from urllib.parse import urlparse
 
+    url = payload.get("url") or ""
+    auth_kind = payload.get("auth_kind") or "none"
+    method = (payload.get("method") or "GET").upper()
+    req_body = payload.get("body")
     host = (urlparse(url).hostname or "").lower()
     if host not in _PROXY_HOSTS:
         return JSONResponse({"detail": f"Host ej tillåten: {host or '(tom)'}"}, status_code=400)
@@ -357,7 +361,11 @@ async def admin_proxy(url: str, auth_kind: str = "none", _=Depends(require_admin
         async with apilog.make_client(follow_redirects=True) as client:
             headers = {"User-Agent": _PROXY_UA, "Accept": "application/json",
                        **await _proxy_auth_headers(client, auth_kind)}
-            r = await client.get(url, headers=headers, timeout=25)
+            if method == "POST":
+                headers["Content-Type"] = "application/json"
+                r = await client.post(url, headers=headers, content=req_body or "", timeout=25)
+            else:
+                r = await client.get(url, headers=headers, timeout=25)
         ct = r.headers.get("content-type", "")
         body = r.json() if "application/json" in ct else r.text[:4000]
         return {"status": r.status_code, "content_type": ct, "body": body}

@@ -213,16 +213,19 @@
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
-    async function runProxyTest(url, authKind) {
+    async function runProxyTest(url, authKind, method, reqBody) {
       const out = document.getElementById("apiOut");
       out.textContent = "Kör upstream…";
       try {
         const t0 = performance.now();
-        const r = await fetch(`/v1/admin/proxy?url=${encodeURIComponent(url)}&auth_kind=${encodeURIComponent(authKind || "none")}`);
+        const r = await fetch("/v1/admin/proxy", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, auth_kind: authKind || "none", method: method || "GET", body: reqBody || null }),
+        });
         const ms = Math.round(performance.now() - t0);
         const d = await r.json();
         const body = typeof d.body === "string" ? d.body : JSON.stringify(d.body ?? d, null, 2);
-        out.textContent = `${url}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms\n\n${body}`;
+        out.textContent = `${method || "GET"} ${url}${reqBody ? "\nbody: " + reqBody : ""}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms\n\n${body}`;
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
@@ -231,7 +234,7 @@
       const rows = d.sources.map(s => `<tr>
         <td>${chip(s.chain)}</td><td>${esc(s.what)}</td>
         <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td>
-        <td>${s.example ? `<button class="btn btn-sm btn-outline-dark src-test" data-url="${esc(s.example)}" data-auth="${esc(s.auth_kind || "none")}">Testa</button>` : '<span class="text-muted small">-</span>'}</td></tr>`).join("");
+        <td>${s.example ? `<button class="btn btn-sm btn-outline-dark src-test" data-url="${esc(s.example)}" data-auth="${esc(s.auth_kind || "none")}" data-method="${esc(s.method || "GET")}" data-body="${esc(s.body || "")}">Testa</button>` : '<span class="text-muted small">-</span>'}</td></tr>`).join("");
       const presets = API_PRESETS.map(([label, path]) =>
         `<button type="button" class="btn btn-sm btn-outline-dark api-preset" data-path="${esc(path)}">${esc(label)}</button>`).join(" ");
       document.getElementById("sources").innerHTML = `
@@ -257,7 +260,7 @@
       }));
       document.querySelectorAll(".src-test").forEach(b => b.addEventListener("click", () => {
         document.getElementById("apiOut").scrollIntoView({ block: "nearest" });
-        runProxyTest(b.dataset.url, b.dataset.auth);
+        runProxyTest(b.dataset.url, b.dataset.auth, b.dataset.method, b.dataset.body);
       }));
     }
 

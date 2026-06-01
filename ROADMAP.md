@@ -166,6 +166,8 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       mappat "försvinner" ner i listan (sorten lägger omappade först). Uppdatera
       raden in-place istället (behåll ordning, byt bara manuell/auto-label).
       Gäller även "Märkesvaror"-fliken - bygg den utan omladdning vid åtgärd.
+    - [ ] **Sökfält för råetiketter i #tags.** Tagg-listan kan vara lång; lägg ett
+      sökfält som filtrerar på råetikett (och ev. kedja/typ).
     - [ ] **Tillåt borttagning även av inbyggda tagg-typer.** Nu skyddas
       `BUILTIN_TAG_TYPES` från radering (annars kan `seed_types` producera en typ
       som inte finns i vokabulären). Vill att användaren ska kunna ta bort dem ändå
@@ -185,6 +187,9 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       markeras på aktuella erbjudanden (nu) och framåt via produktsök/EAN-API:t. Kräver
       notis-kanal (e-post/push), bevakningstabell per användare och ett jobb som matchar
       nya erbjudanden mot prenumerationer.
+    - [ ] **Sortering + full filtrering i "Mina favoriters erbjudanden".** Vyn har
+      bara textfilter nu; ska kunna sorteras (störst besparing/lägst pris/A-Ö) och
+      filtreras på samma sätt som erbjudande-/jämförelsevyerna (sort-dropdown).
     - [ ] **Visa ALLA favoriters erbjudanden, inte bara matchade.** "Jämför mina
       favoriter" visar nu bara produkter som matchas mellan kedjor. Användaren bör
       kunna se hela listan av sina favoritbutikers erbjudanden. Är en produkt
