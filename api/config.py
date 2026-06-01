@@ -190,6 +190,8 @@ OWN_APIS = [
      "desc": "Butikens erbjudanden (hämtas live första gången, cachas sedan)."},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/search?q=mj%C3%B6lk",
      "desc": "Sök produkter på namn (ur erbjudande-cachen, EAN-grupperat): kedjor, prisintervall, normaliserade fält."},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/by-category?category=mejeri_agg",
+     "desc": "Bläddra produkter i en kanonisk kategori (ur erbjudande-cachen). Samma form som sök."},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
      "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor."},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/image",

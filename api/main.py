@@ -908,8 +908,23 @@ async def products_search(
     """Sök produkter på namn ur cachade erbjudanden. Distinkta produkter (EAN-grupperade,
     cross-chain), med normaliserade fält, kedjor, prisintervall och antal erbjudanden.
     OBS: bara produkter som finns i offers-cachen (butiker vars erbjudanden hämtats)."""
-    products = database.search_products(q, limit=max(1, min(limit, 100)), chain=chain)
+    products = database.list_products(q=q, chain=chain, limit=max(1, min(limit, 100)))
     return {"query": q, "count": len(products), "products": products}
+
+
+@app.get("/v1/products/by-category")
+async def products_by_category(
+    category: str = Query(..., description="Kanonisk kategori-nyckel (se /v1/categories)"),
+    limit: int = 60,
+    chain: str | None = None,
+    _auth=Depends(require_consumer),
+):
+    """Bläddra produkter i en kanonisk kategori (ur cachade erbjudanden). Samma
+    produktform som /v1/products/search. Sorterat på flest kedjor/erbjudanden."""
+    if category not in {c["key"] for c in categories.CANONICAL}:
+        return JSONResponse({"detail": "Okänd kategori."}, status_code=400)
+    products = database.list_products(category=category, chain=chain, limit=max(1, min(limit, 200)))
+    return {"category": category, "count": len(products), "products": products}
 
 
 @app.get("/v1/products/{ean}")

@@ -570,13 +570,14 @@ def get_store_offers(chain, store_id):
     return out
 
 
-def search_products(q, limit=40, chain=None):
-    """Sök produkter på namn ur cachade erbjudanden. Distinkta produkter grupperade på
-    EAN (cross-chain) - annars (kedja, namn) när EAN saknas. Per produkt: representativ
-    metadata (normaliserad), kedjor, prisintervall och antal erbjudanden. Namnmatchning
-    sker i Python (Unicode-skiftlägesokänsligt; SQLite LOWER fäller bara ASCII)."""
+def list_products(q=None, category=None, chain=None, limit=40):
+    """Distinkta produkter ur cachade erbjudanden, grupperade på EAN (cross-chain) -
+    annars (kedja, namn) när EAN saknas. Filtrerbart på namn (`q`), kanonisk `category`
+    och `chain`. Per produkt: representativ normaliserad metadata, kedjor, prisintervall
+    och antal erbjudanden. Namnmatchning i Python (Unicode-skiftlägesokänsligt; SQLite
+    LOWER fäller bara ASCII)."""
     ql = (q or "").strip().lower()
-    if len(ql) < 2:
+    if q is not None and len(ql) < 2:
         return []
     conn = get_conn()
     sql, params = "SELECT * FROM offers", []
@@ -585,7 +586,7 @@ def search_products(q, limit=40, chain=None):
         params.append(chain)
     rows = conn.execute(sql, params).fetchall()
     conn.close()
-    hits = [dict(r) for r in rows if ql in (r["name"] or "").lower()]
+    hits = [dict(r) for r in rows if not ql or ql in (r["name"] or "").lower()]
     if not hits:
         return []
     # EAN-resolution: inline-array, annars ean_cache (Axfood code->EAN).
@@ -634,9 +635,11 @@ def search_products(q, limit=40, chain=None):
             "price_min": min(prices) if prices else None,
             "price_max": max(prices) if prices else None,
         })
-    # Relevans: prefix-träff först, sen flest kedjor/erbjudanden, sen namn.
+    if category:
+        out = [p for p in out if p["category"] == category]
+    # Namnsök: prefix-träff först. Bläddring (utan q): flest kedjor/erbjudanden, sen namn.
     out.sort(key=lambda p: (
-        not (p["name"] or "").lower().startswith(ql),
+        bool(ql) and not (p["name"] or "").lower().startswith(ql),
         -len(p["chains"]), -p["offer_count"], (p["name"] or "").lower(),
     ))
     return out[:limit]

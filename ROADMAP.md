@@ -260,7 +260,9 @@ domäner:
   berikning som get_store_offers) + kedjor + prisintervall + antal. Relevans-sort
   (prefix-träff, flest kedjor/erbjudanden). Begränsning: bara butiker vars offers hämtats
   (lazy-cache) - full täckning kräver sortiment-jobbet. Kvar: ev. frontend-sökruta.
-- [ ] **Kategori-endpoint** för bläddring/filtrering - beror på kategorinormaliseringen.
+- [x] **Kategori-endpoint BYGGT** (`GET /v1/products/by-category?category=&chain=&limit=`).
+  Bläddrar distinkta produkter i en kanonisk kategori ur erbjudande-cachen, samma form som
+  produktsöket (delar `database.list_products`). Okänd kategori -> 400.
 - [ ] (övervägt) Formell repo-/tjänstesplit api/ vs web/ - CLAUDE.md noterar att den
   är billig när en andra konsument dyker upp; men enablers ovan (CORS/auth/kontrakt)
   är det som faktiskt krävs, inte själva splitten.
