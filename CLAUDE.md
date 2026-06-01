@@ -11,8 +11,11 @@ pågår), med en Leaflet/OSM-karta. Aktuell status och plan: `ROADMAP.md`.
   (`ALTER TABLE`-guards, ingen Alembic).
 - **Frontend:** vanilla JS, **Bootstrap 5** + **Leaflet** (OSM) med markercluster
   - allt via CDN, ingen bundler. Ren statisk app i `web/`, serveras av API:t.
-- **Körning:** `uv run uvicorn api.main:app --host 0.0.0.0 --port 8700` (kör från
-  repo-roten). Servern nås på `ubuntu-ai:8700`. Ingen `.env` krävs (nycklar auto-hämtas).
+- **Körning (dev):** `uv run uvicorn api.main:app --host 0.0.0.0 --port 8700` (kör
+  från repo-roten). Servern nås på `ubuntu-ai:8700`. Ingen `.env` krävs (nycklar auto-hämtas).
+- **Deploy:** monolitisk single-container är normalfallet (lokal Unraid) -
+  `docker-compose.yml`. Externt hostad med Caddy/TLS = undantag,
+  `docker-compose.hetzner.yml`. CI bygger till `ghcr.io/armandur/fyndkartan`. Se `DOCKER.md`.
 
 ## Repo-struktur: api/ + web/
 

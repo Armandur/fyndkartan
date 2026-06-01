@@ -1,37 +1,23 @@
+# Normalfall: monolitisk single-container (t.ex. lokal Unraid-server).
+# Hela appen (API + frontend) i en container; porten exponeras direkt.
+#   docker compose up -d        ->  http://<host>:8700
+# På Unraid kan containern lika gärna läggas till via Dockers UI:
+#   image ghcr.io/armandur/fyndkartan:latest, port 8700->8000,
+#   path /mnt/user/appdata/fyndkartan -> /data.
+# Externt hostad med TLS i stället: se docker-compose.hetzner.yml.
 services:
   app:
     image: ghcr.io/armandur/fyndkartan:latest
+    container_name: fyndkartan
     restart: unless-stopped
+    ports:
+      - "8700:8000"
     environment:
       - DB_PATH=/data/stores.db
     volumes:
-      - data:/data
+      - ${DATA_DIR:-./data}:/data
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-    networks: [web]
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    depends_on: [app]
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - DOMAIN=${DOMAIN:?Sätt DOMAIN i .env (t.ex. fyndkartan.example.com)}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    networks: [web]
-
-networks:
-  web:
-
-volumes:
-  data:
-  caddy_data:
-  caddy_config:

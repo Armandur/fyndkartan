@@ -12,22 +12,38 @@ från `uv.lock`, kopierar in `api/` (FastAPI) + `web/` (statisk frontend), och k
 DB:n ligger på `DB_PATH` (default `/data/stores.db`) - montera en volym på `/data`
 för att persistera butiks-/erbjudande-cachen mellan omstarter.
 
-## Prod (`docker-compose.yml`)
+## Normalfall: single container (`docker-compose.yml`)
 
-Två tjänster: `app` (imagen från GHCR) bakom `caddy` (auto-TLS reverse proxy).
+Monolitisk single-container (t.ex. lokal Unraid-server). Hela appen i en
+container, porten exponeras direkt.
 
 ```bash
-echo "DOMAIN=fyndkartan.dindoman.se" > .env   # domän för Caddy/TLS
 docker compose pull
 docker compose up -d
+# -> http://<host>:8700
 ```
 
-- `app` exponerar inga portar externt - all trafik går via Caddy (`Caddyfile`
-  proxar `{$DOMAIN}` -> `app:8000`).
-- Volymer: `data` (SQLite), `caddy_data`/`caddy_config` (certifikat m.m.).
+- Port `8700` -> containerns `8000`. Volym `${DATA_DIR:-./data}` -> `/data` (SQLite).
 - Healthcheck mot `/healthz`.
-- Har du redan en delad Caddy på hosten: ta bort `caddy`-tjänsten och proxa dit
-  `app:8000` därifrån istället.
+
+**På Unraid** kan containern lika gärna läggas till direkt i Dockers UI utan compose:
+- Repository: `ghcr.io/armandur/fyndkartan:latest`
+- Port: `8700` -> `8000`
+- Path: `/mnt/user/appdata/fyndkartan` -> `/data`
+- (valfri var: `DB_PATH=/data/stores.db`)
+
+## Undantag: externt hostad med TLS (`docker-compose.hetzner.yml`)
+
+För externt hostade tjänster (t.ex. på Hetzner) med publik domän: `app` bakom
+`caddy` (auto-TLS reverse proxy), inga portar exponerade direkt.
+
+```bash
+echo "DOMAIN=fyndkartan.dindoman.se" > .env
+docker compose -f docker-compose.hetzner.yml up -d
+```
+
+Caddy (`Caddyfile`) proxar `{$DOMAIN}` -> `app:8000`. Har du redan en delad Caddy:
+ta bort `caddy`-tjänsten och proxa dit `app:8000` därifrån.
 
 ## Dev (`docker-compose.dev.yml`)
 
