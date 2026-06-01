@@ -220,8 +220,10 @@ function offerCard(o) {
   const cmp = o.comparison_value
     ? `<span class="o-cmp">${o.comparison_value}/${esc(o.comparison_unit || "")}</span>`
     : "";
-  const img = o.image
-    ? `<img class="o-img" src="${esc(o.image)}" loading="lazy" alt="">`
+  const imgEan = o.eans && o.eans[0];
+  const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image` : o.image;
+  const img = imgSrc
+    ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${imgEan && o.image ? ` onerror="this.onerror=null;this.src='${esc(o.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
   const valid = o.valid_to ? `t.o.m. ${esc(o.valid_to)}` : "";
   const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
@@ -345,8 +347,9 @@ function compareCard(p) {
     ? ` <span class="cmp-variants" title="${esc((p.variants || []).join(", "))}">${p.variant_count} sorter</span>`
     : "";
   const sub = [p.brand, p.category].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
-  const img = p.image
-    ? `<img class="o-img" src="${esc(p.image)}" loading="lazy" alt="">`
+  const cmpSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image` : p.image;
+  const img = cmpSrc
+    ? `<img class="o-img" src="${esc(cmpSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
   const spreadLabel = p.compare_by === "unit_price"
     ? `${p.spread} kr/${esc(p.unit)}` : `${p.spread} kr`;

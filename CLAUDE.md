@@ -39,6 +39,7 @@ api/                 # Python-paketet (importeras som `api`)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons() (manual_groups)
   brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
+  images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # instrumentering av utgående anrop (make_client + ring-buffer/statistik)
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
@@ -109,6 +110,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (POST EAN-array; nyckel skrapas via `keys.scrape_coop_perso_key`, scrape-on-401). Coop
   är EAN-global -> fallback för branded varor i alla kedjor inkl. ICA (vars ehandel är
   AWS-WAF-bot-skyddad). ICA:s egna märken (ICA-intern EAN) saknas dock.
+- **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
+  ur cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (källorna
+  är cloudinary; `c_limit,w_400` -> små filer i stället för full-res), cachar bytes lokalt
+  i `image_cache/` (metadata i `product_images`). Gör oss CDN-oberoende. Frontend-kort
+  använder den med `onerror`-fallback till original-CDN-URL.
 - **Normalisering:** öppettider -> `HH:MM` (`normalize_hours`), taggar som
   positiva påståenden (avsaknad = okänt), `0,0`-koordinater = saknad position.
 - **Två skilda auth-domäner.** App-konton (`users`, slutanvändare) och konsol-

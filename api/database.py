@@ -145,6 +145,12 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
     )
+    # Lokalt cachade produktbilder per EAN (bytes på disk, metadata här) - gör oss
+    # CDN-oberoende och snabbare. source_url = varifrån bilden hämtades.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS product_images (ean TEXT PRIMARY KEY, content_type TEXT, "
+        "source_url TEXT, fetched_at TEXT)"
+    )
     # Opaka bearer-tokens för slutanvändare (icke-webb-klienter). Lagras hashade.
     conn.execute(
         """CREATE TABLE IF NOT EXISTS user_tokens (
@@ -595,6 +601,26 @@ def _now():
     from datetime import datetime, timezone
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---- Produktbilds-cache (metadata; bytes ligger på disk) ----
+def get_image_meta(ean):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT content_type, source_url FROM product_images WHERE ean=?", (str(ean),)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def save_image_meta(ean, content_type, source_url):
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO product_images (ean, content_type, source_url, fetched_at) VALUES (?,?,?,?)",
+        (str(ean), content_type, source_url, _now()),
+    )
+    conn.commit()
+    conn.close()
 
 
 # ---- Slutanvändar-tokens (opaka bearer, för icke-webb-klienter) ----

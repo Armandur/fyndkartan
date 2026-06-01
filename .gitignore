@@ -3,6 +3,7 @@
 stores.db
 stores.db-wal
 stores.db-shm
+image_cache/
 
 # Källfiler från reverse-engineering (innehåller nycklar/tokens; ersatta av
 # UNIFIED-API.md/CLAUDE.md). Behålls lokalt, committas inte.

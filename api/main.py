@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, config, database, details, matching, tags
+from . import apilog, auth, brands, config, database, details, images, matching, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -860,6 +860,20 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
     if info is not None:
         database.save_product_info(e, info)
     return {"ean": e, "found": info is not None, "info": info}
+
+
+@app.get("/v1/products/{ean}/image")
+async def product_image(ean: str, _auth=Depends(require_consumer)):
+    """Lokalt cachad produktbild för EAN:en (proxas + cachas -> CDN-oberoende).
+    Same-origin <img> i appen skickar session-cookie -> require_consumer passerar."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    res = await images.get_cached_image(e)
+    if not res:
+        return JSONResponse({"detail": "Ingen bild hittades."}, status_code=404)
+    path, ct = res
+    return FileResponse(path, media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/v1/chains")

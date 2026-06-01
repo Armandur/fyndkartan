@@ -125,13 +125,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
       compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
       det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
-    - [ ] **Unified EAN -> produktbild-tjänst (+ cache + varianter).** Nu hotlinkas bilder
-      direkt från kedjornas CDN (assets.icanet.se, cloudinary, axfood) i list-/erbjudande-/
-      paringsvyer. Bör bli en egen EAN-nyckad bild-endpoint (likt `/v1/products`):
-      - cacha/proxa lokalt för robusthet, fart och CDN-oberoende;
-      - välj bästa bild per EAN på **kvalitet/storlek** över källorna;
-      - om vi får bilder i flera storlekar och de skiljer sig: cacha dem som **valbara
-        varianter** (thumbnail/full) som klienten kan begära efter behov.
+    - [x] **Unified EAN -> produktbild-tjänst BYGGT (v1).** `GET /v1/products/{ean}/image`
+      (`images.py` + `product_images`-tabell + bytes i `image_cache/`): hittar bild-URL ur
+      cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (c_limit
+      400px - Coop gav 11 MB full-res, nu ~16 KB), cachar lokalt -> CDN-oberoende + snabbt.
+      Erbjudande-/jämförelsekort använder den (fallback till CDN-URL vid fel).
+      - [ ] **Storleks-/kvalitetsvarianter:** `?size=thumb|full` cachat per (ean, storlek)
+        + välj bästa källa på kvalitet. Nu en fast storlek (400px).
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
