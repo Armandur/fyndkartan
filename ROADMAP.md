@@ -166,6 +166,30 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       autentiserat (t.ex. `/v1/products`, `/v1/stores`). Nyckel-tabell + utfärdande i
       konsolen + nyckelvalidering (header) + ev. rate limiting/scope per nyckel. Hänger
       ihop med att `products` redan bröts ut som egen publik domän.
+
+### Plattform / aktivera andra frontend-appar
+
+Per-domän-REST:en är redan ren (stores/offers/products/compare/chains). Det som
+saknas för en *andra/extern* frontend är tvärgående enablers, inte fler utbrutna
+domäner:
+
+- [ ] **CORS för externa origins.** Nu bara same-origin (ingen CORSMiddleware) -> en
+  separat frontend-app (annan origin) blockeras. Lägg konfigurerbar CORS-allowlist
+  (env) för de publika `/v1`-endpoints.
+- [ ] **Token-baserad slutanvändar-auth (utöver session-cookie).** Mobil/native/annan
+  frontend kan inte använda cookie-flödet smidigt - lägg token-utgivning (JWT eller
+  opak token) vid login så icke-webb-klienter kan anropa `/v1/favorites` m.m.
+- [ ] **Kurera OpenAPI-kontraktet.** `/docs` finns auto men oputsat - tagga endpoints
+  per domän, markera publikt vs admin, lägg beskrivningar/responsmodeller, så
+  integratörer har ett stabilt kontrakt att bygga mot.
+- [ ] **Produktsök-endpoint (på namn/text).** Produkter nås nu bara via EAN
+  (`/v1/products/{ean}`) eller offers/compare. En andra app vill kunna söka produkter
+  på namn -> exponera sök (över cachade offers/produkter nu, fullständigt med
+  sortiment-jobbet).
+- [ ] **Kategori-endpoint** för bläddring/filtrering - beror på kategorinormaliseringen.
+- [ ] (övervägt) Formell repo-/tjänstesplit api/ vs web/ - CLAUDE.md noterar att den
+  är billig när en andra konsument dyker upp; men enablers ovan (CORS/auth/kontrakt)
+  är det som faktiskt krävs, inte själva splitten.
     - [x] **/admin#tags: ladda inte om/sortera om vid klick BYGGT.** Typ-toggle och
       "↺ auto" uppdaterar raden in-place (ingen re-fetch/re-sort); raden stannar kvar.
       `del_tag` returnerar auto-typerna så även återställning sker in-place.
