@@ -443,7 +443,8 @@ async def remove_type(type_: str, _=Depends(require_admin)):
 async def del_tag(label: str, _=Depends(require_admin)):
     database.delete_tag_map(label)
     tags.remove(label)
-    return {"label": label, "removed": True}
+    # Returnera auto-typerna så klienten kan uppdatera raden in-place (ingen omladdning).
+    return {"label": label, "removed": True, "types": tags.effective_types(label)}
 
 
 @app.get("/v1/stores")
@@ -628,7 +629,7 @@ async def _compare_rows(client, rows_with_dist, min_chains):
 _FAV_OFFER_FIELDS = (
     "chain", "store_id", "store_name", "name", "brand", "package", "price", "price_text",
     "comparison_value", "comparison_unit", "member_price", "image", "valid_to",
-    "category_raw", "eans",
+    "category_raw", "eans", "savings",
 )
 
 

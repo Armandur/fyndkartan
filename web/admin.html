@@ -293,48 +293,82 @@
       });
     }
 
+    let tagState = { tags: [], types: [] };
+
+    function tagRow(t) {
+      const attn = (!t.overridden && t.types.length === 1 && t.types[0] === "other") ? "attn" : "";
+      const chainsHtml = t.chains.map(chip).join(" ");
+      const prov = t.provider ? `<span class="badge bg-secondary ms-1">${esc(t.provider)}</span>` : "";
+      const chips = tagState.types.map(ty =>
+        `<span class="tchip${t.types.includes(ty) ? " on" : ""}" data-type="${ty}">${ty}</span>`).join("");
+      return `<tr class="${attn}" data-label="${esc(t.label)}">
+        <td>${esc(t.label)}${prov}</td>
+        <td>${chainsHtml}</td>
+        <td>${t.count}</td>
+        <td><div class="toggles">${chips}</div>
+          <button class="btn btn-sm btn-link p-0 auto-btn">↺ auto</button>
+          <span class="small text-muted ms-2 tag-mode">${t.overridden ? "manuell" : "auto"}</span></td></tr>`;
+    }
+
+    function refreshTagRow(tr, t) {  // uppdatera rad in-place utan omsortering
+      tr.querySelectorAll(".tchip").forEach(ch => ch.classList.toggle("on", t.types.includes(ch.dataset.type)));
+      tr.classList.toggle("attn", !t.overridden && t.types.length === 1 && t.types[0] === "other");
+      const mode = tr.querySelector(".tag-mode");
+      if (mode) mode.textContent = t.overridden ? "manuell" : "auto";
+    }
+
+    function bindTagRows() {
+      document.querySelectorAll("#tagBody .tchip").forEach(c => {
+        c.addEventListener("click", async () => {
+          const tr = c.closest("tr"), label = tr.dataset.label;
+          c.classList.toggle("on");
+          const types = [...tr.querySelectorAll(".tchip.on")].map(x => x.dataset.type);
+          if (!types.length) { c.classList.add("on"); return; }  // minst en typ
+          const r = await api("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, types }) });
+          const d = await r.json();
+          const t = tagState.tags.find(x => x.label === label);
+          if (t) { t.types = d.types || types; t.overridden = true; refreshTagRow(tr, t); }
+        });
+      });
+      document.querySelectorAll("#tagBody .auto-btn").forEach(b => {
+        b.addEventListener("click", async () => {
+          const tr = b.closest("tr"), label = tr.dataset.label;
+          const r = await api("/v1/tags/map/" + encodeURIComponent(label), { method: "DELETE" });
+          const d = await r.json();
+          const t = tagState.tags.find(x => x.label === label);
+          if (t) { t.types = d.types || []; t.overridden = false; refreshTagRow(tr, t); }
+        });
+      });
+    }
+
+    function renderTagRows() {
+      const q = (document.getElementById("tagSearch").value || "").trim().toLowerCase();
+      const rows = tagState.tags.filter(t =>
+        !q || (t.label || "").toLowerCase().includes(q) || t.chains.some(c => c.includes(q)));
+      document.getElementById("tagBody").innerHTML = rows.length
+        ? rows.map(tagRow).join("")
+        : `<tr><td colspan="4" class="text-muted small">Inga råetiketter matchar.</td></tr>`;
+      bindTagRows();
+    }
+
     async function loadTags() {
       document.getElementById("tags").innerHTML =
         `<div id="typesPanel" class="card p-3 mb-3"></div><div id="tagTable" class="card p-3"></div>`;
       await loadTypes();
       const d = await (await api("/v1/tags")).json();
-      const rows = d.tags.map(t => {
-        const attn = (!t.overridden && t.types.length === 1 && t.types[0] === "other") ? "attn" : "";
-        const chains = t.chains.map(chip).join(" ");
-        const prov = t.provider ? `<span class="badge bg-secondary ms-1">${esc(t.provider)}</span>` : "";
-        const chips = d.types.map(ty =>
-          `<span class="tchip${t.types.includes(ty) ? " on" : ""}" data-type="${ty}">${ty}</span>`).join("");
-        return `<tr class="${attn}" data-label="${esc(t.label)}">
-          <td>${esc(t.label)}${prov}</td>
-          <td>${chains}</td>
-          <td>${t.count}</td>
-          <td><div class="toggles">${chips}</div>
-            <button class="btn btn-sm btn-link p-0 auto-btn">↺ auto</button>
-            <span class="small text-muted ms-2">${t.overridden ? "manuell" : "auto"}</span></td></tr>`;
-      }).join("");
+      tagState.tags = d.tags;
+      tagState.types = d.types;
       document.getElementById("tagTable").innerHTML = `
-        <h6>Tagg-normalisering</h6>
+        <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Tagg-normalisering</h6>
+          <input id="tagSearch" class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Sök råetikett…"></div>
         <div class="small text-muted mb-2">Klicka typ-chip för att (av)markera. En tagg kan ha flera typer
-          (t.ex. "Posten Brev &amp; paket" = postal + parcel). Gulmarkerade behöver mappas. "↺ auto" återställer.</div>
+          (t.ex. "Posten Brev &amp; paket" = postal + parcel). Gulmarkerade behöver mappas. "↺ auto" återställer.
+          Listan laddar inte om vid klick.</div>
         <table class="table table-sm align-middle mb-0">
           <thead><tr><th>Råetikett</th><th>Kedjor</th><th>Butiker</th><th>Kanoniska typer</th></tr></thead>
-          <tbody>${rows}</tbody></table>`;
-      document.querySelectorAll("#tags .tchip").forEach(c => {
-        c.addEventListener("click", async () => {
-          const tr = c.closest("tr");
-          c.classList.toggle("on");
-          const types = [...tr.querySelectorAll(".tchip.on")].map(x => x.dataset.type);
-          if (!types.length) { c.classList.add("on"); return; }  // minst en typ
-          await api("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: tr.dataset.label, types }) });
-          loadTags();
-        });
-      });
-      document.querySelectorAll("#tags .auto-btn").forEach(b => {
-        b.addEventListener("click", async () => {
-          await api("/v1/tags/map/" + encodeURIComponent(b.closest("tr").dataset.label), { method: "DELETE" });
-          loadTags();
-        });
-      });
+          <tbody id="tagBody"></tbody></table>`;
+      document.getElementById("tagSearch").addEventListener("input", renderTagRows);
+      renderTagRows();
     }
 
     // ---- Märkesvaror (cross-chain-paring av private label, EAN-centrerat) ----

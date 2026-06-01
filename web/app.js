@@ -384,6 +384,7 @@ function renderCompare(filterText) {
 
 async function showCompare() {
   compareRender = renderCompare;
+  document.getElementById("favSort").classList.add("d-none");
   const c = map.getCenter();
   const radius = document.getElementById("compareRadius").value;
   const panel = document.getElementById("comparePanel");
@@ -446,6 +447,9 @@ async function showFavoriteOffers() {
   const panel = document.getElementById("comparePanel");
   document.getElementById("offersPanel").classList.add("d-none");
   document.getElementById("compareFilter").value = "";
+  const sort = document.getElementById("favSort");
+  sort.value = "default";
+  sort.classList.remove("d-none");
   document.getElementById("compareTitle").textContent = "Mina favoriters erbjudanden…";
   panel.classList.remove("d-none");
   openNav();
@@ -474,7 +478,8 @@ function renderFavOffers(filterText) {
   const d = favOffersData || { offers: [], compared: [] };
   const hit = (s) => !q || s.toLowerCase().includes(q);
   const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`));
-  const offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`));
+  let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`));
+  offers = sortOffers(offers, document.getElementById("favSort").value);
   const parts = [];
   if (compared.length)
     parts.push(`<div class="fav-sec">Finns hos flera av dina favoriter</div>` + compared.map(compareCard).join(""));
@@ -483,8 +488,15 @@ function renderFavOffers(filterText) {
   document.getElementById("compareList").innerHTML = parts.join("");
 }
 
-document.getElementById("compareFavBtn").addEventListener("click", () => { compareRender = renderCompare; showCompareFavorites(); });
+document.getElementById("compareFavBtn").addEventListener("click", () => {
+  compareRender = renderCompare;
+  document.getElementById("favSort").classList.add("d-none");
+  showCompareFavorites();
+});
 document.getElementById("favOffersBtn").addEventListener("click", showFavoriteOffers);
+document.getElementById("favSort").addEventListener("change", () => {
+  renderFavOffers(document.getElementById("compareFilter").value.trim());
+});
 document.getElementById("compareBack").addEventListener("click", () => {
   document.getElementById("comparePanel").classList.add("d-none");
 });

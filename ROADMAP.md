@@ -112,21 +112,26 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **Erbjudande-info-modal i konsument-appen BYGGT** ("Innehåll & näring" på
       erbjudandekort med EAN -> modal). OBS: bara där EAN finns klient-sida (ICA/Coop
       inline; Axfood-EAN resolvas lazy, saknas ofta på kortet).
-    - [ ] **Plocka ut allergener ur ingredienslistan.** Svenska ingredienslistor
-      versaliserar allergener (t.ex. "SMÖR (pastöriserad GRÄDDE...), ... MJÖLK"). Extrahera
-      VERSALA ord (>= 2 bokstäver, hantera "E"-nummer/förkortningar) -> strukturerad
-      allergenlista som kan visas/filtreras på.
-    - [ ] **Normalisera/slå ihop produktinfo över källor.** Nu first-hit-vinner per EAN
-      (Axfood = näring, Coop = ingredienser/ursprung). Olika källor kan ge olika/komplet-
-      terande fält för samma EAN - bör slås ihop per fält eller väljas på rikedom.
+    - [ ] **Normalisera + berika produktinfon (större produktinfo-API-jobb).** Nu
+      first-hit-vinner per EAN (Axfood = näring, Coop = ingredienser/ursprung). Bör:
+      - slå ihop fält över källor (näring från Axfood + ingredienser från Coop för
+        samma EAN) eller välja på rikedom, inte bara "först vinner";
+      - **strukturera näring** till enhetliga fält;
+      - **plocka ut allergener** ur ingredienslistan (svenska listor versaliserar dem,
+        t.ex. "SMÖR (pastöriserad GRÄDDE...), ... MJÖLK") -> strukturerad allergenlista
+        att visa/filtrera på (>= 2 versala bokstäver, hantera E-nummer/förkortningar).
     - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
       täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
       compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
       det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
-    - [ ] **Cacha produktbilder.** Nu hotlinkas bilder direkt från kedjornas CDN
-      (assets.icanet.se, cloudinary, axfood) i list-/erbjudande-/paringsvyer. Bör cachas
-      lokalt (proxas/laddas ner) för robusthet, hastighet och oberoende av deras CDN.
+    - [ ] **Unified EAN -> produktbild-tjänst (+ cache + varianter).** Nu hotlinkas bilder
+      direkt från kedjornas CDN (assets.icanet.se, cloudinary, axfood) i list-/erbjudande-/
+      paringsvyer. Bör bli en egen EAN-nyckad bild-endpoint (likt `/v1/products`):
+      - cacha/proxa lokalt för robusthet, fart och CDN-oberoende;
+      - välj bästa bild per EAN på **kvalitet/storlek** över källorna;
+      - om vi får bilder i flera storlekar och de skiljer sig: cacha dem som **valbara
+        varianter** (thumbnail/full) som klienten kan begära efter behov.
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
@@ -161,13 +166,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       autentiserat (t.ex. `/v1/products`, `/v1/stores`). Nyckel-tabell + utfärdande i
       konsolen + nyckelvalidering (header) + ev. rate limiting/scope per nyckel. Hänger
       ihop med att `products` redan bröts ut som egen publik domän.
-    - [ ] **/admin#tags: ladda inte om/sortera om vid klick.** Idag kör varje
-      typ-toggle `loadTags()` som re-fetchar + re-sorterar, så en tagg man precis
-      mappat "försvinner" ner i listan (sorten lägger omappade först). Uppdatera
-      raden in-place istället (behåll ordning, byt bara manuell/auto-label).
-      Gäller även "Märkesvaror"-fliken - bygg den utan omladdning vid åtgärd.
-    - [ ] **Sökfält för råetiketter i #tags.** Tagg-listan kan vara lång; lägg ett
-      sökfält som filtrerar på råetikett (och ev. kedja/typ).
+    - [x] **/admin#tags: ladda inte om/sortera om vid klick BYGGT.** Typ-toggle och
+      "↺ auto" uppdaterar raden in-place (ingen re-fetch/re-sort); raden stannar kvar.
+      `del_tag` returnerar auto-typerna så även återställning sker in-place.
+    - [x] **Sökfält för råetiketter i #tags BYGGT.** Filtrerar listan på råetikett/kedja
+      (klient-sida, behåller ordning).
     - [ ] **Tillåt borttagning även av inbyggda tagg-typer.** Nu skyddas
       `BUILTIN_TAG_TYPES` från radering (annars kan `seed_types` producera en typ
       som inte finns i vokabulären). Vill att användaren ska kunna ta bort dem ändå
@@ -187,14 +190,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       markeras på aktuella erbjudanden (nu) och framåt via produktsök/EAN-API:t. Kräver
       notis-kanal (e-post/push), bevakningstabell per användare och ett jobb som matchar
       nya erbjudanden mot prenumerationer.
-    - [ ] **Sortering + full filtrering i "Mina favoriters erbjudanden".** Vyn har
-      bara textfilter nu; ska kunna sorteras (störst besparing/lägst pris/A-Ö) och
-      filtreras på samma sätt som erbjudande-/jämförelsevyerna (sort-dropdown).
-    - [ ] **Visa ALLA favoriters erbjudanden, inte bara matchade.** "Jämför mina
-      favoriter" visar nu bara produkter som matchas mellan kedjor. Användaren bör
-      kunna se hela listan av sina favoritbutikers erbjudanden. Är en produkt
-      matchad: visa vilka butiker som har den och till vilka priser, billigast
-      först (men visa övriga priser också).
+    - [x] **Sortering i "Mina favoriters erbjudanden" BYGGT.** Sort-dropdown (störst
+      besparing/lägst pris/A-Ö) + textfilter, som erbjudande-vyn.
+    - [x] **Visa ALLA favoriters erbjudanden BYGGT.** `GET /v1/favorites/offers` +
+      "Mina favoriters erbjudanden"-vyn: hela listan + `compared`-sektion (produkter
+      hos >= 2 favoriter, samma EAN, billigast först). (Sortering kvar, se ovan.)
 - **Närliggande erbjudanden:** geosök (finns) + erbjudande-lagret. `compare/near`
   laddar offers lazy för de ~12 närmaste butikerna; för ett tätt flöde kan ett
   schemalagt bulk-/radie-förhämtningsjobb behövas.
