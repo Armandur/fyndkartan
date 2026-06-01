@@ -357,16 +357,28 @@ async function loadCategories() {
   } catch (e) { catLabels = {}; }
 }
 
-function populateOffersCategory() {
-  const sel = document.getElementById("offersCategory");
+function fillCatSelect(selId, items) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
   const counts = {};
-  currentOffers.forEach((o) => { if (o.category) counts[o.category] = (counts[o.category] || 0) + 1; });
+  items.forEach((o) => { if (o.category) counts[o.category] = (counts[o.category] || 0) + 1; });
   const opts = Object.keys(counts)
     .map((k) => ({ k, label: catLabels[k] || k, n: counts[k] }))
     .sort((a, b) => a.label.localeCompare(b.label, "sv"));
-  sel.innerHTML = `<option value="">Alla kategorier (${currentOffers.length})</option>` +
+  sel.innerHTML = `<option value="">Alla kategorier (${items.length})</option>` +
     opts.map((o) => `<option value="${esc(o.k)}">${esc(o.label)} (${o.n})</option>`).join("");
   sel.value = "";
+}
+
+function populateOffersCategory() {
+  fillCatSelect("offersCategory", currentOffers);
+}
+
+function populateCompareCategory() {
+  const items = compareRender === renderFavOffers
+    ? [...((favOffersData || {}).offers || []), ...((favOffersData || {}).compared || [])]
+    : currentCompare;
+  fillCatSelect("compareCategory", items);
 }
 
 function renderOffers(filterText) {
@@ -423,7 +435,8 @@ function compareCard(p) {
   const variantTag = p.variant_count > 1
     ? ` <span class="cmp-variants" title="${esc((p.variants || []).join(", "))}">${p.variant_count} sorter</span>`
     : "";
-  const sub = [p.brand, p.category].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
+  const catLabel = p.category ? (catLabels[p.category] || p.category) : "";
+  const sub = [p.brand, catLabel].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
   const cmpSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
   const img = cmpSrc
     ? `<img class="o-img" src="${esc(cmpSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
@@ -455,8 +468,10 @@ function compareCard(p) {
 
 function renderCompare(filterText) {
   const q = (filterText || "").toLowerCase();
+  const cat = document.getElementById("compareCategory").value;
   const list = currentCompare.filter((p) =>
-    !q || `${p.name} ${p.brand} ${p.category}`.toLowerCase().includes(q));
+    (!q || `${p.name} ${p.brand} ${p.category}`.toLowerCase().includes(q)) &&
+    (!cat || p.category === cat));
   document.getElementById("compareList").innerHTML = list.length
     ? list.map(compareCard).join("")
     : `<div class="text-muted small p-2">Inga produkter på erbjudande hos flera kedjor här.</div>`;
@@ -482,6 +497,7 @@ async function showCompare() {
     currentCompare = d.products || [];
     document.getElementById("compareTitle").textContent =
       `${currentCompare.length} produkter (${d.stores_compared} butiker, ${radius} km)`;
+    populateCompareCategory();
     renderCompare("");
   } catch (e) {
     document.getElementById("compareList").innerHTML =
@@ -512,6 +528,7 @@ async function showCompareFavorites() {
     currentCompare = d.products || [];
     document.getElementById("compareTitle").textContent =
       `${currentCompare.length} produkter (${d.stores_compared} favoriter)`;
+    populateCompareCategory();
     renderCompare("");
   } catch (e) {
     document.getElementById("compareList").innerHTML =
@@ -546,6 +563,7 @@ async function showFavoriteOffers() {
     favOffersData = d;
     document.getElementById("compareTitle").textContent =
       `${d.count} erbjudanden (${(d.stores || []).length} favoriter)`;
+    populateCompareCategory();
     renderFavOffers("");
   } catch (e) {
     document.getElementById("compareList").innerHTML =
@@ -555,10 +573,12 @@ async function showFavoriteOffers() {
 
 function renderFavOffers(filterText) {
   const q = (filterText || "").toLowerCase();
+  const cat = document.getElementById("compareCategory").value;
   const d = favOffersData || { offers: [], compared: [] };
   const hit = (s) => !q || s.toLowerCase().includes(q);
-  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`));
-  let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`));
+  const okCat = (o) => !cat || o.category === cat;
+  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`) && okCat(p));
+  let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`) && okCat(o));
   offers = sortOffers(offers, document.getElementById("favSort").value);
   const parts = [];
   if (compared.length)
@@ -582,6 +602,9 @@ document.getElementById("compareBack").addEventListener("click", () => {
 });
 document.getElementById("compareFilter").addEventListener("input", (e) => {
   compareRender(e.target.value.trim());
+});
+document.getElementById("compareCategory").addEventListener("change", () => {
+  compareRender(document.getElementById("compareFilter").value.trim());
 });
 
 // ---- Mobil: sidopanel som overlay ----

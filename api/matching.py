@@ -138,7 +138,7 @@ def build_comparisons(entries, min_chains=2, manual_groups=None, min_stores=1):
                 "name": named.get("name"),
                 "brand": named.get("brand"),
                 "image": named.get("image"),
-                "category": named.get("category_raw"),
+                "category": named.get("category"),  # kanonisk nyckel (samma som offers)
                 "compare_by": compare_by,
                 "unit": unit,
                 "chains": len({o["chain"] for o in stores}),
