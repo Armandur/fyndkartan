@@ -177,6 +177,29 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
       - [ ] Kvar: rate limiting + scopes per nyckel (när en faktisk konsument finns).
 
+### Normalisering (datakvalitet)
+
+Genomgång av onormaliserade fält i unified-API:t (datadriven audit, sampling per
+kedja). Rangordnat efter värde:
+
+- [x] **#1 Jämförenheten i compare (`_norm_unit`) FIXAD.** `comparison_value` var redan
+  ren float men `_norm_unit` gjorde bara lower()/trim(), så ICA/Coop `liter` vs Axfood `l`
+  behandlades som olika enheter -> `build_comparisons` föll tillbaka på råpris även när
+  alla var per liter. Nu kanoniseras enheten till basenhet (`liter/lit -> l`, `meter -> m`,
+  första token före whitespace/komma/slash/plus, så `liter + pant`/`kg utan spad`/
+  `kg 26,67/liter` -> `l`/`kg`), och platshållaren `Inget` -> None. Verifierat: en grupp
+  som blandar liter/l jämför nu på enhetspris.
+- [ ] **#2 `mechanic_type`** - onormaliserad deal-typ, helt per kedja: `Standard`/`MultiLine`
+  (ICA), `pris`/`styckpris` (Coop), `MixMatchPricePromotion`/`SubtotalOrderPromotion`
+  (Axfood). Kanonisera till t.ex. `standard`/`multibuy`/`threshold` (tag/kategori-mönstret).
+- [ ] **#3 `package`** - varumärke + ordenheter inklistrade. Axfood `"ARLA, ca: 2.2kg"`,
+  Coop `"900 Gram"`, ICA `"12 x 33 cl"`. Normalisera till `{value, unit}` (+ ev. approx-flagga).
+- [ ] **#4 `offers.brand`** - brand + ursprung blandat hos ICA (`"Guldfågeln.Ursprung Sverige"`)
+  och Coop (`"Sverige/Arla"`). Axfood är rent. Dela i `brand` + `origin`.
+- [ ] **#5 `phone` (butiker)** - format varierar (ICA mellanslag, Coop/Willys bindestreck).
+  Display-only, lägst prio.
+- Redan rent: `valid_to` (ISO), butikernas `brand` (snake_case-vokabulär), `comparison_value`.
+
 ### Plattform / aktivera andra frontend-appar
 
 Per-domän-REST:en är redan ren (stores/offers/products/compare/chains). Det som

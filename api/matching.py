@@ -10,6 +10,8 @@ butiker i gruppen; annars faller vi tillbaka på råpris och flaggar det med
 `compare_by`. Råpris + `price_text` ("2 för 129 kr") visas alltid för kontext.
 """
 
+import re
+
 _OFFER_KEYS = (
     "chain",
     "store_id",
@@ -41,8 +43,32 @@ def normalize_ean(raw):
     return s
 
 
+# Kedjorna skriver samma jämförenhet olika (ICA/Coop "liter", Axfood "l") och
+# klistrar ibland in kvalificerare/skräp ("liter + pant", "kg utan spad",
+# "kg 26,67/liter"). Kanonisera till basenheten så enhetspris-jämförelsen inte
+# tyst faller tillbaka på råpris bara för att strängarna skiljer sig.
+_UNIT_CANON = {
+    "l": "l", "liter": "l", "lit": "l",
+    "kg": "kg", "kilo": "kg",
+    "g": "g", "gram": "g",
+    "hg": "hg",
+    "m": "m", "meter": "m",
+    "st": "st", "styck": "st", "stk": "st", "styckpris": "st",
+}
+# Platshållare som inte är en jämförbar enhet -> None (annars matchar de varandra falskt).
+_UNIT_NONE = {"inget", "ingen", "-", "n/a"}
+
+
 def _norm_unit(u):
-    return (u or "").strip().rstrip(".").lower() or None
+    t = (u or "").strip().lower()
+    if not t:
+        return None
+    # Första token före whitespace/komma/punkt/slash/plus = basenheten;
+    # resten är kvalificerare eller inbäddat skräp och slängs.
+    first = re.split(r"[\s,./+]", t, maxsplit=1)[0]
+    if first in _UNIT_NONE:
+        return None
+    return _UNIT_CANON.get(first, first or None)
 
 
 def _metric(o):
