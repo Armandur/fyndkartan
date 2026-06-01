@@ -155,10 +155,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     vid uppstart (`ensure_admin`) från `ADMIN_EMAIL` (generisk default i koden,
     sätts per instans via env/`.env`) + `ADMIN_PASSWORD` (annars genererat + loggat).
     - [ ] Persistent anropslogg (nu in-memory).
-    - [ ] **API-anrop-fliken: visa även våra egna inkommande anrop** (nu loggas bara
-      utgående httpx-anrop mot kedjorna via apilog). Lägg till middleware som loggar
-      inkommande requests mot vårt eget API, och **filtrera "senaste anrop" på källa**
-      (kedja/egen + status).
+    - [x] **API-anrop-fliken: egna inkommande anrop + filter BYGGT.** Middleware loggar
+      inkommande /v1-requests (`apilog.record_incoming`, källa "egen", inkl. status/ms;
+      hoppar över anropslogg-pollern). Fliken filtrerar "senaste anrop" på källa
+      (egen/kedja) + status (OK/fel); filtret överlever 5s-uppdateringen.
     - [x] **API-testverktyg i konsolen (#sources-fliken) BYGGT.** Kör egna endpoints
       (förinställda exempel + fri sökväg) och kedjornas upstream-API:er via admin-proxy
       (`/v1/admin/proxy`, whitelistade hostar, server-side nyckel/token).

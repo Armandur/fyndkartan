@@ -40,7 +40,7 @@ api/                 # Python-paketet (importeras som `api`)
   brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
-  apilog.py          # instrumentering av utgående anrop (make_client + ring-buffer/statistik)
+  apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja

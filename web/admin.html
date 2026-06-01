@@ -114,14 +114,15 @@
   <script>
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", other:"#777" };
-    const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl" };
+    const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", egen:"#3b4a5a", other:"#777" };
+    const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl", egen:"Egen", other:"Övrigt" };
     const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(CHAIN_LABELS[c]||c)}</span>`;
     const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
 
     const gate = document.getElementById("loginGate");
     const consoleEl = document.getElementById("console");
     let active = "overview", callsTimer = null, syncTimer = null;
+    let callsData = null, callsFilter = { source: "", status: "" };
 
     // Alla konsol-anrop går via api(): 403 => sessionen är borta, visa login.
     async function api(url, opts) {
@@ -169,26 +170,56 @@
     }
 
     async function loadCalls() {
-      const d = await (await api("/v1/admin/calls")).json();
-      const stats = d.stats.map(s => `<tr>
-        <td>${chip(s.chain)}</td><td class="mono">${esc(s.host)}</td><td>${s.count}</td>
-        <td class="${s.errors?'call-err':''}">${s.errors}</td><td>${s.avg_ms ?? "-"} ms</td></tr>`).join("");
-      const recent = d.recent.map(c => `<tr>
-        <td class="text-muted">${ago(c.ts)}</td><td>${chip(c.chain)}</td>
-        <td>${esc(c.method)}</td>
-        <td class="${c.status>=400?'call-err':''}">${c.status}</td>
-        <td>${c.ms ?? "-"}</td>
-        <td class="mono text-truncate" style="max-width:340px">${esc(c.host)}${esc(c.path)}</td></tr>`).join("");
+      const opts = ["", "egen", "ica", "coop", "willys", "hemkop", "lidl", "other"]
+        .map(c => `<option value="${c}">${c ? (CHAIN_LABELS[c] || c) : "Alla källor"}</option>`).join("");
       document.getElementById("calls").innerHTML = `
-        <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Per källa (sedan start)</h6>
-          <span class="ms-auto small text-muted">uppdateras var 5:e s</span></div>
-        <div class="card p-2 mb-3"><table class="table table-sm mb-0">
-          <thead><tr><th>Kedja</th><th>Host</th><th>Anrop</th><th>Fel</th><th>Snitt</th></tr></thead>
-          <tbody>${stats || '<tr><td colspan=5 class="text-muted">Inga anrop än.</td></tr>'}</tbody></table></div>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h6 class="mb-0">API-anrop</h6>
+          <select id="callsSource" class="form-select form-select-sm ms-auto" style="width:auto">${opts}</select>
+          <select id="callsStatus" class="form-select form-select-sm" style="width:auto">
+            <option value="">Alla status</option><option value="ok">OK (&lt;400)</option><option value="err">Fel (&ge;400)</option>
+          </select>
+          <span class="small text-muted">var 5:e s</span>
+        </div>
+        <div id="callsStats" class="mb-3"></div>
         <h6>Senaste anrop</h6>
+        <div id="callsRecent"></div>`;
+      const cs = document.getElementById("callsSource"), cst = document.getElementById("callsStatus");
+      cs.value = callsFilter.source; cst.value = callsFilter.status;
+      cs.addEventListener("change", () => { callsFilter.source = cs.value; renderCallsData(); });
+      cst.addEventListener("change", () => { callsFilter.status = cst.value; renderCallsData(); });
+      await refreshCalls();
+    }
+
+    async function refreshCalls() {
+      callsData = await (await api("/v1/admin/calls")).json();
+      renderCallsData();
+    }
+
+    function renderCallsData() {
+      if (!callsData || !document.getElementById("callsStats")) return;
+      let stats = callsData.stats, recent = callsData.recent;
+      if (callsFilter.source) {
+        stats = stats.filter(s => s.chain === callsFilter.source);
+        recent = recent.filter(c => c.chain === callsFilter.source);
+      }
+      if (callsFilter.status) {
+        const err = callsFilter.status === "err";
+        recent = recent.filter(c => (c.status >= 400) === err);
+      }
+      document.getElementById("callsStats").innerHTML = `
+        <div class="card p-2"><table class="table table-sm mb-0">
+          <thead><tr><th>Källa</th><th>Host</th><th>Anrop</th><th>Fel</th><th>Snitt</th></tr></thead>
+          <tbody>${stats.map(s => `<tr><td>${chip(s.chain)}</td><td class="mono">${esc(s.host)}</td><td>${s.count}</td>
+            <td class="${s.errors ? "call-err" : ""}">${s.errors}</td><td>${s.avg_ms ?? "-"} ms</td></tr>`).join("")
+            || '<tr><td colspan="5" class="text-muted">Inga anrop.</td></tr>'}</tbody></table></div>`;
+      document.getElementById("callsRecent").innerHTML = `
         <div class="card p-2"><table class="table table-sm table-hover mb-0">
-          <thead><tr><th>Tid</th><th>Kedja</th><th>Metod</th><th>Status</th><th>ms</th><th>URL</th></tr></thead>
-          <tbody>${recent}</tbody></table></div>`;
+          <thead><tr><th>Tid</th><th>Källa</th><th>Metod</th><th>Status</th><th>ms</th><th>URL</th></tr></thead>
+          <tbody>${recent.map(c => `<tr><td class="text-muted">${ago(c.ts)}</td><td>${chip(c.chain)}</td>
+            <td>${esc(c.method)}</td><td class="${c.status >= 400 ? "call-err" : ""}">${c.status}</td>
+            <td>${c.ms ?? "-"}</td><td class="mono text-truncate" style="max-width:340px">${esc(c.host)}${esc(c.path)}</td></tr>`).join("")
+            || '<tr><td colspan="6" class="text-muted">Inga anrop.</td></tr>'}</tbody></table></div>`;
     }
 
     const API_PRESETS = [
@@ -654,7 +685,7 @@
       clearInterval(callsTimer);
       clearTimeout(syncTimer);
       LOADERS[tab]().catch(() => {});
-      if (tab === "calls") callsTimer = setInterval(loadCalls, 5000);
+      if (tab === "calls") callsTimer = setInterval(refreshCalls, 5000);
     }
 
     const tabFromHash = () => {

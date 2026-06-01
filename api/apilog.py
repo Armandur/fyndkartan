@@ -72,6 +72,21 @@ async def _on_response(resp):
         pass
 
 
+def record_incoming(method, path, status, ms):
+    """Logga ett inkommande anrop mot vårt EGET API (källa 'egen') i samma feed."""
+    CALLS.appendleft({
+        "ts": time.time(), "method": method, "host": "(egen)", "path": path,
+        "status": status, "ms": ms, "chain": "egen",
+    })
+    s = STATS["(egen)"]
+    s["count"] += 1
+    s["chain"] = "egen"
+    if status >= 400:
+        s["errors"] += 1
+    if ms:
+        s["total_ms"] += ms
+
+
 def make_client(**kwargs):
     """httpx.AsyncClient med anropsloggning inkopplad."""
     hooks = kwargs.pop("event_hooks", {}) or {}

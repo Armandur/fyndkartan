@@ -3,6 +3,7 @@ import json
 import logging
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -104,6 +105,19 @@ if config.CORS_ORIGINS:
     )
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
+
+
+@app.middleware("http")
+async def log_incoming(request, call_next):
+    """Logga inkommande anrop mot vårt eget /v1-API (källa 'egen') i anropsloggen.
+    Hoppar över anropslogg-pollern själv (skulle annars flooda)."""
+    path = request.url.path
+    if not path.startswith("/v1/") or path == "/v1/admin/calls":
+        return await call_next(request)
+    t0 = time.perf_counter()
+    resp = await call_next(request)
+    apilog.record_incoming(request.method, path, resp.status_code, round((time.perf_counter() - t0) * 1000, 1))
+    return resp
 
 
 @app.middleware("http")
