@@ -43,12 +43,25 @@ _ALLERGENS = {
 }
 
 
+# Guards mot kända falskpositiv: "mjölk" i växtbaserade sammansättningar (kokosmjölk,
+# havremjölk ...) är inte mejeri-allergen; "ost" i "ostron" är blötdjur, inte mejeri.
+_ALLERGEN_GUARDS = {
+    "mjölk": re.compile(r"(?<!kokos)(?<!havre)(?<!soja)(?<!mandel)(?<!cashew)(?<!hampa)(?<!ris)(?<!ärt)mjölk"),
+    "ost": re.compile(r"ost(?!ron)"),
+}
+
+
+def _allergen_hit(term, text):
+    g = _ALLERGEN_GUARDS.get(term)
+    return bool(g.search(text)) if g else term in text
+
+
 def extract_allergens(ingredients):
     """Kanoniska allergener ur ingredienslistan via vokabulär-match (i kanonisk ordning)."""
     t = (ingredients or "").lower()
     if not t:
         return []
-    return [name for name, terms in _ALLERGENS.items() if any(term in t for term in terms)]
+    return [name for name, terms in _ALLERGENS.items() if any(_allergen_hit(term, t) for term in terms)]
 
 
 # Näringsdeklaration: kanonisk etikett-form + standardordning + enhetsförkortningar.
