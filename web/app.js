@@ -254,7 +254,7 @@ function dealBadge(o) {
 
 function offerCard(o) {
   const cmp = o.comparison_value
-    ? `<span class="o-cmp">${o.comparison_value}/${esc(o.comparison_unit || "")}</span>`
+    ? `<span class="o-cmp">${o.comparison_value} kr/${esc(o.comparison_unit || "")}</span>`
     : "";
   const imgEan = o.eans && o.eans[0];
   const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image?size=thumb` : o.image;
