@@ -90,6 +90,11 @@ async def index():
     return FileResponse(WEB_DIR / "index.html")
 
 
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
 @app.get("/v1/stores")
 async def list_stores(
     chain: str | None = None,

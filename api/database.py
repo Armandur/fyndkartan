@@ -11,6 +11,7 @@ def get_conn():
 
 
 def init_db():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = get_conn()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(

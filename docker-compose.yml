@@ -1,0 +1,37 @@
+services:
+  app:
+    image: ghcr.io/armandur/fyndkartan:latest
+    restart: unless-stopped
+    environment:
+      - DB_PATH=/data/stores.db
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [web]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?Sätt DOMAIN i .env (t.ex. fyndkartan.example.com)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+
+networks:
+  web:
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8700:8000"
+    environment:
+      - DB_PATH=/data/stores.db
+    volumes:
+      - ./api:/app/api
+      - ./web:/app/web
+      - devdata:/data
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  devdata:

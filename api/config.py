@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DB_PATH = BASE_DIR / "stores.db"
+# Konfigurerbar för persistent volym i Docker (DB_PATH=/data/stores.db).
+DB_PATH = Path(os.getenv("DB_PATH", BASE_DIR / "stores.db"))
 
 ICA_TOKEN = os.getenv("ICA_TOKEN", "")
 COOP_KEY = os.getenv("COOP_KEY", "")

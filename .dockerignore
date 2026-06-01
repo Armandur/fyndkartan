@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+stores.db
+stores.db-wal
+stores.db-shm
+dev.log
+.env
+tmp
+# Källfiler från reverse-engineering (innehåller nycklar)
+*-butiker.md
+ica-anrop-curl.md
