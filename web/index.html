@@ -118,7 +118,15 @@
             <option value="name">A&ndash;Ö</option>
           </select>
         </div>
-        <select id="offersCategory" class="form-select form-select-sm mb-2"></select>
+        <div class="d-flex gap-2 mb-2">
+          <select id="offersCategory" class="form-select form-select-sm"></select>
+          <select id="offersDeal" class="form-select form-select-sm" style="width:auto">
+            <option value="">Alla typer</option>
+            <option value="multibuy">Flerköp</option>
+            <option value="by_weight">Per vikt</option>
+            <option value="flat">Fast pris</option>
+          </select>
+        </div>
         <div id="offersList" class="offers-list"></div>
       </div>
 

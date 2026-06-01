@@ -243,6 +243,12 @@ body {
   font-size: .66rem; font-weight: 700;
   background: #e7f7ef; color: #137a4d; padding: 1px 6px; border-radius: 4px;
 }
+.o-deal {
+  font-size: .62rem; font-weight: 700; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 4px;
+}
+.o-deal--mb { background: #e8ecfb; color: #2f43a8; }
+.o-deal--bw { background: #fbeede; color: #9a5a16; }
 .o-foot { font-size: .68rem; color: #9aa4b2; margin-top: .1rem; }
 .o-store { color: #46505c; font-weight: 600; }
 .fav-sec {

@@ -209,8 +209,10 @@ kedja). Rangordnat efter värde:
 - [x] **#5 `phone` FIXAD.** `_norm_phone` i make_store (write-path) formaterar till svenskt
   nationellt standardformat via **phonenumbers** (libphonenumber) - rätt riktnummerlängd
   (`030-4678600` -> `0304-67 86 00`). Ogiltigt/tomt lämnas. Slår igenom vid synk.
-- [ ] **#6 Frontend för `deal_type`** - visa deal-typen i erbjudande-vyn (badge multibuy/
-  viktpris) + ev. filter "visa bara multibuy". Bygger ovanpå det nya `deal_type`-fältet.
+- [x] **#6 Frontend för `deal_type` BYGGT** - badge på erbjudande-kortet (Flerköp med
+  multibuy-antal / Per vikt) + filter-dropdown (Alla typer/Flerköp/Per vikt/Fast pris) i
+  erbjudande-panelen. Korten använder nu även normaliserad `package_size` + `origin` i
+  meta-raden. Gäller även favoritvyn (samma offerCard). Ej webbläsartestad.
 - Redan rent: `valid_to` (ISO), butikernas `brand` (snake_case-vokabulär), `comparison_value`.
 
 ### Plattform / aktivera andra frontend-appar

@@ -243,6 +243,15 @@ document.getElementById("onlyFavorites").addEventListener("change", (e) => {
 // ---- Erbjudanden ----
 let currentOffers = [];
 
+function dealBadge(o) {
+  if (o.deal_type === "multibuy") {
+    const q = o.multibuy_qty ? `${o.multibuy_qty} för` : "Flerköp";
+    return `<span class="o-deal o-deal--mb">${q}</span>`;
+  }
+  if (o.deal_type === "by_weight") return `<span class="o-deal o-deal--bw">Per vikt</span>`;
+  return "";
+}
+
 function offerCard(o) {
   const cmp = o.comparison_value
     ? `<span class="o-cmp">${o.comparison_value}/${esc(o.comparison_unit || "")}</span>`
@@ -256,6 +265,10 @@ function offerCard(o) {
   const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
   const sv = Math.round((o.savings || 0) * 100) / 100;
   const save = sv > 0 ? `<span class="o-save">spar ${sv} kr</span>` : "";
+  const deal = dealBadge(o);
+  const pkg = o.package_size || o.package;
+  const origin = (o.origin && o.origin.length) ? o.origin.join("/") : "";
+  const meta = [o.brand, pkg, origin].filter(Boolean).map(esc).join(" &middot; ");
   const foot = [o.category_raw, valid].filter(Boolean).map(esc).join(" &middot; ");
   const ean = o.eans && o.eans[0];
   const info = ean
@@ -265,9 +278,10 @@ function offerCard(o) {
     ${img}
     <div class="o-body">
       <div class="o-name">${esc(o.name || "")}</div>
-      <div class="o-meta">${esc(o.brand || "")}${o.package ? " &middot; " + esc(o.package) : ""}${o.store_name ? ` &middot; <span class="o-store">${esc(o.store_name)}</span>` : ""}</div>
+      <div class="o-meta">${meta}${o.store_name ? ` &middot; <span class="o-store">${esc(o.store_name)}</span>` : ""}</div>
       <div class="o-price-row">
         <span class="o-price">${esc(o.price_text || "")}</span>
+        ${deal}
         ${member}
         ${cmp}
         ${save}
@@ -356,9 +370,11 @@ function renderOffers(filterText) {
   const q = (filterText || "").toLowerCase();
   const mode = document.getElementById("offersSort").value;
   const cat = document.getElementById("offersCategory").value;
+  const deal = document.getElementById("offersDeal").value;
   let list = currentOffers.filter((o) =>
     (!q || `${o.name} ${o.brand} ${o.category_raw}`.toLowerCase().includes(q)) &&
-    (!cat || o.category === cat));
+    (!cat || o.category === cat) &&
+    (!deal || o.deal_type === deal));
   list = sortOffers(list, mode);
   const el = document.getElementById("offersList");
   el.innerHTML = list.length
@@ -579,6 +595,9 @@ document.getElementById("offersSort").addEventListener("change", () => {
   renderOffers(document.getElementById("offersFilter").value.trim());
 });
 document.getElementById("offersCategory").addEventListener("change", () => {
+  renderOffers(document.getElementById("offersFilter").value.trim());
+});
+document.getElementById("offersDeal").addEventListener("change", () => {
   renderOffers(document.getElementById("offersFilter").value.trim());
 });
 map.on("popupopen", (e) => {
