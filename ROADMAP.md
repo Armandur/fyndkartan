@@ -196,12 +196,20 @@ kedja). Rangordnat efter värde:
   i get_store_offers (derive-at-read) sätter `deal_type` (`multibuy`/`by_weight`/`flat`) +
   `multibuy_qty`: `"N för M"`/`"Köp N betala"` -> multibuy, `"X kr/kg|l"` -> by_weight, annars
   flat. Rå `mechanic_type` behålls. Coop bär ingen multibuy-text -> alltid flat (ärligt).
-- [ ] **#3 `package`** - varumärke + ordenheter inklistrade. Axfood `"ARLA, ca: 2.2kg"`,
-  Coop `"900 Gram"`, ICA `"12 x 33 cl"`. Normalisera till `{value, unit}` (+ ev. approx-flagga).
-- [ ] **#4 `offers.brand`** - brand + ursprung blandat hos ICA (`"Guldfågeln.Ursprung Sverige"`)
-  och Coop (`"Sverige/Arla"`). Axfood är rent. Dela i `brand` + `origin`.
+- [x] **#3 `package` FIXAD.** `get_store_offers` berikar med `package_size` (ren storleks-
+  sträng: Axfood-brandprefix bort, "ca:" -> approx-flagga, ordenheter Gram/Milliliter/ST ->
+  g/ml/st) + `package_value`/`package_unit` för enkla "N enhet" + `package_approx`. Ranges/
+  multipack ("350-500 g", "12 x 33 cl") får ingen value (ärligt None). Täckning value+unit:
+  ICA 60% / Coop 86% / Axfood 92-96%.
+- [x] **#4 `offers.brand` FIXAD.** `_split_brand_origin` delar i `brand` + `origin` (lista av
+  länder). ICA: "BRAND. [Ursprung] LAND" + bart "Colombia/Peru/..." (rena ursprung); Coop:
+  ledande land-tokens = ursprung, resten varumärke. Landnamnen hämtas från CLDR via **babel**
+  (svenska, alla ISO-länder) + alias holland/england - inte hårdkodat. Verifierat att babel
+  täcker alla origin-tokens i datan och skiljer Coops länder från varumärken.
 - [ ] **#5 `phone` (butiker)** - format varierar (ICA mellanslag, Coop/Willys bindestreck).
   Display-only, lägst prio.
+- [ ] **#6 Frontend för `deal_type`** - visa deal-typen i erbjudande-vyn (badge multibuy/
+  viktpris) + ev. filter "visa bara multibuy". Bygger ovanpå det nya `deal_type`-fältet.
 - Redan rent: `valid_to` (ISO), butikernas `brand` (snake_case-vokabulär), `comparison_value`.
 
 ### Plattform / aktivera andra frontend-appar

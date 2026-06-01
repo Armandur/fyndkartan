@@ -4,6 +4,7 @@ import sqlite3
 
 from .config import (
     BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES,
+    ORIGIN_COUNTRIES,
 )
 from .categories import category_for, category_from_detail, raw_key
 from .tags import build_tag
@@ -464,6 +465,75 @@ def _deal_type(price_text):
     return "flat", None
 
 
+# package skrivs olika: Axfood "BRAND, [ca: ]storlek", Coop ordenheter ("900 Gram"),
+# ICA ren storlek med ranges/multipack ("350-500 g", "12 x 33 cl"). Normalisera till
+# en ren storlekssträng + (value, unit) för det enkla "N enhet"-fallet + approx-flagga.
+_PKG_SIMPLE = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*(kg|hg|g|l|dl|cl|ml|st|p|pack)\s*", re.I)
+_PKG_WORD = ((re.compile(r"\bGram\b", re.I), "g"), (re.compile(r"\bMilliliter\b", re.I), "ml"),
+             (re.compile(r"\bST\b"), "st"))
+
+
+def _clean_package(pkg):
+    """(storlekssträng, value, unit, approx) ur ett rått package-fält."""
+    s = (pkg or "").strip()
+    if not s:
+        return None, None, None, False
+    # Axfood-brandprefix: text före ', ' som inte börjar med siffra (ICA:s komma-separerade
+    # storlekar börjar med siffra och ska behållas).
+    if ", " in s:
+        head, _, tail = s.partition(", ")
+        if head and not head[0].isdigit():
+            s = tail.strip()
+    approx = bool(re.match(r"ca[:\s]", s, re.I))
+    s = re.sub(r"^ca[:\s]+", "", s, flags=re.I).strip()
+    for rx, repl in _PKG_WORD:
+        s = rx.sub(repl, s)
+    s = s.strip()
+    value, unit = None, None
+    m = _PKG_SIMPLE.fullmatch(s)
+    if m:
+        value = float(m.group(1).replace(",", "."))
+        unit = m.group(2).lower()
+        if unit == "pack":
+            unit = "p"
+    return s or None, value, unit, approx
+
+
+def _origin_list(s):
+    return [t.strip() for t in s.split("/") if t.strip()] or None
+
+
+def _split_brand_origin(chain, brand):
+    """Dela offers.brand i (brand, origin-lista). ICA: 'BRAND. [Ursprung] LAND' (brand först,
+    landet validerat mot ORIGIN_COUNTRIES så 'Dr. Oetker' inte splittas fel). Coop:
+    'LAND/.../BRAND' (ledande land-tokens = ursprung, resten varumärke). Axfood: redan rent.
+    origin blir en lista av länder (`Spanien/Marocko` -> `['Spanien','Marocko']`) eller None."""
+    s = (brand or "").strip()
+    if not s:
+        return None, None
+    if chain == "ica":
+        if s.lower().startswith("ursprung "):
+            return None, _origin_list(s[9:])
+        if "." in s:
+            left, _, right = s.partition(".")
+            right = re.sub(r"^\s*ursprung\s+", "", right.strip(), flags=re.I).strip()
+            if right and right.split("/")[0].strip().lower() in ORIGIN_COUNTRIES:
+                return (left.strip() or None), _origin_list(right)
+            return s, None
+        # Bart ursprung utan brand: flera länder slash-separerat ("Colombia/Peru/Sydafrika").
+        toks = [t.strip() for t in s.split("/")]
+        if len(toks) > 1 and all(t.lower() in ORIGIN_COUNTRIES for t in toks):
+            return None, _origin_list(s)
+        return s, None
+    if chain == "coop" and "/" in s:
+        parts = [p.strip() for p in s.split("/")]
+        i = 0
+        while i < len(parts) and parts[i].lower() in ORIGIN_COUNTRIES:
+            i += 1
+        return ("/".join(parts[i:]) or None), (parts[:i] or None)
+    return s, None
+
+
 def get_store_offers(chain, store_id):
     conn = get_conn()
     rows = conn.execute(
@@ -477,6 +547,8 @@ def get_store_offers(chain, store_id):
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
         d["category"] = category_for(chain, d.get("category_raw"))  # offer-nivå (fallback)
         d["deal_type"], d["multibuy_qty"] = _deal_type(d.get("price_text"))
+        d["package_size"], d["package_value"], d["package_unit"], d["package_approx"] = _clean_package(d.get("package"))
+        d["brand"], d["origin"] = _split_brand_origin(chain, d.get("brand"))
         out.append(d)
     # Axfood: fyll saknad offer-kategori (särskilt Willys) från förvärmad ean_cache
     # (googleAnalyticsCategory per code). category_for hanterar pipe-pathens första segment.

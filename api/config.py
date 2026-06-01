@@ -164,6 +164,19 @@ DATA_SOURCES = [
     {"chain": "ica", "what": "produktinfo (bot-skyddad, Coop-fallback på EAN)", "url": "ehandel AWS-WAF-skyddad", "auth": "-", "auth_kind": "none", "example": ""},
 ]
 
+# Svenska landnamn för att skilja ursprung från varumärke i offers.brand (ICA skriver
+# "BRAND. Ursprung LAND", Coop "LAND/BRAND" eller bara varumärken). Hämtas från CLDR via
+# babel (alla ISO-3166-länder på svenska) + vardagliga varianter som inte är egna CLDR-
+# länder. Matchas skiftlägesokänsligt. Flerordsländer ("Costa Rica") behålls hela.
+def _origin_countries():
+    from babel import Locale
+    names = {v.lower() for k, v in Locale("sv").territories.items() if len(k) == 2}
+    names |= {"holland", "england"}  # vardagliga/historiska varianter, ej egna CLDR-länder
+    return frozenset(names)
+
+
+ORIGIN_COUNTRIES = _origin_countries()
+
 # Egna /v1-endpoints som konsolen katalogiserar (testbara, med beskrivning av vad de gör).
 # Speglar DATA_SOURCES men för vårt eget API. `path` är ett körbart exempel.
 OWN_APIS = [
