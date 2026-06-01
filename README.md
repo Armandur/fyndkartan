@@ -40,6 +40,8 @@ startar automatiskt i bakgrunden; kartan fylls på medan kedjorna blir klara
 | `GET /v1/compare/stores?stores=chain:id,...` | Samma jämförelse men bland angivna butiker (favoriter) |
 | `GET /v1/chains` | Integrationsstatus + antal per kedja |
 | `GET /admin` | Admin-dashboard: översikt, API-anrop (logg/statistik), datakällor, tagg-normalisering |
+| `POST /v1/auth/register\|login\|logout`, `GET /v1/auth/me` | Konton (e-post + lösenord, session-cookie) |
+| `GET\|POST\|DELETE /v1/favorites` | Favoritbutiker knutna till kontot (inloggad); annars localStorage i klienten |
 | `POST /v1/sync` | Starta omsynk (butiker) |
 | `GET /v1/sync/status` | Synkstatus per kedja |
 

@@ -91,6 +91,25 @@ def init_db():
     conn.executemany(
         "INSERT OR IGNORE INTO tag_types (type) VALUES (?)", [(t,) for t in BUILTIN_TAG_TYPES]
     )
+    # Konton + favoriter + nyckel/värde-settings.
+    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            created_at TEXT
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS favorites (
+            user_id INTEGER NOT NULL,
+            chain TEXT NOT NULL,
+            store_id TEXT NOT NULL,
+            PRIMARY KEY (user_id, chain, store_id)
+        )"""
+    )
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
@@ -335,3 +354,79 @@ def row_to_store(r):
         "native": json.loads(r["native"]) if r["native"] else None,
         "source": {"method": r["method"], "fetched_at": r["fetched_at"]},
     }
+
+
+# ---- Settings / konton / favoriter ----
+def get_or_create_setting(key, default_factory):
+    """Läs ett settings-värde, skapa det (persistent) om det saknas. Självständig
+    (skapar tabellen) så den kan köras vid import innan init_db()."""
+    conn = get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    if row:
+        conn.close()
+        return row["value"]
+    value = default_factory()
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", (key, value))
+    conn.commit()
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    conn.close()
+    return row["value"]
+
+
+def create_user(email, password_hash):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO users (email, password_hash, created_at) VALUES (?,?,?)",
+        (email, password_hash, now),
+    )
+    conn.commit()
+    uid = cur.lastrowid
+    conn.close()
+    return uid
+
+
+def get_user_by_email(email):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_user_by_id(uid):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_favorites(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, store_id FROM favorites WHERE user_id=?", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [f"{r['chain']}:{r['store_id']}" for r in rows]
+
+
+def add_favorite(user_id, chain, store_id):
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR IGNORE INTO favorites (user_id, chain, store_id) VALUES (?,?,?)",
+        (user_id, chain, str(store_id)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def remove_favorite(user_id, chain, store_id):
+    conn = get_conn()
+    conn.execute(
+        "DELETE FROM favorites WHERE user_id=? AND chain=? AND store_id=?",
+        (user_id, chain, str(store_id)),
+    )
+    conn.commit()
+    conn.close()

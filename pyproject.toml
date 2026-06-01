@@ -10,4 +10,6 @@ dependencies = [
     "python-dotenv>=1.0",
     "croniter>=2.0",
     "tzdata>=2024.1",
+    "bcrypt>=4.1",
+    "itsdangerous>=2.1",
 ]

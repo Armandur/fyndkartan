@@ -2,14 +2,16 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Body, FastAPI, Query
+from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, config, database, matching, tags
+from . import apilog, auth, config, database, matching, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -53,6 +55,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Fyndkartan API", version="0.1.0", lifespan=lifespan)
+
+# Session-secret löses HÄR (vid import, före add_middleware): env eller DB-persisterad
+# (settings-tabellen). DB-värdet ligger på den persistenta volymen -> sessioner
+# överlever omstart. https_only av i normalfallet (lokal Unraid över http).
+_SESSION_SECRET = config.SESSION_SECRET or database.get_or_create_setting(
+    "session_secret", lambda: secrets.token_urlsafe(32)
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_SESSION_SECRET,
+    same_site="lax",
+    https_only=config.SESSION_HTTPS_ONLY,
+    max_age=60 * 60 * 24 * 30,
+)
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
@@ -101,6 +117,75 @@ async def index():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+# ---- Konton ----
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@app.post("/v1/auth/register")
+async def register(request: Request, payload: dict = Body(...)):
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    if not _EMAIL_RE.match(email) or len(password) < 8:
+        return JSONResponse(
+            {"detail": "Ogiltig e-post eller för kort lösenord (minst 8 tecken)."}, status_code=400
+        )
+    if database.get_user_by_email(email):
+        return JSONResponse({"detail": "E-posten är redan registrerad."}, status_code=409)
+    uid = database.create_user(email, auth.hash_password(password))
+    request.session["uid"] = uid
+    return auth.public_user(database.get_user_by_id(uid))
+
+
+@app.post("/v1/auth/login")
+async def login(request: Request, payload: dict = Body(...)):
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    user = database.get_user_by_email(email)
+    if not user or not auth.verify_password(password, user["password_hash"]):
+        return JSONResponse({"detail": "Fel e-post eller lösenord."}, status_code=401)
+    request.session["uid"] = user["id"]
+    return auth.public_user(user)
+
+
+@app.post("/v1/auth/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/v1/auth/me")
+async def me(user=Depends(auth.current_user)):
+    return auth.public_user(user)
+
+
+# ---- Favoriter (kräver inloggning) ----
+@app.get("/v1/favorites")
+async def get_favorites(user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    return {"favorites": database.list_favorites(user["id"])}
+
+
+@app.post("/v1/favorites")
+async def add_fav(payload: dict = Body(...), user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    chain = (payload.get("chain") or "").strip()
+    store_id = str(payload.get("store_id") or "").strip()
+    if not chain or not store_id:
+        return JSONResponse({"detail": "chain + store_id krävs."}, status_code=400)
+    database.add_favorite(user["id"], chain, store_id)
+    return {"favorites": database.list_favorites(user["id"])}
+
+
+@app.delete("/v1/favorites/{chain}/{store_id}")
+async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    database.remove_favorite(user["id"], chain, store_id)
+    return {"favorites": database.list_favorites(user["id"])}
 
 
 # ---- Admin-dashboard ----

@@ -20,6 +20,11 @@ LIDL_KEY = os.getenv("LIDL_KEY", "")
 SYNC_CRON = os.getenv("SYNC_CRON", "0 4 * * *")
 SYNC_TZ = os.getenv("SYNC_TZ", "Europe/Stockholm")
 
+# Session-cookie. SESSION_SECRET löses i main vid import (env eller DB-persisterad).
+# https_only måste vara av i normalfallet (lokal Unraid över http).
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+SESSION_HTTPS_ONLY = os.getenv("SESSION_HTTPS_ONLY", "false").lower() == "true"
+
 CHAINS = ["ica", "coop", "willys", "hemkop", "lidl"]
 
 # Statisk beskrivning av datakällorna (för admin-dashboarden).

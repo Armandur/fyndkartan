@@ -32,7 +32,8 @@ api/                 # Python-paketet (importeras som `api`)
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons()
   apilog.py          # instrumentering av utgående anrop (make_client + ring-buffer/statistik)
-  tags.py            # tagg-normalisering: effective_type() (tag_map-override + classify_service)
+  tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
+  auth.py            # konton: bcrypt-hashning + current_user-dependency (session-cookie)
   sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja
   adapters/
     base.py          # make_store(), tags_from_services(), classify_service(), normalize_hours()

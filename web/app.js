@@ -15,18 +15,25 @@ const state = {
   onlyOffers: false,
   onlyFavorites: false,
   favorites: new Set(JSON.parse(localStorage.getItem("favorites") || "[]")),
+  user: null,
 };
 
 const COMPARE_CHAINS = ["ica", "coop", "willys", "hemkop"];
 
 function favKey(s) { return `${s.chain}:${s.store_id}`; }
 function isFav(s) { return state.favorites.has(favKey(s)); }
-function toggleFav(s) {
+
+async function toggleFav(s) {
   const k = favKey(s);
-  if (state.favorites.has(k)) state.favorites.delete(k);
-  else state.favorites.add(k);
-  localStorage.setItem("favorites", JSON.stringify([...state.favorites]));
-  // Full render bara om synligheten ändras (favoritfiltret på); annars räcker listan.
+  const had = state.favorites.has(k);
+  if (state.user) {
+    if (had) await fetch(`/v1/favorites/${s.chain}/${s.store_id}`, { method: "DELETE" });
+    else await fetch("/v1/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain: s.chain, store_id: s.store_id }) });
+    if (had) state.favorites.delete(k); else state.favorites.add(k);
+  } else {
+    if (had) state.favorites.delete(k); else state.favorites.add(k);
+    localStorage.setItem("favorites", JSON.stringify([...state.favorites]));
+  }
   if (state.onlyFavorites) render();
   else renderList();
 }
@@ -461,7 +468,95 @@ map.on("popupopen", (e) => {
   }
 });
 
+// ---- Konton ----
+function renderAuthArea() {
+  const el = document.getElementById("authArea");
+  if (state.user) {
+    el.innerHTML = `<span class="small text-light d-none d-sm-inline">${esc(state.user.email)}</span>
+      <button id="logoutBtn" class="btn btn-sm btn-outline-light">Logga ut</button>`;
+    el.querySelector("#logoutBtn").onclick = doLogout;
+  } else {
+    el.innerHTML = `<button id="loginBtn" class="btn btn-sm btn-light">Logga in</button>`;
+    el.querySelector("#loginBtn").onclick = () => openAuth();
+  }
+}
+
+async function loadUser() {
+  try { state.user = await (await fetch("/v1/auth/me")).json(); } catch (e) { state.user = null; }
+  renderAuthArea();
+}
+
+async function loadFavorites() {
+  if (state.user) {
+    try {
+      const d = await (await fetch("/v1/favorites")).json();
+      state.favorites = new Set(d.favorites || []);
+    } catch (e) { state.favorites = new Set(); }
+  } else {
+    state.favorites = new Set(JSON.parse(localStorage.getItem("favorites") || "[]"));
+  }
+}
+
+async function mergeLocalFavorites() {
+  const local = JSON.parse(localStorage.getItem("favorites") || "[]");
+  for (const k of local) {
+    const [chain, store_id] = k.split(":");
+    if (chain && store_id) await fetch("/v1/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain, store_id }) });
+  }
+  localStorage.removeItem("favorites");
+}
+
+async function doLogout() {
+  await fetch("/v1/auth/logout", { method: "POST" });
+  state.user = null;
+  renderAuthArea();
+  await loadFavorites();
+  render();
+}
+
+let authMode = "login";
+function openAuth(mode = "login") {
+  authMode = mode;
+  document.getElementById("authError").classList.add("d-none");
+  document.getElementById("authTitle").textContent = mode === "login" ? "Logga in" : "Skapa konto";
+  document.getElementById("authSubmit").textContent = mode === "login" ? "Logga in" : "Registrera";
+  document.getElementById("authToggleText").textContent = mode === "login" ? "Inget konto?" : "Har du konto?";
+  document.getElementById("authToggle").textContent = mode === "login" ? "Registrera dig" : "Logga in";
+  document.getElementById("authModal").classList.remove("d-none");
+  document.getElementById("authEmail").focus();
+}
+function closeAuth() { document.getElementById("authModal").classList.add("d-none"); }
+
+async function submitAuth() {
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPass").value;
+  const errEl = document.getElementById("authError");
+  const r = await fetch(`/v1/auth/${authMode === "login" ? "login" : "register"}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!r.ok) {
+    errEl.textContent = (await r.json()).detail || "Något gick fel.";
+    errEl.classList.remove("d-none");
+    return;
+  }
+  state.user = await r.json();
+  closeAuth();
+  await mergeLocalFavorites();
+  await loadFavorites();
+  renderAuthArea();
+  render();
+}
+
+document.getElementById("authClose").addEventListener("click", closeAuth);
+document.getElementById("authModal").addEventListener("click", (e) => { if (e.target.id === "authModal") closeAuth(); });
+document.getElementById("authSubmit").addEventListener("click", submitAuth);
+document.getElementById("authPass").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+document.getElementById("authToggle").addEventListener("click", (e) => { e.preventDefault(); openAuth(authMode === "login" ? "register" : "login"); });
+
 (async function init() {
+  await loadUser();
+  await loadFavorites();
   await loadChains();
   await loadStores();
   pollSync();

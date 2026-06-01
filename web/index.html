@@ -18,8 +18,27 @@
     <div class="ms-auto d-flex align-items-center gap-3">
       <span id="syncBadge" class="sync-badge">&bull; laddar&hellip;</span>
       <button id="syncBtn" class="btn btn-sm btn-outline-light">Synka om</button>
+      <span id="authArea" class="d-flex align-items-center gap-2"></span>
     </div>
   </header>
+
+  <!-- Inloggning/registrering -->
+  <div id="authModal" class="auth-modal d-none">
+    <div class="auth-card">
+      <div class="d-flex align-items-center mb-2">
+        <h6 id="authTitle" class="mb-0">Logga in</h6>
+        <button id="authClose" class="btn-close ms-auto" aria-label="Stäng"></button>
+      </div>
+      <input id="authEmail" type="email" class="form-control form-control-sm mb-2" placeholder="E-post" autocomplete="email">
+      <input id="authPass" type="password" class="form-control form-control-sm mb-2" placeholder="Lösenord (minst 8 tecken)" autocomplete="current-password">
+      <div id="authError" class="text-danger small mb-2 d-none"></div>
+      <button id="authSubmit" class="btn btn-dark btn-sm w-100 mb-2">Logga in</button>
+      <div class="small text-muted text-center">
+        <span id="authToggleText">Inget konto?</span>
+        <a href="#" id="authToggle">Registrera dig</a>
+      </div>
+    </div>
+  </div>
 
   <div class="app-body">
     <aside class="sidebar">

@@ -116,7 +116,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - **Favoritbutiker: BYGGD (klient-lokalt).** Stjärn-toggle i butikslistan, sparas i
   `localStorage`; "Bara favoriter"-filter; "Jämför mina favoriter" -> `GET
   /v1/compare/stores?stores=chain:id,...` (delar `_compare_rows` med compare/near).
-  - [ ] Server-sida: signerade cookies/konto + favorit-tabell för synk mellan enheter
+  - [x] **Konton + server-favoriter BYGGT.** E-post + lösenord (bcrypt), session-cookie
+    (SessionMiddleware, secret persisterad i DB -> överlever omstart). `users`/`favorites`-
+    tabeller, `auth.py`, `/v1/auth/*` + `/v1/favorites`. Inloggad -> server-favoriter (synk
+    mellan enheter), utloggad -> localStorage; lokala favoriter merge:as in vid login.
+    - [ ] Ev. magic-link/lösenordsåterställning (kräver SMTP) - ej byggt i v1.
     (nu är favoriterna per webbläsare).
 - **Närliggande erbjudanden:** geosök (finns) + erbjudande-lagret. `compare/near`
   laddar offers lazy för de ~12 närmaste butikerna; för ett tätt flöde kan ett
