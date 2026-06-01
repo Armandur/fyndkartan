@@ -65,7 +65,7 @@ const DOW = ["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"];
 
 function fmtDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
-  return m ? `${m[3]}/${m[2]}` : iso;
+  return m ? `${+m[3]}/${+m[2]}` : iso;  // 2026-06-06 -> 6/6 (utan inledande nollor)
 }
 
 function weekHtml(oh) {

@@ -12,6 +12,14 @@ mellan butiker, samt prisutveckling över tid.
 
 Unified store-API för 5 kedjor, ~2682 butiker, Leaflet/OSM-karta. Spec i
 `UNIFIED-API.md`. Självförnyande nycklar (ICA token-API, Coop/Lidl scrape-on-401).
+Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla kedjor.
+
+**Att göra (öppettider):**
+- [ ] Normalisera helgdagsavvikelserna mer. Idag är de inkonsekventa mellan källor:
+  Coop/Axfood ger datum + helgnamn, ICA bara helgnamn (inget datum), Lidl bara datum
+  (inget namn). Idé: en svensk helgdagskalender som fyller i saknat datum (ICA) resp.
+  saknat namn (Lidl), så varje avvikelse får både `date` och `label`. Datum visas i UI
+  som `6/6` (utan inledande nollor) - klart.
 
 | Kedja | Butiker | Metod |
 |-------|--------:|-------|
