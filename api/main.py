@@ -105,6 +105,20 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
 
 
+@app.middleware("http")
+async def api_key_gate(request, call_next):
+    """Valfri integratörs-autentisering: skickas `X-API-Key` valideras den (ogiltig/
+    återkallad -> 401). Saknas nyckeln släpps anropet igenom (öppna läs-endpoints
+    förblir öppna) - detta gatar alltså inte, det möjliggör en autentiserad tier."""
+    key = request.headers.get("X-API-Key")
+    if key:
+        rec = database.api_key_active(auth.hash_token(key))
+        if not rec:
+            return JSONResponse({"detail": "Ogiltig eller återkallad API-nyckel."}, status_code=401)
+        request.state.api_key = rec
+    return await call_next(request)
+
+
 def _last_sync():
     times = [c["last_sync"] for c in STATE["chains"].values() if c["last_sync"]]
     return max(times) if times else None
@@ -205,6 +219,35 @@ async def change_password(payload: dict = Body(...), user=Depends(auth.current_u
         return JSONResponse({"detail": "Nytt lösenord för kort (minst 8 tecken)."}, status_code=400)
     database.update_password(user["id"], auth.hash_password(new))
     return {"ok": True}
+
+
+# ---- Slutanvändar-tokens (opaka bearer, för icke-webb-klienter) ----
+@app.post("/v1/auth/token")
+async def issue_token(payload: dict = Body(...)):
+    """Byt e-post+lösenord mot en opak bearer-token. Använd som Authorization: Bearer <token>."""
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    user = database.get_user_by_email(email)
+    if not user or not auth.verify_password(password, user["password_hash"]):
+        return JSONResponse({"detail": "Fel e-post eller lösenord."}, status_code=401)
+    raw = secrets.token_urlsafe(32)
+    database.create_user_token(user["id"], auth.hash_token(raw), (payload.get("label") or "api"))
+    return {"token": raw, "token_type": "bearer"}
+
+
+@app.get("/v1/auth/tokens")
+async def list_tokens(user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    return {"tokens": database.list_user_tokens(user["id"])}
+
+
+@app.delete("/v1/auth/tokens/{token_id}")
+async def revoke_token(token_id: int, user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    database.revoke_user_token(user["id"], token_id)
+    return {"removed": True}
 
 
 # ---- Favoriter (kräver inloggning) ----
@@ -331,6 +374,26 @@ async def admin_calls(_=Depends(require_admin)):
 @app.get("/v1/admin/sources")
 async def admin_sources(_=Depends(require_admin)):
     return {"sources": config.DATA_SOURCES}
+
+
+# ---- API-nycklar för externa integratörer (konsol-utfärdade) ----
+@app.get("/v1/admin/api-keys")
+async def list_api_keys(_=Depends(require_admin)):
+    return {"keys": database.list_api_keys()}
+
+
+@app.post("/v1/admin/api-keys")
+async def create_api_key(payload: dict = Body(...), _=Depends(require_admin)):
+    label = (payload.get("label") or "").strip() or "namnlös"
+    raw = "fk_" + secrets.token_urlsafe(32)  # visas EN gång, lagras hashad
+    database.create_api_key(auth.hash_token(raw), raw[:11], label)
+    return {"key": raw, "label": label}
+
+
+@app.delete("/v1/admin/api-keys/{key_id}")
+async def delete_api_key(key_id: int, _=Depends(require_admin)):
+    database.revoke_api_key(key_id)
+    return {"removed": True}
 
 
 _PROXY_HOSTS = {

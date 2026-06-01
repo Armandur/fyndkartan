@@ -100,6 +100,7 @@
       <li class="nav-item"><button class="nav-link" data-tab="sources">Datakällor</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="tags">Taggar</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="marques">Märkesvaror</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="keys">API-nycklar</button></li>
     </ul>
 
     <section id="overview" class="tab"></section>
@@ -107,6 +108,7 @@
     <section id="sources" class="tab d-none"></section>
     <section id="tags" class="tab d-none"></section>
     <section id="marques" class="tab d-none"></section>
+    <section id="keys" class="tab d-none"></section>
   </div>
 
   <script>
@@ -588,7 +590,53 @@
       else showDetail(btn.dataset.chain, btn.dataset.ean, box);
     });
 
-    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, marques: loadMarques };
+    // ---- API-nycklar (externa integratörer) ----
+    async function renderKeyTable() {
+      const d = await (await api("/v1/admin/api-keys")).json();
+      const rows = d.keys.map(k => `<tr class="${k.revoked ? "text-muted" : ""}">
+        <td class="mono">${esc(k.prefix)}…</td><td>${esc(k.label || "")}</td>
+        <td class="mono small">${esc((k.created_at || "").replace("T", " ").replace("Z", ""))}</td>
+        <td class="mono small">${esc((k.last_used || "-").replace("T", " ").replace("Z", ""))}</td>
+        <td>${k.revoked ? '<span class="badge bg-secondary">återkallad</span>'
+          : `<button class="btn btn-sm btn-link text-danger p-0 key-del" data-id="${k.id}">Återkalla</button>`}</td></tr>`).join("");
+      document.getElementById("keyTable").innerHTML = `
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Prefix</th><th>Etikett</th><th>Skapad</th><th>Senast använd</th><th></th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="5" class="text-muted small">Inga nycklar än.</td></tr>'}</tbody></table>`;
+      document.querySelectorAll(".key-del").forEach(b => b.addEventListener("click", async () => {
+        if (!confirm("Återkalla nyckeln? Den slutar fungera direkt.")) return;
+        await api("/v1/admin/api-keys/" + b.dataset.id, { method: "DELETE" });
+        renderKeyTable();
+      }));
+    }
+
+    async function issueKey() {
+      const label = document.getElementById("keyLabel").value.trim();
+      const r = await api("/v1/admin/api-keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label }) });
+      const d = await r.json();
+      document.getElementById("keyNew").innerHTML =
+        `<div class="alert alert-success small mb-0 py-2"><strong>Ny nyckel (visas bara nu, kopiera den):</strong><br><code>${esc(d.key)}</code></div>`;
+      document.getElementById("keyLabel").value = "";
+      renderKeyTable();
+    }
+
+    async function loadKeys() {
+      document.getElementById("keys").innerHTML = `
+        <div class="card p-3 mb-3">
+          <h6>Utfärda API-nyckel</h6>
+          <div class="small text-muted mb-2">För externa integratörer. Nyckeln visas <strong>en gång</strong> - kopiera den direkt (lagras hashad). Skickas som <code>X-API-Key</code>-header. Gatar inte de öppna läs-endpoints; ogiltig/återkallad nyckel nekas (401).</div>
+          <div class="input-group input-group-sm" style="max-width:420px">
+            <input id="keyLabel" class="form-control" placeholder="etikett (t.ex. partner-x)">
+            <button id="keyIssue" class="btn btn-dark">Utfärda</button>
+          </div>
+          <div id="keyNew" class="mt-2"></div>
+        </div>
+        <div class="card p-3"><h6>Nycklar</h6><div id="keyTable"></div></div>`;
+      document.getElementById("keyIssue").addEventListener("click", issueKey);
+      await renderKeyTable();
+    }
+
+    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, marques: loadMarques, keys: loadKeys };
 
     function show(tab) {
       active = tab;

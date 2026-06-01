@@ -51,7 +51,7 @@ api/                 # Python-paketet (importeras som `api`)
     ica_offers.py axfood_offers.py coop_offers.py   # erbjudande-adaptrar
 web/                 # frontend (statisk, ingen build)
   index.html app.js style.css   # karta + sidopanel + erbjudande-/jämförelse-paneler
-  admin.html         # API-konsol (/admin, egen admin-login): översikt+synk, API-anrop, datakällor, taggar, märkesvaror
+  admin.html         # API-konsol (/admin, egen admin-login): översikt+synk, API-anrop, datakällor+test, taggar, märkesvaror, API-nycklar
 pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 ```
 
@@ -120,6 +120,12 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **App-auth:** e-post/lösenord (bcrypt). `/v1/auth/*` (register/login/logout/me/
   password), `/v1/favorites` kräver inloggning. Favoriter är endast-inloggad även i
   frontend (CSS `body:not(.logged-in)` döljer stjärnor/filter, ingen localStorage).
+  `current_user` accepterar både session-cookie OCH opak `Authorization: Bearer`-token
+  (`POST /v1/auth/token`, lagras hashad i `user_tokens`) för icke-webb-klienter.
+- **Externa API-nycklar:** konsolen utfärdar/återkallar nycklar (`api_keys`, hashade,
+  visas en gång). `X-API-Key`-middleware validerar om nyckel skickas (ogiltig -> 401)
+  men gatar INTE de öppna läs-endpoints (`/v1/products|stores|compare|chains`) - de är
+  fortsatt anonyma för webben. CORS via `CORS_ORIGINS` (env-allowlist, default av).
 - **API-konsol (`web/admin.html` på `/admin`):** drift/dataadministration, skild
   från kartappen. Egen inloggningsruta på sidan (`/v1/console/auth/*`). `require_admin`
   (-> `auth.current_admin`, 403 annars) gatar alla `/v1/admin/*`, `/v1/tags*` och

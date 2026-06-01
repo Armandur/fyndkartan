@@ -145,6 +145,25 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
     )
+    # Opaka bearer-tokens för slutanvändare (icke-webb-klienter). Lagras hashade.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS user_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token_hash TEXT UNIQUE NOT NULL,
+            user_id INTEGER NOT NULL,
+            label TEXT, created_at TEXT, last_used TEXT
+        )"""
+    )
+    # API-nycklar för externa integratörer (utfärdas i konsolen). Lagras hashade;
+    # validering är valfri (gatar inte de öppna läs-endpoints) - ogiltig nyckel nekas dock.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT UNIQUE NOT NULL,
+            prefix TEXT, label TEXT, created_at TEXT,
+            revoked INTEGER DEFAULT 0, last_used TEXT
+        )"""
+    )
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
@@ -568,6 +587,96 @@ def save_product_info(ean, data):
         "INSERT OR REPLACE INTO product_info (ean, data, fetched_at) VALUES (?,?,?)",
         (str(ean), json.dumps(data, ensure_ascii=False), now),
     )
+    conn.commit()
+    conn.close()
+
+
+def _now():
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---- Slutanvändar-tokens (opaka bearer, för icke-webb-klienter) ----
+def create_user_token(user_id, token_hash, label):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO user_tokens (token_hash, user_id, label, created_at) VALUES (?,?,?,?)",
+        (token_hash, user_id, label, _now()),
+    )
+    conn.commit()
+    tid = cur.lastrowid
+    conn.close()
+    return tid
+
+
+def user_id_for_token(token_hash):
+    conn = get_conn()
+    row = conn.execute("SELECT user_id FROM user_tokens WHERE token_hash=?", (token_hash,)).fetchone()
+    if row:
+        conn.execute("UPDATE user_tokens SET last_used=? WHERE token_hash=?", (_now(), token_hash))
+        conn.commit()
+    conn.close()
+    return row["user_id"] if row else None
+
+
+def list_user_tokens(user_id):
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, label, created_at, last_used FROM user_tokens WHERE user_id=? ORDER BY id DESC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def revoke_user_token(user_id, token_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM user_tokens WHERE id=? AND user_id=?", (token_id, user_id))
+    conn.commit()
+    conn.close()
+
+
+# ---- API-nycklar (externa integratörer, konsol-utfärdade) ----
+def create_api_key(key_hash, prefix, label):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO api_keys (key_hash, prefix, label, created_at) VALUES (?,?,?,?)",
+        (key_hash, prefix, label, _now()),
+    )
+    conn.commit()
+    kid = cur.lastrowid
+    conn.close()
+    return kid
+
+
+def list_api_keys():
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, prefix, label, created_at, revoked, last_used FROM api_keys ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def api_key_active(key_hash):
+    """Returnera nyckelraden om giltig (ej återkallad) + uppdatera last_used, annars None."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, label, revoked FROM api_keys WHERE key_hash=?", (key_hash,)
+    ).fetchone()
+    if not row or row["revoked"]:
+        conn.close()
+        return None
+    conn.execute("UPDATE api_keys SET last_used=? WHERE key_hash=?", (_now(), key_hash))
+    conn.commit()
+    conn.close()
+    return {"id": row["id"], "label": row["label"]}
+
+
+def revoke_api_key(key_id):
+    conn = get_conn()
+    conn.execute("UPDATE api_keys SET revoked=1 WHERE id=?", (key_id,))
     conn.commit()
     conn.close()
 

@@ -1,9 +1,21 @@
 """Autentisering: bcrypt-hashning + session-cookie (Starlette SessionMiddleware)."""
 
+import hashlib
+
 import bcrypt
 from fastapi import Depends, HTTPException, Request
 
 from . import database
+
+
+def hash_token(raw):
+    """SHA-256 av en opak token/nyckel (lagras hashad, aldrig i klartext)."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _bearer(request: Request):
+    h = request.headers.get("Authorization") or ""
+    return h[7:].strip() if h.lower().startswith("bearer ") else None
 
 
 def hash_password(password):
@@ -18,8 +30,13 @@ def verify_password(password, hashed):
 
 
 def current_user(request: Request):
-    """FastAPI-dependency: returnerar inloggad användare (dict) eller None."""
+    """FastAPI-dependency: inloggad användare (dict) eller None. Accepterar både
+    session-cookie (webben) och en opak `Authorization: Bearer`-token (icke-webb-klienter)."""
     uid = request.session.get("uid")
+    if not uid:
+        token = _bearer(request)
+        if token:
+            uid = database.user_id_for_token(hash_token(token))
     if not uid:
         return None
     return database.get_user_by_id(uid)

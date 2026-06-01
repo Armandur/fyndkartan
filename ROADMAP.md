@@ -161,11 +161,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **API-testverktyg i konsolen (#sources-fliken) BYGGT.** Kör egna endpoints
       (förinställda exempel + fri sökväg) och kedjornas upstream-API:er via admin-proxy
       (`/v1/admin/proxy`, whitelistade hostar, server-side nyckel/token).
-    - [ ] **Externa API-nycklar (förbered för publik konsumtion).** API:t/konsolen ska
-      kunna utfärda/återkalla API-nycklar så externa konsumenter kan anropa vårt API
-      autentiserat (t.ex. `/v1/products`, `/v1/stores`). Nyckel-tabell + utfärdande i
-      konsolen + nyckelvalidering (header) + ev. rate limiting/scope per nyckel. Hänger
-      ihop med att `products` redan bröts ut som egen publik domän.
+    - [x] **Externa API-nycklar BYGGT.** Konsolflik "API-nycklar": utfärda (visas en
+      gång, lagras hashad) + återkalla. `X-API-Key`-middleware validerar om nyckel skickas
+      (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
+      - [ ] Kvar: rate limiting + scopes per nyckel (när en faktisk konsument finns).
 
 ### Plattform / aktivera andra frontend-appar
 
@@ -176,9 +175,10 @@ domäner:
 - [x] **CORS för externa origins BYGGT.** Env-allowlist `CORS_ORIGINS` (default tom =
   oförändrat same-origin). Explicita origins + credentials, aldrig `*`. CORSMiddleware
   läggs bara om allowlist är satt.
-- [ ] **Token-baserad slutanvändar-auth (utöver session-cookie).** Mobil/native/annan
-  frontend kan inte använda cookie-flödet smidigt - lägg token-utgivning (JWT eller
-  opak token) vid login så icke-webb-klienter kan anropa `/v1/favorites` m.m.
+- [x] **Token-baserad slutanvändar-auth BYGGT.** `POST /v1/auth/token` (e-post+lösen ->
+  opak bearer-token, lagras hashad) + `GET/DELETE /v1/auth/tokens`. `current_user`
+  accepterar både session-cookie och `Authorization: Bearer` -> icke-webb-klienter kan
+  anropa `/v1/favorites` m.m.
 - [ ] **Kurera OpenAPI-kontraktet.** `/docs` finns auto men oputsat - tagga endpoints
   per domän, markera publikt vs admin, lägg beskrivningar/responsmodeller, så
   integratörer har ett stabilt kontrakt att bygga mot.
