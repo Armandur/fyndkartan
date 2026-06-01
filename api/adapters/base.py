@@ -1,8 +1,26 @@
 from datetime import datetime, timezone
 
+import phonenumbers
+
 
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _norm_phone(raw):
+    """Svenskt telefonnummer -> nationellt standardformat ("08-26 50 80"). Kedjorna
+    skriver olika (mellanslag/bindestreck, varierande gruppering); libphonenumber ger
+    rätt riktnummerlängd. Ogiltigt/tomt lämnas oförändrat."""
+    s = (raw or "").strip()
+    if not s:
+        return s or None
+    try:
+        p = phonenumbers.parse(s, "SE")
+        if phonenumbers.is_valid_number(p):
+            return phonenumbers.format_number(p, phonenumbers.PhoneNumberFormat.NATIONAL)
+    except phonenumbers.NumberParseException:
+        pass
+    return s
 
 
 def _hhmm(part):
@@ -122,7 +140,7 @@ def make_store(
         "brand": brand,
         "address": {"street": street, "postal_code": postal_code, "city": city},
         "location": {"lat": lat, "lng": lng} if has_loc else None,
-        "contact": {"phone": phone, "email": email},
+        "contact": {"phone": _norm_phone(phone), "email": email},
         "opening_hours": {
             "today": normalize_hours(oh_today),
             "open_now": open_now,

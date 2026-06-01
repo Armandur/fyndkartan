@@ -206,8 +206,9 @@ kedja). Rangordnat efter värde:
   ledande land-tokens = ursprung, resten varumärke. Landnamnen hämtas från CLDR via **babel**
   (svenska, alla ISO-länder) + alias holland/england - inte hårdkodat. Verifierat att babel
   täcker alla origin-tokens i datan och skiljer Coops länder från varumärken.
-- [ ] **#5 `phone` (butiker)** - format varierar (ICA mellanslag, Coop/Willys bindestreck).
-  Display-only, lägst prio.
+- [x] **#5 `phone` FIXAD.** `_norm_phone` i make_store (write-path) formaterar till svenskt
+  nationellt standardformat via **phonenumbers** (libphonenumber) - rätt riktnummerlängd
+  (`030-4678600` -> `0304-67 86 00`). Ogiltigt/tomt lämnas. Slår igenom vid synk.
 - [ ] **#6 Frontend för `deal_type`** - visa deal-typen i erbjudande-vyn (badge multibuy/
   viktpris) + ev. filter "visa bara multibuy". Bygger ovanpå det nya `deal_type`-fältet.
 - Redan rent: `valid_to` (ISO), butikernas `brand` (snake_case-vokabulär), `comparison_value`.
