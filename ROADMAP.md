@@ -29,6 +29,16 @@ Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla ked
 | Hemköp | 206 | `/axfood/rest/store` (samma som Willys) |
 | Lidl | 212 | Schwarz geo_box-svep (`x-apikey`) |
 
+**Att göra (nya kedjor):**
+- [ ] **Utvärdera City Gross som 6:e kedja** (Bergendahls). Rekognoscera datakällor:
+  - Butiker: `citygross.se/butiker` (+ butikssida `citygross.se/butiker/<ort>/`).
+  - Butikssidan har **serviceutbud** = tags att mappa: Fisk, Deli, Bageri, Catering,
+    ATG, Självscanning, Svenska spel, Uttagsautomat (-> `classify_service`/`seed_types`).
+  - Erbjudanden: `citygross.se/matvaror/veckans-erbjudande` (+ `citygross.se/matvaror`).
+  - Kolla efter EAN + jämförpris i erbjudande-API:t (krävs för compare). Ny adapter
+    `adapters/citygross.py` + ev. `citygross_offers.py`, registrera i `sync.py` +
+    `config.CHAINS`/`CHAIN_META`/`DATA_SOURCES` + `COMPARE_CHAINS`.
+
 ---
 
 ## Steg 2 - Erbjudanden (PÅGÅR)
