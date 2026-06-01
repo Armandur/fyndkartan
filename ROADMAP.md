@@ -65,6 +65,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - [x] **code -> EAN-cache** för Axfood (byggd i steg 3, se `ean_cache` nedan).
 - [ ] Rekognoscera Lidl erbjudande-källa + EAN (regionalt via `offerRegion`).
       Lidl verkar bara ha PDF-reklamblad -> kräver fångst av nätverksanrop / OCR.
+- [ ] (uppslag) **ICA To Go** - app för obemannade ICA-butiker/kiosk/kylskåp
+      (compileit.com/uppdrag/ica-togo). Undersök om dessa platser finns i
+      storeslist (egen profil/typ) och i så fall tagga dem som obemannade
+      (ny store-type-tagg). Sannolikt inga veckoerbjudanden.
 
 ---
 
