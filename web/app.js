@@ -304,11 +304,34 @@ function sortOffers(list, mode) {
   return arr;
 }
 
+let catLabels = {};
+
+async function loadCategories() {
+  try {
+    const d = await (await fetch("/v1/categories")).json();
+    catLabels = Object.fromEntries((d.categories || []).map((c) => [c.key, c.label]));
+  } catch (e) { catLabels = {}; }
+}
+
+function populateOffersCategory() {
+  const sel = document.getElementById("offersCategory");
+  const counts = {};
+  currentOffers.forEach((o) => { if (o.category) counts[o.category] = (counts[o.category] || 0) + 1; });
+  const opts = Object.keys(counts)
+    .map((k) => ({ k, label: catLabels[k] || k, n: counts[k] }))
+    .sort((a, b) => a.label.localeCompare(b.label, "sv"));
+  sel.innerHTML = `<option value="">Alla kategorier (${currentOffers.length})</option>` +
+    opts.map((o) => `<option value="${esc(o.k)}">${esc(o.label)} (${o.n})</option>`).join("");
+  sel.value = "";
+}
+
 function renderOffers(filterText) {
   const q = (filterText || "").toLowerCase();
   const mode = document.getElementById("offersSort").value;
+  const cat = document.getElementById("offersCategory").value;
   let list = currentOffers.filter((o) =>
-    !q || `${o.name} ${o.brand} ${o.category_raw}`.toLowerCase().includes(q));
+    (!q || `${o.name} ${o.brand} ${o.category_raw}`.toLowerCase().includes(q)) &&
+    (!cat || o.category === cat));
   list = sortOffers(list, mode);
   const el = document.getElementById("offersList");
   el.innerHTML = list.length
@@ -330,6 +353,7 @@ async function showOffers(chain, storeId, name) {
     const d = await r.json();
     currentOffers = d.offers || [];
     document.getElementById("offersTitle").textContent = `${name} (${currentOffers.length})`;
+    populateOffersCategory();
     if (d.note && !currentOffers.length) {
       document.getElementById("offersList").innerHTML =
         `<div class="text-muted small p-2">${esc(d.note)}</div>`;
@@ -527,6 +551,9 @@ document.getElementById("offersFilter").addEventListener("input", (e) => {
 document.getElementById("offersSort").addEventListener("change", () => {
   renderOffers(document.getElementById("offersFilter").value.trim());
 });
+document.getElementById("offersCategory").addEventListener("change", () => {
+  renderOffers(document.getElementById("offersFilter").value.trim());
+});
 map.on("popupopen", (e) => {
   const root = e.popup.getElement();
   const s = e.popup._source && e.popup._source._store;
@@ -633,6 +660,7 @@ async function submitAuth() {
   hideWall();
   renderAuthArea();
   await loadFavorites();
+  await loadCategories();
   await loadChains();   // data laddas först efter inloggning (endpoints är gatade)
   await loadStores();
   render();
@@ -676,6 +704,7 @@ document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key
   await loadUser();
   if (state.user) {
     await loadFavorites();
+    await loadCategories();
     await loadChains();
     await loadStores();
   } else {

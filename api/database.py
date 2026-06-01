@@ -1,7 +1,10 @@
 import json
 import sqlite3
 
-from .config import BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES
+from .config import (
+    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES,
+)
+from .categories import category_for
 from .tags import build_tag
 
 
@@ -83,6 +86,16 @@ def init_db():
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
         conn.execute("DROP TABLE tag_map")
     conn.execute("CREATE TABLE IF NOT EXISTS tag_map (label TEXT PRIMARY KEY, types TEXT)")
+    # Kategori-mappning (chain_key, raw_key) -> kanonisk; seedas första gången.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS category_map (chain_key TEXT, raw_key TEXT, canonical TEXT, "
+        "PRIMARY KEY (chain_key, raw_key))"
+    )
+    if not conn.execute("SELECT 1 FROM category_map LIMIT 1").fetchone():
+        conn.executemany(
+            "INSERT OR IGNORE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
+            [(ck, rk, canon) for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()],
+        )
     # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
     conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
     if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
@@ -210,6 +223,30 @@ def delete_tag_map(label):
     conn.close()
 
 
+def load_category_map():
+    conn = get_conn()
+    rows = conn.execute("SELECT chain_key, raw_key, canonical FROM category_map").fetchall()
+    conn.close()
+    return {(r["chain_key"], r["raw_key"]): r["canonical"] for r in rows}
+
+
+def set_category_map(chain_key, raw_key, canonical):
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
+        (chain_key, raw_key, canonical),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_category_map(chain_key, raw_key):
+    conn = get_conn()
+    conn.execute("DELETE FROM category_map WHERE chain_key=? AND raw_key=?", (chain_key, raw_key))
+    conn.commit()
+    conn.close()
+
+
 def load_tag_types():
     conn = get_conn()
     rows = conn.execute("SELECT type FROM tag_types ORDER BY rowid").fetchall()
@@ -323,6 +360,7 @@ def get_store_offers(chain, store_id):
     for r in rows:
         d = dict(r)
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
+        d["category"] = category_for(chain, d.get("category_raw"))  # kanonisk, derive-at-read
         out.append(d)
     return out
 

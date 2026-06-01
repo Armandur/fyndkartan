@@ -44,6 +44,56 @@ ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 CHAINS = ["ica", "coop", "willys", "hemkop", "lidl"]
 
+# Kanonisk kategori-vokabulär (platt) för att normalisera kedjornas olika taxonomier.
+# Platt och grov (~ICA-nivå) - taket datan tillåter (Coop har bara 3 kategorier,
+# Axfood 18 fina). Editerbar i admin-UI (category_types-tabell), seedas med listan.
+CANONICAL_CATEGORIES = [
+    ("frukt_gront", "Frukt & Grönt"), ("mejeri_agg", "Mejeri & Ägg"),
+    ("kott_chark", "Kött & Chark"), ("fisk_skaldjur", "Fisk & Skaldjur"),
+    ("brod_bageri", "Bröd & Bageri"), ("skafferi", "Skafferi"),
+    ("dryck", "Dryck"), ("fryst", "Fryst"), ("godis_snacks", "Godis & Snacks"),
+    ("fardigmat", "Färdigmat"), ("vegetariskt", "Vegetariskt"),
+    ("farskvaror", "Färskvaror (övr.)"), ("halsa_skonhet", "Hälsa & Skönhet"),
+    ("hem_hushall", "Hem & Hushåll"), ("barn", "Barn"), ("djur", "Djur"),
+    ("ovrigt", "Övrigt"),
+]
+
+# Seed-mappning råkategori -> kanonisk. Nyckel = (chain_key, raw_key). Axfood
+# (willys+hemkop) delar taxonomi -> chain_key "axfood", raw_key = första pipe-segmentet.
+# ICA/Coop: chain_key = kedjan, raw_key = hela råsträngen. Editerbar (category_map).
+DEFAULT_CATEGORY_MAP = {
+    ("axfood", "skafferi"): "skafferi",
+    ("axfood", "mejeri-ost-och-agg"): "mejeri_agg",
+    ("axfood", "hem-och-hushall"): "hem_hushall",
+    ("axfood", "halsa-och-skonhet"): "halsa_skonhet",
+    ("axfood", "frukt-och-gront"): "frukt_gront",
+    ("axfood", "kott-fagel-och-chark"): "kott_chark",
+    ("axfood", "fryst"): "fryst",
+    ("axfood", "dryck"): "dryck",
+    ("axfood", "godis-snacks-och-glass"): "godis_snacks",
+    ("axfood", "brod-och-kakor"): "brod_bageri",
+    ("axfood", "djur"): "djur",
+    ("axfood", "barn"): "barn",
+    ("axfood", "fardigmat"): "fardigmat",
+    ("axfood", "fisk-och-skaldjur"): "fisk_skaldjur",
+    ("axfood", "vegetariskt"): "vegetariskt",
+    ("axfood", "apotek-och-lakemedel"): "halsa_skonhet",
+    ("axfood", "blommor-och-tillbehor"): "hem_hushall",
+    ("axfood", "delikatessen"): "skafferi",
+    ("ica", "Färskvaror"): "farskvaror",
+    ("ica", "Mejeri"): "mejeri_agg",
+    ("ica", "Frukt & Grönt"): "frukt_gront",
+    ("ica", "Skafferivaror"): "skafferi",
+    ("ica", "Djupfryst"): "fryst",
+    ("ica", "Bröd, kex & bageri"): "brod_bageri",
+    ("ica", "Hälsa & skönhet"): "halsa_skonhet",
+    ("ica", "Hem & fritid"): "hem_hushall",
+    ("ica", "Ospecificerat"): "ovrigt",
+    ("coop", "Kolonial"): "skafferi",
+    ("coop", "Färsk"): "farskvaror",
+    ("coop", "Nonfood"): "hem_hushall",
+}
+
 # Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI
 # (private_brands-tabell), seedas med listan nedan. En produkt räknas som private
 # label om dess brand (case-insensitivt) BÖRJAR med någon rot - så "ICA" fångar

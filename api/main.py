@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, config, database, details, images, matching, tags
+from . import apilog, auth, brands, categories, config, database, details, images, matching, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -62,6 +62,7 @@ async def lifespan(app: FastAPI):
     ensure_admin()
     tags.set_map(database.load_tag_map())
     tags.set_types(database.load_tag_types())
+    categories.set_map(database.load_category_map())
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
     conn.close()
@@ -915,6 +916,12 @@ async def product_image(ean: str, size: str = "default", _auth=Depends(require_c
         return JSONResponse({"detail": "Ingen bild hittades."}, status_code=404)
     path, ct = res
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/v1/categories")
+async def categories_list(_auth=Depends(require_consumer)):
+    """Kanonisk kategori-vokabulär (för filtrering i erbjudande-vyer)."""
+    return {"categories": categories.CANONICAL}
 
 
 @app.get("/v1/chains")
