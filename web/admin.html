@@ -220,7 +220,7 @@
           <thead><tr><th>Tid</th><th>Källa</th><th>Metod</th><th>Status</th><th>ms</th><th>URL</th></tr></thead>
           <tbody>${recent.map(c => `<tr><td class="text-muted">${ago(c.ts)}</td><td>${chip(c.chain)}</td>
             <td>${esc(c.method)}</td><td class="${c.status >= 400 ? "call-err" : ""}">${c.status}</td>
-            <td>${c.ms ?? "-"}</td><td class="mono text-truncate" style="max-width:340px">${esc(c.host)}${esc(c.path)}</td></tr>`).join("")
+            <td>${c.ms ?? "-"}</td><td class="mono text-truncate" style="max-width:340px">${esc(c.chain === "egen" ? "" : c.host)}${esc(c.path)}</td></tr>`).join("")
             || '<tr><td colspan="6" class="text-muted">Inga anrop.</td></tr>'}</tbody></table></div>`;
     }
 
