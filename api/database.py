@@ -4,7 +4,7 @@ import sqlite3
 from .config import (
     BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES,
 )
-from .categories import category_for
+from .categories import category_for, category_from_detail
 from .tags import build_tag
 
 
@@ -91,11 +91,12 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS category_map (chain_key TEXT, raw_key TEXT, canonical TEXT, "
         "PRIMARY KEY (chain_key, raw_key))"
     )
-    if not conn.execute("SELECT 1 FROM category_map LIMIT 1").fetchone():
-        conn.executemany(
-            "INSERT OR IGNORE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
-            [(ck, rk, canon) for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()],
-        )
+    # Alltid INSERT OR IGNORE -> nya seed-nycklar (t.ex. coop_nav) läggs till vid
+    # uppgradering utan att skriva över admin-ändringar.
+    conn.executemany(
+        "INSERT OR IGNORE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
+        [(ck, rk, canon) for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()],
+    )
     # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
     conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
     if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
@@ -360,8 +361,18 @@ def get_store_offers(chain, store_id):
     for r in rows:
         d = dict(r)
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
-        d["category"] = category_for(chain, d.get("category_raw"))  # kanonisk, derive-at-read
+        d["category"] = category_for(chain, d.get("category_raw"))  # offer-nivå (fallback)
         out.append(d)
+    # Berika: föredra produktdetalj-kategori per EAN där den finns (rikare; fixar t.ex.
+    # Willys som saknar offer-kategori). Axfood-offers har ean via ean_cache (offer_id).
+    code_eans = get_cached_eans([o["offer_id"] for o in out if not o["eans"]])
+    for o in out:
+        o["_ean"] = o["eans"][0] if o["eans"] else code_eans.get(o["offer_id"])
+    pc = get_product_categories([o["_ean"] for o in out if o.get("_ean")])
+    for o in out:
+        if o.get("_ean") and pc.get(o["_ean"]):
+            o["category"] = pc[o["_ean"]]
+        o.pop("_ean", None)
     return out
 
 
@@ -623,6 +634,28 @@ def get_product_info(ean):
     row = conn.execute("SELECT data FROM product_info WHERE ean=?", (str(ean),)).fetchone()
     conn.close()
     return json.loads(row["data"]) if row else None
+
+
+def get_product_categories(eans):
+    """{ean: kanonisk kategori} ur produktdetalj-cachen (rikare än offer-nivån).
+    Resolverar category_raw+source -> kanonisk; bara de som mappar."""
+    eans = [str(e) for e in eans if e]
+    if not eans:
+        return {}
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT ean, json_extract(data,'$.category_raw') AS raw, "
+        f"json_extract(data,'$.category_source') AS src FROM product_info "
+        f"WHERE ean IN ({','.join('?' * len(eans))})",
+        eans,
+    ).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        canon = category_from_detail(r["src"], r["raw"]) if r["raw"] else None
+        if canon:
+            out[r["ean"]] = canon
+    return out
 
 
 def save_product_info(ean, data):

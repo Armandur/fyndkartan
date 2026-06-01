@@ -36,5 +36,18 @@ def category_for(chain, raw):
     return CATEGORY_MAP.get(raw_key(chain, raw), "ovrigt")
 
 
+def category_from_detail(source, raw):
+    """Kanonisk kategori ur produktdetaljens råkategori (rikare än offer-nivån).
+    Axfood = `googleAnalyticsCategory` (pipe-path, första segmentet via axfood-mappningen);
+    Coop = `navCategories` topp-namn (egen mappning under 'coop_nav'). None om omappad."""
+    if not raw:
+        return None
+    if source in _AXFOOD:
+        return CATEGORY_MAP.get(("axfood", raw.split("|")[0]))
+    if source == "coop":
+        return CATEGORY_MAP.get(("coop_nav", raw))
+    return None
+
+
 def label(key):
     return _LABELS.get(key, key)

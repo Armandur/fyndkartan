@@ -92,6 +92,24 @@ DEFAULT_CATEGORY_MAP = {
     ("coop", "Kolonial"): "skafferi",
     ("coop", "Färsk"): "farskvaror",
     ("coop", "Nonfood"): "hem_hushall",
+    # Coop navCategories topp-namn (produktdetalj, finare än offer-nivåns 3 buckets).
+    ("coop_nav", "Frukt & Grönt"): "frukt_gront",
+    ("coop_nav", "Mejeri & Ägg"): "mejeri_agg",
+    ("coop_nav", "Ost"): "mejeri_agg",
+    ("coop_nav", "Kött & Fågel"): "kott_chark",
+    ("coop_nav", "Chark & Deli"): "kott_chark",
+    ("coop_nav", "Fisk & Skaldjur"): "fisk_skaldjur",
+    ("coop_nav", "Bröd & Kakor"): "brod_bageri",
+    ("coop_nav", "Kryddor & Smaksättare"): "skafferi",
+    ("coop_nav", "Dryck"): "dryck",
+    ("coop_nav", "Frys"): "fryst",
+    ("coop_nav", "Godis, Glass & Snacks"): "godis_snacks",
+    ("coop_nav", "Färdigmat"): "fardigmat",
+    ("coop_nav", "Vegetariskt & Veganskt"): "vegetariskt",
+    ("coop_nav", "Barn"): "barn",
+    ("coop_nav", "Djur"): "djur",
+    ("coop_nav", "Hälsa & Skönhet"): "halsa_skonhet",
+    ("coop_nav", "Hem & Hushåll"): "hem_hushall",
 }
 
 # Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI

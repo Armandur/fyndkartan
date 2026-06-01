@@ -73,6 +73,7 @@ async def _fetch_axfood(client, chain, ean):
         } if nutrition else None,
         "labels": d.get("labels") or [],
         "source": chain,
+        "category_raw": (d.get("googleAnalyticsCategory") or "").strip() or None,
     }
 
 
@@ -124,6 +125,13 @@ async def _fetch_coop(client, ean):
         for n in (p.get("nutrientLinks") or []) if (n.get("amount") or [None])[0]
     ]
     basis_q = (p.get("nutrientBasis") or {}).get("quantity")
+    # navCategories är en hierarki leaf -> topp; ta toppnamnet som kategori-nyckel.
+    nav, cat_raw = p.get("navCategories") or [], None
+    if nav:
+        n = nav[0]
+        while n.get("superCategories"):
+            n = n["superCategories"][0]
+        cat_raw = n.get("name")
     return {
         "description": s(p.get("description")),
         "ingredients": s(p.get("listOfIngredients")),
@@ -134,6 +142,7 @@ async def _fetch_coop(client, ean):
         "nutrition_basis": {"value": basis_q, "unit": "g"} if nutrition and basis_q else None,
         "labels": [],
         "source": "coop",
+        "category_raw": cat_raw,
     }
 
 
@@ -155,6 +164,12 @@ def _merge(parts):
                 labels.append(lbl)
     merged["labels"] = labels
     merged["allergens"] = extract_allergens(merged.get("ingredients"))
+    # Kategori: föredra Axfood (pipe-path resolvas via befintlig mappning), annars Coop.
+    catpart = (next((p for p in parts if p.get("source") in _AXFOOD and p.get("category_raw")), None)
+               or next((p for p in parts if p.get("category_raw")), None))
+    if catpart:
+        merged["category_raw"] = catpart["category_raw"]
+        merged["category_source"] = catpart["source"]
     return merged
 
 

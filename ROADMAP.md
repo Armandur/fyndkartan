@@ -237,12 +237,19 @@ domäner:
   nedsatt.
 - **Multibuy/medlemsmekanik** ("3 för 2", Klubbpris, "max 1 köp") måste
   normaliseras till jämförbart enhetspris - största felkällan.
-- **Kategorinormalisering:** varje kedja har egen taxonomi (ICA `articleGroup`,
-  Axfood `N0x`-koder) -> kanoniskt träd, LLM-stödd mappning. Behövs även för
-  bläddring i steg 3.
-  - [ ] **Filtrera erbjudanden på kategori** (i erbjudande-/favorit-/jämförelse-vyer)
-    när kategorinormaliseringen är på plats - kräver kanoniska kategorier, inte
-    kedjornas råa `category_raw`.
+- **Kategorinormalisering:**
+  - [x] **Fas 1 BYGGT** - kanonisk lista (17) + seed-mappning + derive-at-read
+    (`categories.py`, `category_map`) + kategori-filter i erbjudande-vyn. ~87% täckning.
+  - [x] **Fas 2 (produktdetalj-berikning) BYGGT** - kategori fångas per EAN ur
+    produktdetaljen (Axfood `googleAnalyticsCategory`, Coop `navCategories`-topp),
+    lagras i `product_info`, och föredras framför offer-nivån i `get_store_offers`
+    (fixar t.ex. Willys ovrigt -> brod_bageri). Lazy: gäller där produktinfo hämtats.
+  - [ ] **Förvärm kategori för bulk** (särskilt Willys, vars kampanj saknar kategori)
+    - bakgrundsjobb som hämtar produktdetalj för cachade offers så filtret täcker fler
+    utan att man först öppnat produkten.
+  - [ ] **Admin-flik för kategori-mappning** (spegla tagg-fliken: redigera category_map).
+  - [ ] **Kategori-filter även i compare/favorit-vyer** (nu bara enskild butiks offers).
+  - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).
 
 ---
 
