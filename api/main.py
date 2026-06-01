@@ -399,7 +399,7 @@ async def admin_calls(_=Depends(require_admin)):
 
 @app.get("/v1/admin/sources")
 async def admin_sources(_=Depends(require_admin)):
-    return {"sources": config.DATA_SOURCES}
+    return {"sources": config.DATA_SOURCES, "own_apis": config.OWN_APIS}
 
 
 @app.get("/v1/admin/categories")

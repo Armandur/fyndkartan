@@ -144,10 +144,11 @@ DEFAULT_PRIVATE_BRANDS = {
 # låter konsolens API-testare köra dem via /v1/admin/proxy (rätt nyckel/token läggs
 # på server-side). Tomt `example` = ej direkt GET-testbar (POST/bot-skyddad/ej byggt).
 DATA_SOURCES = [
+    {"chain": "ica", "what": "access-token", "url": "ica.se/e11/public-access-token", "auth": "ingen", "auth_kind": "none", "example": "https://www.ica.se/e11/public-access-token"},
     {"chain": "ica", "what": "butiker", "url": "apim-pub.gw.ica.se/.../mdsastoresearch/v1/storeslist", "auth": "Bearer (token från ica.se/e11/public-access-token)", "auth_kind": "ica", "example": "https://apim-pub.gw.ica.se/sverige/digx/mdsastoresearch/v1/storeslist?url=/&sort=FromStore&skip=0&take=5"},
     {"chain": "ica", "what": "erbjudanden", "url": "ica.se/erbjudanden/{slug}-{id}/ (weeklyOffers, server-renderad)", "auth": "ingen", "auth_kind": "none", "example": "https://www.ica.se/erbjudanden/ica-nara-a-livs-1004177/"},
     {"chain": "coop", "what": "butiker", "url": "proxy.api.coop.se/external/store/stores/map", "auth": "Ocp-Apim-Subscription-Key", "auth_kind": "coop_store", "example": "https://proxy.api.coop.se/external/store/stores/map?api-version=v2&conceptIds=12,6,95&invertFilter=true"},
-    {"chain": "coop", "what": "tjänster (detalj)", "url": "proxy.api.coop.se/external/store/stores/{ledger}", "auth": "Ocp-Apim-Subscription-Key", "auth_kind": "coop_store", "example": "https://proxy.api.coop.se/external/store/stores/196183?api-version=v5"},
+    {"chain": "coop", "what": "butiksdetalj (tjänster, concept, öppettider)", "url": "proxy.api.coop.se/external/store/stores/{ledger}", "auth": "Ocp-Apim-Subscription-Key", "auth_kind": "coop_store", "example": "https://proxy.api.coop.se/external/store/stores/196183?api-version=v5"},
     {"chain": "coop", "what": "erbjudanden", "url": "external.api.coop.se/dke/offers/{ledger}", "auth": "offers-nyckel (dkeKey)", "auth_kind": "coop_dke", "example": "https://external.api.coop.se/dke/offers/196183?api-version=v2"},
     {"chain": "willys", "what": "butiker", "url": "willys.se/axfood/rest/store", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/axfood/rest/store?online=false"},
     {"chain": "willys", "what": "tjänster", "url": "willys.se/axfoodcommercewebservices/v2/.../cms/components", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/axfoodcommercewebservices/v2/willys/cms/components?componentIds=WillysDefaultRightColumnStoreInfoComponent&storeId=2102&pageSize=1"},
@@ -161,6 +162,35 @@ DATA_SOURCES = [
     {"chain": "hemkop", "what": "produktinfo (ingredienser/näring)", "url": "hemkop.se/axfood/rest/p/{code}", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/axfood/rest/p/100053344_ST"},
     {"chain": "coop", "what": "produktinfo per EAN (POST)", "url": "external.api.coop.se/personalization/search/entities/by-id", "auth": "personalization-nyckel (skrapas)", "auth_kind": "coop_perso", "method": "POST", "body": "[\"7311870010970\"]", "example": "https://external.api.coop.se/personalization/search/entities/by-id?api-version=v1&store=251300&groups=CUSTOMER_PRIVATE&direct=false"},
     {"chain": "ica", "what": "produktinfo (bot-skyddad, Coop-fallback på EAN)", "url": "ehandel AWS-WAF-skyddad", "auth": "-", "auth_kind": "none", "example": ""},
+]
+
+# Egna /v1-endpoints som konsolen katalogiserar (testbara, med beskrivning av vad de gör).
+# Speglar DATA_SOURCES men för vårt eget API. `path` är ett körbart exempel.
+OWN_APIS = [
+    {"group": "Butiker", "method": "GET", "path": "/v1/stores/near?lat=59.33&lng=18.06&radius_km=5",
+     "desc": "Butiker inom radie (km) runt en punkt, sorterade på avstånd."},
+    {"group": "Butiker", "method": "GET", "path": "/v1/stores?chain=lidl",
+     "desc": "Hela butiksbeståndet, filtrerbart på chain och city."},
+    {"group": "Butiker", "method": "GET", "path": "/v1/stores/ica/2527",
+     "desc": "En butik med all metadata inkl. normaliserad veckoöppettid (week/exceptions)."},
+    {"group": "Butiker", "method": "GET", "path": "/v1/stores/ica/2527/offers",
+     "desc": "Butikens erbjudanden (hämtas live första gången, cachas sedan)."},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
+     "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor."},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/image",
+     "desc": "Produktbild per EAN (resizad via CDN-transform, cachad lokalt)."},
+    {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5",
+     "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt."},
+    {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/stores?stores=ica:2527,coop:598",
+     "desc": "Prisjämför erbjudanden bland specifika butiker (t.ex. favoriter)."},
+    {"group": "Metadata", "method": "GET", "path": "/v1/chains",
+     "desc": "Kedjor med metadata (namn, färg, om erbjudanden stöds) + antal butiker."},
+    {"group": "Metadata", "method": "GET", "path": "/v1/categories",
+     "desc": "Kanonisk produktkategori-vokabulär (för filtrering i erbjudande-vyer)."},
+    {"group": "Märkesvaror", "method": "GET", "path": "/v1/admin/match/suggestions?ean=7340191177482",
+     "desc": "Paringsförslag för en privat märkesvara (namn-/förpackningsbaserat)."},
+    {"group": "Märkesvaror", "method": "GET", "path": "/v1/admin/private-products?q=mj%C3%B6lk",
+     "desc": "Privata märkesvaror ur erbjudanden (sökbar lista)."},
 ]
 
 # Kanonisk vokabulär för butikstjänst-taggar. Editerbar i admin-UI (tag_types-tabell),
