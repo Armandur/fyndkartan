@@ -46,11 +46,11 @@ DEFAULT_TAG_TYPES = [
     "pharmacy", "postal", "parcel", "atg", "gambling", "parking",
     "parking_disabled", "e_charging", "bakery", "deli", "self_scan",
     "cash", "click_collect", "loyalty_app", "gift_card", "catering",
-    "recycling", "franchise", "other",
+    "recycling", "franchise", "togo", "other",
 ]
 BUILTIN_TAG_TYPES = {
     "pharmacy", "postal", "parcel", "atg", "gambling", "bakery",
-    "self_scan", "cash", "click_collect", "e_charging", "other",
+    "self_scan", "cash", "click_collect", "e_charging", "togo", "other",
 }
 
 # label = visningsnamn, color = markörfärg (kedjans profil), offers = stöder erbjudande-länk

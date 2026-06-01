@@ -140,6 +140,8 @@ def seed_types(label):
         out.append("click_collect")
     if "ladd" in t:
         out.append("e_charging")
+    if "togo" in t or "to go" in t:  # ICA To Go m.fl. - grab-and-go/obemannad
+        out.append("togo")
     # dedupe, behåll ordning
     seen, res = set(), []
     for x in out:

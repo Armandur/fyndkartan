@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from .config import DB_PATH, DEFAULT_TAG_TYPES
+from .config import BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_TAG_TYPES
 from .tags import build_tag
 
 
@@ -87,6 +87,10 @@ def init_db():
     conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
     if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
         conn.executemany("INSERT INTO tag_types (type) VALUES (?)", [(t,) for t in DEFAULT_TAG_TYPES])
+    # Säkerställ att inbyggda (seed-producerade) typer alltid finns.
+    conn.executemany(
+        "INSERT OR IGNORE INTO tag_types (type) VALUES (?)", [(t,) for t in BUILTIN_TAG_TYPES]
+    )
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
