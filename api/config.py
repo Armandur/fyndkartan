@@ -31,6 +31,11 @@ SYNC_TZ = os.getenv("SYNC_TZ", "Europe/Stockholm")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 SESSION_HTTPS_ONLY = os.getenv("SESSION_HTTPS_ONLY", "false").lower() == "true"
 
+# CORS: komma-separerad allowlist av tillåtna origins för en separat frontend-app.
+# Tom (default) = ingen CORS-middleware (oförändrat same-origin-beteende). ALDRIG "*"
+# tillsammans med credentials - bara explicita origins (cookie/auth-säkerhet).
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+
 # Konsol-admin. Seedas i admin_users vid uppstart. Sätt ADMIN_EMAIL/ADMIN_PASSWORD i
 # env (image/prod) - default-mejlen nedan är bara en generisk platshållare, INTE en
 # instansspecifik adress. Saknas ADMIN_PASSWORD genereras ett som loggas en gång.

@@ -173,9 +173,9 @@ Per-domän-REST:en är redan ren (stores/offers/products/compare/chains). Det so
 saknas för en *andra/extern* frontend är tvärgående enablers, inte fler utbrutna
 domäner:
 
-- [ ] **CORS för externa origins.** Nu bara same-origin (ingen CORSMiddleware) -> en
-  separat frontend-app (annan origin) blockeras. Lägg konfigurerbar CORS-allowlist
-  (env) för de publika `/v1`-endpoints.
+- [x] **CORS för externa origins BYGGT.** Env-allowlist `CORS_ORIGINS` (default tom =
+  oförändrat same-origin). Explicita origins + credentials, aldrig `*`. CORSMiddleware
+  läggs bara om allowlist är satt.
 - [ ] **Token-baserad slutanvändar-auth (utöver session-cookie).** Mobil/native/annan
   frontend kan inte använda cookie-flödet smidigt - lägg token-utgivning (JWT eller
   opak token) vid login så icke-webb-klienter kan anropa `/v1/favorites` m.m.

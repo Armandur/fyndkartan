@@ -89,6 +89,18 @@ app.add_middleware(
     https_only=config.SESSION_HTTPS_ONLY,
     max_age=60 * 60 * 24 * 30,
 )
+# CORS bara om en allowlist är satt (default ingen -> oförändrat same-origin). Explicita
+# origins krävs eftersom vi kör med credentials (cookies) - aldrig "*".
+if config.CORS_ORIGINS:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
 
