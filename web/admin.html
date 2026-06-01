@@ -53,6 +53,11 @@
     .mq-group:first-of-type { border-top: none; }
     .mq-thumb { width: 34px; height: 34px; flex: 0 0 34px; object-fit: contain; background: #f2f5f7; border-radius: 5px; }
     .mq-thumb-lg { width: 64px; height: 64px; flex: 0 0 64px; object-fit: contain; background: #f2f5f7; border-radius: 7px; }
+    .api-ep { border: 1px solid #e6e9ec; border-radius: 7px; padding: .4rem .6rem; margin-bottom: .4rem; }
+    .api-ep > summary { display: flex; align-items: center; gap: .5rem; cursor: pointer; list-style: revert; flex-wrap: wrap; }
+    .api-ep[open] { background: #fbfcfd; }
+    .api-ep .ep-h { font-weight: 600; font-size: .72rem; text-transform: uppercase; color: #6b7480; margin: .5rem 0 .15rem; }
+    .api-ep table td { padding: 2px 6px 2px 0; }
   </style>
 </head>
 <body>
@@ -268,18 +273,25 @@
         <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td>
         <td>${s.example ? `<button class="btn btn-sm btn-outline-dark src-test" data-url="${esc(s.example)}" data-auth="${esc(s.auth_kind || "none")}" data-method="${esc(s.method || "GET")}" data-body="${esc(s.body || "")}">Testa</button>` : '<span class="text-muted small">-</span>'}</td></tr>`).join("");
       const own = d.own_apis || [];
-      const ownRows = own.map(a => `<tr>
-        <td><span class="badge bg-secondary">${esc(a.group)}</span></td>
-        <td>${esc(a.desc)}<div class="mono small text-muted">${esc(a.method)} ${esc(a.path)}</div></td>
-        <td><button class="btn btn-sm btn-outline-dark own-test" data-path="${esc(a.path)}">Testa</button></td></tr>`).join("");
+      const fieldRows = (arr) => (arr || []).map(x =>
+        `<tr><td class="mono small" style="white-space:nowrap">${esc(x.name || x.field)}</td><td class="small">${esc(x.desc)}</td></tr>`).join("");
+      const ownCards = own.map(a => `
+        <details class="api-ep">
+          <summary>
+            <span class="badge bg-secondary">${esc(a.group)}</span>
+            <span class="mono small">${esc(a.method)} ${esc(a.path)}</span>
+            <button class="btn btn-sm btn-outline-dark own-test ms-auto" data-path="${esc(a.path)}">Testa</button>
+          </summary>
+          <div class="small text-muted mt-2">${esc(a.desc)}</div>
+          ${(a.params && a.params.length) ? `<div class="ep-h">Parametrar</div><table class="table table-sm mb-1"><tbody>${fieldRows(a.params)}</tbody></table>` : ""}
+          ${(a.returns && a.returns.length) ? `<div class="ep-h">Returnerar</div><table class="table table-sm mb-0"><tbody>${fieldRows(a.returns)}</tbody></table>` : ""}
+        </details>`).join("");
       document.getElementById("sources").innerHTML = `
         <div class="card p-3 mb-3">
           <h6>Egna API:er</h6>
-          <div class="small text-muted mb-2">Vårt eget <span class="mono">/v1</span>-API. "Testa" kör endpointen (din konsol-session följer med) och visar svaret nedan. Du kan också skriva en egen sökväg.</div>
-          <table class="table table-sm mb-2">
-            <thead><tr><th>Grupp</th><th>Beskrivning</th><th>Test</th></tr></thead>
-            <tbody>${ownRows}</tbody></table>
-          <div class="input-group input-group-sm mb-2">
+          <div class="small text-muted mb-2">Vårt eget <span class="mono">/v1</span>-API. Fäll ut en endpoint för parametrar och returnerade fält. "Testa" kör den (din konsol-session följer med) och visar svaret nedan. Du kan också skriva en egen sökväg.</div>
+          ${ownCards}
+          <div class="input-group input-group-sm mb-2 mt-3">
             <input id="apiPath" class="form-control mono" placeholder="/v1/products/{ean}" value="${esc((own[0] || {}).path || "/v1/chains")}">
             <button id="apiRun" class="btn btn-dark">Kör</button>
           </div>
@@ -292,7 +304,8 @@
           <tbody>${srcRows}</tbody></table></div>`;
       document.getElementById("apiRun").addEventListener("click", runApiTest);
       document.getElementById("apiPath").addEventListener("keydown", (e) => { if (e.key === "Enter") runApiTest(); });
-      document.querySelectorAll(".own-test").forEach(b => b.addEventListener("click", () => {
+      document.querySelectorAll(".own-test").forEach(b => b.addEventListener("click", (e) => {
+        e.preventDefault();  // hindra att <summary>-klicket fäller ut/in
         document.getElementById("apiPath").value = b.dataset.path;
         document.getElementById("apiOut").scrollIntoView({ block: "nearest" });
         runApiTest();

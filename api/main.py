@@ -78,7 +78,57 @@ async def lifespan(app: FastAPI):
     scheduler.cancel()
 
 
-app = FastAPI(title="Fyndkartan API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Fyndkartan API",
+    version="0.1.0",
+    description=(
+        "Unified store & offers-API för fem svenska matbutikskedjor (ICA, Coop, Willys, "
+        "Hemköp, Lidl). Butiker med normaliserade veckoöppettider/taggar, lazy-cachade "
+        "erbjudanden med kanonisk kategori + deal-typ, cross-chain prisjämförelse på EAN, "
+        "och EAN-global produktinfo. Hela /v1 kräver inloggning eller `X-API-Key`."
+    ),
+    lifespan=lifespan,
+)
+
+
+# OpenAPI-kurering: gruppera endpoints i /docs på path-prefix (i stället för en platt
+# lista) utan att tagga varje route manuellt.
+def _openapi_tag(path):
+    if path.startswith(("/v1/auth", "/v1/console/auth")):
+        return "Auth & konto"
+    if path.startswith("/v1/admin") or path.startswith("/v1/sync") or path.startswith("/v1/tags"):
+        return "Admin / konsol"
+    if path.startswith("/v1/products"):
+        return "Produkter"
+    if path.startswith("/v1/stores"):
+        return "Butiker"
+    if path.startswith("/v1/compare"):
+        return "Jämförelse"
+    if path.startswith("/v1/favorites"):
+        return "Favoriter"
+    if path.startswith("/v1/categories") or path.startswith("/v1/chains"):
+        return "Metadata"
+    return "Övrigt"
+
+
+def _custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+
+    schema = get_openapi(
+        title=app.title, version=app.version, description=app.description, routes=app.routes,
+    )
+    for path, methods in schema.get("paths", {}).items():
+        tag = _openapi_tag(path)
+        for op in methods.values():
+            if isinstance(op, dict):
+                op["tags"] = [tag]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _custom_openapi
 
 # Session-secret löses HÄR (vid import, före add_middleware): env eller DB-persisterad
 # (settings-tabellen). DB-värdet ligger på den persistenta volymen -> sessioner

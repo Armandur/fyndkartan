@@ -177,37 +177,116 @@ def _origin_countries():
 
 ORIGIN_COUNTRIES = _origin_countries()
 
-# Egna /v1-endpoints som konsolen katalogiserar (testbara, med beskrivning av vad de gör).
-# Speglar DATA_SOURCES men för vårt eget API. `path` är ett körbart exempel.
+# Fält-dokumentation som delas av flera endpoints (en sanningskälla för konsolens
+# per-endpoint-utfällning). Grupperade fält ("a, b") delar beskrivning.
+_RET_PRODUCT = [
+    {"field": "ean", "desc": "EAN/GTIN, eller null om okänd"},
+    {"field": "name", "desc": "Produktnamn"},
+    {"field": "brand", "desc": "Varumärke (ursprung utbrutet till origin)"},
+    {"field": "origin", "desc": "Ursprungsländer (lista) eller null"},
+    {"field": "image", "desc": "Representativ bild-URL"},
+    {"field": "category", "desc": "Kanonisk kategori-nyckel (se /v1/categories)"},
+    {"field": "package_size, package_value, package_unit", "desc": "Normaliserad förpackning"},
+    {"field": "deal_type, multibuy_qty", "desc": "flat | multibuy | by_weight (+ antal vid multibuy)"},
+    {"field": "chains", "desc": "Kedjor produkten finns hos (lista)"},
+    {"field": "price_min, price_max", "desc": "Prisintervall i kr"},
+    {"field": "offer_count", "desc": "Antal cachade butiks-erbjudanden (ej totalt antal butiker)"},
+]
+_RET_STORE = [
+    {"field": "chain, store_id, name, brand", "desc": "Identitet + kedjeprofil"},
+    {"field": "address, location", "desc": "Adress + lat/lng (null om position saknas)"},
+    {"field": "contact", "desc": "Telefon (normaliserat) + e-post"},
+    {"field": "opening_hours", "desc": "today, open_now, week[], exceptions[], raw"},
+    {"field": "tags", "desc": "Normaliserade tjänste-taggar"},
+    {"field": "links", "desc": "Butikssida, erbjudanden, e-handel"},
+]
+_RET_OFFER = [
+    {"field": "name, brand, package", "desc": "Produktidentitet"},
+    {"field": "price, price_text", "desc": "Pris + visningssträng ('2 för 39 kr')"},
+    {"field": "comparison_price, comparison_value, comparison_unit", "desc": "Jämförpris (enhetspris)"},
+    {"field": "category", "desc": "Kanonisk kategori (berikad)"},
+    {"field": "deal_type, multibuy_qty", "desc": "Normaliserad deal-typ"},
+    {"field": "package_size, package_value, package_unit", "desc": "Normaliserad förpackning"},
+    {"field": "eans, image, valid_to, member_price, savings", "desc": "EAN, bild, giltig t.o.m., medlemspris, besparing"},
+]
+_RET_PRODUCT_INFO = [
+    {"field": "ean, found", "desc": "EAN + om info hittades"},
+    {"field": "info.description, info.ingredients", "desc": "Beskrivning + ingredienslista"},
+    {"field": "info.nutrition, info.nutrition_basis", "desc": "Näringsvärden + bas (per 100 g/ml)"},
+    {"field": "info.allergens", "desc": "Allergener (ur VERSALA ord i ingredienserna)"},
+    {"field": "info.origin, info.storage, info.labels", "desc": "Ursprung, förvaring, märkningar"},
+    {"field": "info.sources", "desc": "Bidragande källor (axfood/coop ...)"},
+]
+_RET_COMPARE = [
+    {"field": "ean, name, brand, image, category", "desc": "Produktidentitet (kanonisk kategori)"},
+    {"field": "compare_by, unit", "desc": "unit_price | price + enhet (kr/kg|l|st)"},
+    {"field": "min, max, spread", "desc": "Lägsta/högsta + prisskillnad"},
+    {"field": "chains, stores", "desc": "Antal kedjor resp. butiker i gruppen"},
+    {"field": "offers[]", "desc": "Per butik: chain, store_id, price, comparison_value, deal_type, member_price ..."},
+    {"field": "variant_count, variants", "desc": "Hopslagna varianter (samma kampanj, flera EAN)"},
+]
+
+# Egna /v1-endpoints som konsolen katalogiserar: beskrivning + parametrar + returnerade
+# fält (per-endpoint-utfällning). Speglar DATA_SOURCES. `path` är ett körbart exempel.
+_P_LIMIT = {"name": "limit", "desc": "Max antal (cappas server-side)"}
+_P_CHAIN = {"name": "chain", "desc": "Begränsa till en kedja (valfritt)"}
 OWN_APIS = [
     {"group": "Butiker", "method": "GET", "path": "/v1/stores/near?lat=59.33&lng=18.06&radius_km=5",
-     "desc": "Butiker inom radie (km) runt en punkt, sorterade på avstånd."},
+     "desc": "Butiker inom radie (km) runt en punkt, sorterade på avstånd.",
+     "params": [{"name": "lat, lng", "desc": "Mittpunkt (obligatoriskt)"},
+                {"name": "radius_km", "desc": "Radie i km"}, _P_CHAIN],
+     "returns": _RET_STORE + [{"field": "distance_km", "desc": "Avstånd till punkten"}]},
     {"group": "Butiker", "method": "GET", "path": "/v1/stores?chain=lidl",
-     "desc": "Hela butiksbeståndet, filtrerbart på chain och city."},
+     "desc": "Hela butiksbeståndet, filtrerbart på chain och city.",
+     "params": [_P_CHAIN, {"name": "city", "desc": "Filtrera på ort"}], "returns": _RET_STORE},
     {"group": "Butiker", "method": "GET", "path": "/v1/stores/ica/2527",
-     "desc": "En butik med all metadata inkl. normaliserad veckoöppettid (week/exceptions)."},
+     "desc": "En butik med all metadata inkl. normaliserad veckoöppettid (week/exceptions).",
+     "params": [{"name": "chain, store_id", "desc": "Path: kedja + butiks-id"}], "returns": _RET_STORE},
     {"group": "Butiker", "method": "GET", "path": "/v1/stores/ica/2527/offers",
-     "desc": "Butikens erbjudanden (hämtas live första gången, cachas sedan)."},
+     "desc": "Butikens erbjudanden (hämtas live första gången, cachas sedan).",
+     "params": [{"name": "chain, store_id", "desc": "Path: kedja + butiks-id"}], "returns": _RET_OFFER},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/search?q=mj%C3%B6lk",
-     "desc": "Sök produkter på namn (ur erbjudande-cachen, EAN-grupperat): kedjor, prisintervall, normaliserade fält."},
+     "desc": "Sök produkter på namn (ur erbjudande-cachen, EAN-grupperat).",
+     "params": [{"name": "q", "desc": "Söktext mot produktnamn (min 2 tecken)"}, _P_LIMIT, _P_CHAIN],
+     "returns": _RET_PRODUCT},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/by-category?category=mejeri_agg",
-     "desc": "Bläddra produkter i en kanonisk kategori (ur erbjudande-cachen). Samma form som sök."},
+     "desc": "Bläddra produkter i en kanonisk kategori (ur erbjudande-cachen).",
+     "params": [{"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_LIMIT, _P_CHAIN],
+     "returns": _RET_PRODUCT},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
-     "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor."},
+     "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor.",
+     "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},
+                {"name": "prefer_chain", "desc": "Hinta rikare native-källa (valfritt)"}],
+     "returns": _RET_PRODUCT_INFO},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/image",
-     "desc": "Produktbild per EAN (resizad via CDN-transform, cachad lokalt)."},
+     "desc": "Produktbild per EAN (resizad via CDN-transform, cachad lokalt). Returnerar bild-bytes.",
+     "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},
+                {"name": "size", "desc": "thumb | default | full"}],
+     "returns": [{"field": "(binär)", "desc": "image/* - inte JSON"}]},
     {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5",
-     "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt."},
+     "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt.",
+     "params": [{"name": "lat, lng, radius_km", "desc": "Område runt punkt"},
+                {"name": "min_chains", "desc": "Minsta antal olika kedjor (default 2)"}],
+     "returns": _RET_COMPARE},
     {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/stores?stores=ica:2527,coop:598",
-     "desc": "Prisjämför erbjudanden bland specifika butiker (t.ex. favoriter)."},
+     "desc": "Prisjämför erbjudanden bland specifika butiker (t.ex. favoriter).",
+     "params": [{"name": "stores", "desc": "Komma-separerat chain:store_id"},
+                {"name": "min_chains", "desc": "Minsta antal olika kedjor (default 2)"}],
+     "returns": _RET_COMPARE},
     {"group": "Metadata", "method": "GET", "path": "/v1/chains",
-     "desc": "Kedjor med metadata (namn, färg, om erbjudanden stöds) + antal butiker."},
+     "desc": "Kedjor med metadata + antal butiker.",
+     "params": [], "returns": [{"field": "chains[]", "desc": "chain, label, color, auth, offers_supported, store_count, synced_at"}]},
     {"group": "Metadata", "method": "GET", "path": "/v1/categories",
-     "desc": "Kanonisk produktkategori-vokabulär (för filtrering i erbjudande-vyer)."},
+     "desc": "Kanonisk produktkategori-vokabulär (för filtrering i erbjudande-vyer).",
+     "params": [], "returns": [{"field": "categories[]", "desc": "key + label per kanonisk kategori"}]},
     {"group": "Märkesvaror", "method": "GET", "path": "/v1/admin/match/suggestions?ean=7340191177482",
-     "desc": "Paringsförslag för en privat märkesvara (namn-/förpackningsbaserat)."},
+     "desc": "Paringsförslag för en privat märkesvara (namn-/förpackningsbaserat).",
+     "params": [{"name": "ean", "desc": "EAN för den privata varan"}],
+     "returns": [{"field": "suggestions[]", "desc": "Kandidatprodukter med likhet (namn/förpackning)"}]},
     {"group": "Märkesvaror", "method": "GET", "path": "/v1/admin/private-products?q=mj%C3%B6lk",
-     "desc": "Privata märkesvaror ur erbjudanden (sökbar lista)."},
+     "desc": "Privata märkesvaror ur erbjudanden (sökbar lista).",
+     "params": [{"name": "q", "desc": "Söktext (valfri)"}],
+     "returns": [{"field": "products[]", "desc": "Privata märkesvaror (EAN, namn, kedja, märke)"}]},
 ]
 
 # Kanonisk vokabulär för butikstjänst-taggar. Editerbar i admin-UI (tag_types-tabell),

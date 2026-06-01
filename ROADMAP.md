@@ -184,11 +184,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **API-testverktyg i konsolen (#sources-fliken) BYGGT.** Kör egna endpoints
       (förinställda exempel + fri sökväg) och kedjornas upstream-API:er via admin-proxy
       (`/v1/admin/proxy`, whitelistade hostar, server-side nyckel/token).
-      - [ ] **Bygg ut "Egna API:er"-katalogen till per-endpoint-utfällning.** API-ytan
-        växer; i stället för en gemensam testruta ska varje endpoint kunna fällas ut och
-        visa mer info: returnerade fält + beskrivning av varje fält (gärna parametrar med),
-        och en testknapp/svarsruta per endpoint. Fält-metadatan kan komma ur kurerat
-        OpenAPI-kontrakt (se nedan) eller en utökad `OWN_APIS`-struktur.
+      - [x] **Per-endpoint-utfällning i "Egna API:er" BYGGT.** Varje endpoint är ett
+        `<details>`-kort: fäll ut för parametrar + returnerade fält (med beskrivningar) och
+        en Testa-knapp per endpoint. Fält-metadatan ligger i utökad `OWN_APIS` (delade
+        fält-listor `_RET_PRODUCT/_RET_STORE/...` som en sanningskälla).
     - [x] **Externa API-nycklar BYGGT.** Konsolflik "API-nycklar": utfärda (visas en
       gång, lagras hashad) + återkalla. `X-API-Key`-middleware validerar om nyckel skickas
       (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
@@ -250,9 +249,11 @@ domäner:
   opak bearer-token, lagras hashad) + `GET/DELETE /v1/auth/tokens`. `current_user`
   accepterar både session-cookie och `Authorization: Bearer` -> icke-webb-klienter kan
   anropa `/v1/favorites` m.m.
-- [ ] **Kurera OpenAPI-kontraktet.** `/docs` finns auto men oputsat - tagga endpoints
-  per domän, markera publikt vs admin, lägg beskrivningar/responsmodeller, så
-  integratörer har ett stabilt kontrakt att bygga mot.
+- [x] **OpenAPI-kurering (grupperat /docs) BYGGT.** Custom `app.openapi()` taggar varje
+  endpoint per path-prefix (Butiker/Produkter/Jämförelse/Metadata/Favoriter/Auth & konto/
+  Admin) utan att tagga varje route manuellt, + app-description. `/docs` är nu grupperat.
+  - [ ] Kvar: explicita Pydantic-responsmodeller för fält-typer i kontraktet (nu dokumenteras
+    fälten i konsolens OWN_APIS i stället; modeller vore en sanningskälla för båda).
 - [x] **Produktsök-endpoint BYGGT** (`GET /v1/products/search?q=&limit=&chain=`).
   `database.search_products` söker namn ur offers-cachen (Unicode-skiftlägesokänsligt),
   grupperar distinkta produkter på EAN (cross-chain) annars (kedja, namn), och returnerar
