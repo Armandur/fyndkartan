@@ -1,0 +1,17 @@
+# Hemligheter och lokal data
+.env
+stores.db
+stores.db-wal
+stores.db-shm
+
+# Källfiler från reverse-engineering (innehåller nycklar/tokens; ersatta av
+# UNIFIED-API.md/CLAUDE.md). Behålls lokalt, committas inte.
+*-butiker.md
+ica-anrop-curl.md
+
+# Python / verktyg
+.venv/
+__pycache__/
+*.pyc
+tmp/gemini/
+dev.log

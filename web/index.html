@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="sv" data-bs-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matbutiker - butikskarta</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header d-flex align-items-center px-3 gap-3">
+    <button id="navToggle" class="nav-toggle" aria-label="Visa/dölj panel">&#9776;</button>
+    <div class="brand">mat<span>butiker</span></div>
+    <div class="header-sub d-none d-md-block">Unified store API &middot; butiker &amp; erbjudanden</div>
+    <div class="ms-auto d-flex align-items-center gap-3">
+      <span id="syncBadge" class="sync-badge">&bull; laddar&hellip;</span>
+      <button id="syncBtn" class="btn btn-sm btn-outline-light">Synka om</button>
+    </div>
+  </header>
+
+  <div class="app-body">
+    <aside class="sidebar">
+      <div class="p-3 border-bottom">
+        <input id="search" type="search" class="form-control form-control-sm"
+               placeholder="Sök butik, ort eller adress&hellip;">
+        <div class="form-check form-switch mt-2 small">
+          <input class="form-check-input" type="checkbox" id="onlyOffers">
+          <label class="form-check-label" for="onlyOffers">Bara butiker med erbjudanden</label>
+        </div>
+        <div class="form-check form-switch small">
+          <input class="form-check-input" type="checkbox" id="onlyFavorites">
+          <label class="form-check-label" for="onlyFavorites">&#9733; Bara favoriter</label>
+        </div>
+        <div class="d-flex gap-2 mt-2">
+          <button id="compareBtn" class="btn btn-sm btn-dark flex-grow-1">Prisjämför här</button>
+          <select id="compareRadius" class="form-select form-select-sm" style="width:auto">
+            <option value="3">3 km</option>
+            <option value="5" selected>5 km</option>
+            <option value="10">10 km</option>
+            <option value="20">20 km</option>
+          </select>
+        </div>
+        <button id="compareFavBtn" class="btn btn-sm btn-outline-dark w-100 mt-2">&#9733; Jämför mina favoriter</button>
+      </div>
+
+      <div class="p-3 border-bottom">
+        <div class="text-uppercase text-muted small fw-semibold mb-2">Kedjor</div>
+        <div id="chainFilters" class="d-flex flex-column gap-1"></div>
+      </div>
+
+      <div class="px-3 py-2 text-muted small flex-grow-1 overflow-auto">
+        <div id="resultCount" class="fw-semibold mb-2"></div>
+        <div id="storeList" class="store-list"></div>
+      </div>
+
+      <!-- Erbjudande-panel (visas när en butiks erbjudanden laddas) -->
+      <div id="offersPanel" class="offers-panel d-none">
+        <div class="offers-head">
+          <button id="offersBack" class="btn btn-sm btn-link p-0">&larr; Tillbaka</button>
+          <div id="offersTitle" class="offers-title"></div>
+        </div>
+        <div class="d-flex gap-2 mb-2">
+          <input id="offersFilter" type="search" class="form-control form-control-sm"
+                 placeholder="Filtrera&hellip;">
+          <select id="offersSort" class="form-select form-select-sm" style="width:auto">
+            <option value="default">Ordning</option>
+            <option value="savings">Störst besparing</option>
+            <option value="price">Lägst pris</option>
+            <option value="name">A&ndash;Ö</option>
+          </select>
+        </div>
+        <div id="offersList" class="offers-list"></div>
+      </div>
+
+      <!-- Jämförelse-panel (prisjämför i närheten) -->
+      <div id="comparePanel" class="offers-panel d-none">
+        <div class="offers-head">
+          <button id="compareBack" class="btn btn-sm btn-link p-0">&larr; Tillbaka</button>
+          <div id="compareTitle" class="offers-title"></div>
+        </div>
+        <input id="compareFilter" type="search" class="form-control form-control-sm mb-2"
+               placeholder="Filtrera produkter&hellip;">
+        <div id="compareList" class="offers-list"></div>
+      </div>
+
+      <div class="p-2 border-top text-muted xsmall">
+        Kartdata &copy; OpenStreetMap-bidragsgivare
+      </div>
+    </aside>
+
+    <main id="map"></main>
+    <div class="nav-backdrop" id="navBackdrop"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
