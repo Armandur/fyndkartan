@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, categories, config, database, details, images, matching, tags
+from . import apilog, auth, brands, categories, config, database, details, images, matching, schemas, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -948,7 +948,7 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2, _auth=De
     return {"count": len(products), "stores_compared": len(rows), "products": products}
 
 
-@app.get("/v1/products/search")
+@app.get("/v1/products/search", responses={200: {"model": schemas.ProductSearchResponse}})
 async def products_search(
     q: str = Query(..., min_length=2, description="Söktext mot produktnamn"),
     limit: int = 40,
@@ -962,7 +962,7 @@ async def products_search(
     return {"query": q, "count": len(products), "products": products}
 
 
-@app.get("/v1/products/by-category")
+@app.get("/v1/products/by-category", responses={200: {"model": schemas.ProductCategoryResponse}})
 async def products_by_category(
     category: str = Query(..., description="Kanonisk kategori-nyckel (se /v1/categories)"),
     limit: int = 60,

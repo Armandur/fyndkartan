@@ -178,20 +178,11 @@ def _origin_countries():
 ORIGIN_COUNTRIES = _origin_countries()
 
 # Fält-dokumentation som delas av flera endpoints (en sanningskälla för konsolens
-# per-endpoint-utfällning). Grupperade fält ("a, b") delar beskrivning.
-_RET_PRODUCT = [
-    {"field": "ean", "desc": "EAN/GTIN, eller null om okänd"},
-    {"field": "name", "desc": "Produktnamn"},
-    {"field": "brand", "desc": "Varumärke (ursprung utbrutet till origin)"},
-    {"field": "origin", "desc": "Ursprungsländer (lista) eller null"},
-    {"field": "image", "desc": "Representativ bild-URL"},
-    {"field": "category", "desc": "Kanonisk kategori-nyckel (se /v1/categories)"},
-    {"field": "package_size, package_value, package_unit", "desc": "Normaliserad förpackning"},
-    {"field": "deal_type, multibuy_qty", "desc": "flat | multibuy | by_weight (+ antal vid multibuy)"},
-    {"field": "chains", "desc": "Kedjor produkten finns hos (lista)"},
-    {"field": "price_min, price_max", "desc": "Prisintervall i kr"},
-    {"field": "offer_count", "desc": "Antal cachade butiks-erbjudanden (ej totalt antal butiker)"},
-]
+# per-endpoint-utfällning). Där en Pydantic-modell finns deriveras fälten ur den
+# (schemas.fields_doc) så modellen är enda källan för både /docs och konsolen.
+from . import schemas
+
+_RET_PRODUCT = schemas.fields_doc(schemas.Product)
 _RET_STORE = [
     {"field": "chain, store_id, name, brand", "desc": "Identitet + kedjeprofil"},
     {"field": "address, location", "desc": "Adress + lat/lng (null om position saknas)"},
