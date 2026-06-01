@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
+import functools
+import re
+from datetime import date, datetime, timedelta, timezone
 
+import holidays as _holidays
 import phonenumbers
 
 
@@ -21,6 +24,99 @@ def _norm_phone(raw):
     except phonenumbers.NumberParseException:
         pass
     return s
+
+
+# Aftnar saknas i holidays-biblioteket (de är inte lagstadgade helgdagar) men kedjorna
+# har ofta avvikande öppettider då. Härleds som dagen-före respektive helgdag, plus de
+# fasta Julafton/Nyårsafton/Valborg.
+_EVE_BEFORE = {
+    "Midsommardagen": "Midsommarafton", "Påskdagen": "Påskafton",
+    "Pingstdagen": "Pingstafton", "Alla helgons dag": "Alla helgons afton",
+    "Trettondedag jul": "Trettondagsafton", "Juldagen": "Julafton",
+}
+# ICA anger bara helgnamn (inget datum); normalisera deras varianter mot kalendernamnen.
+_HOLIDAY_ALIASES = {"sveriges nationaldag": "nationaldagen"}
+
+
+def _norm_holiday(s):
+    t = (s or "").strip().lower()
+    return _HOLIDAY_ALIASES.get(t, t)
+
+
+@functools.lru_cache(maxsize=1)
+def _holiday_maps():
+    """(datum->namn, namn->sorterade datum) för svenska helgdagar + aftnar, för
+    innevarande och kommande år. Söndagar (som biblioteket listar) filtreras bort."""
+    years = list(range(date.today().year - 1, date.today().year + 3))
+    by_date = {}
+    for d, name in _holidays.Sweden(years=years, language="sv").items():
+        name = name.split(";")[0].strip()
+        if name != "Söndag":
+            by_date[d] = name
+    eves = {}
+    for d, name in by_date.items():
+        if name in _EVE_BEFORE:
+            eves[d - timedelta(days=1)] = _EVE_BEFORE[name]
+    for yr in years:
+        eves.setdefault(date(yr, 12, 31), "Nyårsafton")
+        eves.setdefault(date(yr, 4, 30), "Valborg")
+    for d, name in eves.items():
+        by_date.setdefault(d, name)
+    by_name = {}
+    for d, name in by_date.items():
+        by_name.setdefault(_norm_holiday(name), []).append(d)
+    for v in by_name.values():
+        v.sort()
+    return by_date, by_name
+
+
+def _holiday_name(iso_date):
+    try:
+        return _holiday_maps()[0].get(date.fromisoformat(iso_date))
+    except (ValueError, TypeError):
+        return None
+
+
+def _holiday_date(label):
+    """ISO-datum för en helgdagsetikett (nästa förekomst från idag), annars None."""
+    cands = _holiday_maps()[1].get(_norm_holiday(label))
+    if not cands:
+        return None
+    today = date.today()
+    upcoming = [d for d in cands if d >= today]
+    return (upcoming[0] if upcoming else cands[-1]).isoformat()
+
+
+def _date_from_label(label):
+    """(ISO-datum, rensad label) om labeln bär ett inbäddat datum, annars (None, label).
+    ICA-handlare skriver fritext med datum, t.ex. 'Inventering 2026-06-01'."""
+    m = re.search(r"\d{4}-\d{2}-\d{2}", label or "")
+    if not m:
+        return None, label
+    try:
+        date.fromisoformat(m.group(0))
+    except ValueError:
+        return None, label
+    cleaned = re.sub(r"\s*\d{4}-\d{2}-\d{2}\s*", " ", label).strip(" -–\t")
+    return m.group(0), (cleaned or label)
+
+
+def enrich_exceptions(exceptions):
+    """Fyll i saknat datum (ICA anger bara helgnamn) resp. saknat namn (Lidl anger bara
+    datum) via helgdagskalendern. Saknar helgdagskalendern matchning provas ett inbäddat
+    datum i fritext-labeln (butiksspecifika avvikelser som 'Inventering 2026-06-01')."""
+    for e in exceptions or []:
+        if e.get("date") and not e.get("label"):
+            e["label"] = _holiday_name(e["date"])
+        elif e.get("label") and not e.get("date"):
+            d = _holiday_date(e["label"])
+            if d:
+                e["date"] = d
+            else:
+                d2, lbl = _date_from_label(e["label"])
+                if d2:
+                    e["date"], e["label"] = d2, lbl
+    return exceptions
 
 
 def _hhmm(part):
@@ -145,7 +241,7 @@ def make_store(
             "today": normalize_hours(oh_today),
             "open_now": open_now,
             "week": week or None,
-            "exceptions": exceptions or None,
+            "exceptions": enrich_exceptions(exceptions) or None,
             "raw": raw,
         },
         "links": {

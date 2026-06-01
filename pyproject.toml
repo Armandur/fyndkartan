@@ -14,4 +14,5 @@ dependencies = [
     "itsdangerous>=2.1",
     "babel>=2.14",
     "phonenumbers>=8.13",
+    "holidays>=0.50",
 ]

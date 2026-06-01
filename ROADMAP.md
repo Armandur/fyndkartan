@@ -15,11 +15,13 @@ Unified store-API för 5 kedjor, ~2682 butiker, Leaflet/OSM-karta. Spec i
 Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla kedjor.
 
 **Att göra (öppettider):**
-- [ ] Normalisera helgdagsavvikelserna mer. Idag är de inkonsekventa mellan källor:
-  Coop/Axfood ger datum + helgnamn, ICA bara helgnamn (inget datum), Lidl bara datum
-  (inget namn). Idé: en svensk helgdagskalender som fyller i saknat datum (ICA) resp.
-  saknat namn (Lidl), så varje avvikelse får både `date` och `label`. Datum visas i UI
-  som `6/6` (utan inledande nollor) - klart.
+- [x] **Helgdagsavvikelser normaliserade.** `enrich_exceptions` i make_store fyller saknat
+  namn (Lidl: datum -> helgnamn) och saknat datum (ICA: helgnamn -> datum) via en svensk
+  helgdagskalender (**holidays**-biblioteket + härledda aftnar: Midsommarafton/Julafton/
+  Nyårsafton/Alla helgons afton m.fl., söndagar bortfiltrerade). ICA:s fritext-avvikelser
+  (`Inventering 2026-06-01`, `Pizzafredag ...`) får datum ur ett inbäddat `YYYY-MM-DD` i
+  labeln (som då rensas). Resultat: ICA 0/2442 utan datum, Lidl 0/212 utan namn. Datum
+  visas i UI som `6/6`.
 
 | Kedja | Butiker | Metod |
 |-------|--------:|-------|
