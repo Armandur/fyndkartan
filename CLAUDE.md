@@ -31,6 +31,8 @@ api/                 # Python-paketet (importeras som `api`)
   database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons()
+  apilog.py          # instrumentering av utgående anrop (make_client + ring-buffer/statistik)
+  tags.py            # tagg-normalisering: effective_type() (tag_map-override + classify_service)
   sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja
   adapters/
     base.py          # make_store(), tags_from_services(), classify_service(), normalize_hours()
@@ -40,6 +42,7 @@ api/                 # Python-paketet (importeras som `api`)
     ica_offers.py axfood_offers.py coop_offers.py   # erbjudande-adaptrar
 web/                 # frontend (statisk, ingen build)
   index.html app.js style.css   # karta + sidopanel + erbjudande-/jämförelse-paneler
+  admin.html         # admin-dashboard (/admin): översikt, API-anrop, datakällor, taggar
 pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 ```
 

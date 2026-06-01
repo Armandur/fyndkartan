@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fyndkartan - admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f8; }
+    .app-header { background: #14181f; color: #f4f6f8; }
+    .brand { font-weight: 800; letter-spacing: -.03em; }
+    .brand span { color: #19c37d; }
+    code { color: #0b6b3a; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
+    .stat { font-size: 1.6rem; font-weight: 800; }
+    table { font-size: .85rem; }
+    .st-ok { color: #137a4d; } .st-error { color: #c0392b; } .st-running { color: #b8860b; }
+    .badge-chain { color: #fff; font-weight: 700; }
+    .call-err { color: #c0392b; font-weight: 700; }
+    .attn { background: #fff7e6; }
+  </style>
+</head>
+<body>
+  <header class="app-header d-flex align-items-center px-3 py-2 gap-3">
+    <div class="brand fs-5">fynd<span>kartan</span> · admin</div>
+    <a href="/" class="ms-auto btn btn-sm btn-outline-light">&larr; Till kartan</a>
+  </header>
+
+  <div class="container-fluid p-3">
+    <ul class="nav nav-tabs mb-3" id="tabs">
+      <li class="nav-item"><button class="nav-link active" data-tab="overview">Översikt</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="calls">API-anrop</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="sources">Datakällor</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="tags">Taggar</button></li>
+    </ul>
+
+    <section id="overview" class="tab"></section>
+    <section id="calls" class="tab d-none"></section>
+    <section id="sources" class="tab d-none"></section>
+    <section id="tags" class="tab d-none"></section>
+  </div>
+
+  <script>
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", other:"#777" };
+    const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(c)}</span>`;
+    const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
+
+    let active = "overview", callsTimer = null;
+
+    async function loadOverview() {
+      const d = await (await fetch("/v1/admin/overview")).json();
+      const rows = d.chains.map(c => `<tr>
+        <td>${chip(c.chain)}</td><td>${c.store_count}</td>
+        <td class="st-${c.status}">${esc(c.status)}</td>
+        <td class="mono">${esc(c.last_sync || "-")}</td>
+        <td class="text-danger small">${esc(c.error || "")}</td></tr>`).join("");
+      document.getElementById("overview").innerHTML = `
+        <div class="row g-3 mb-3">
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">EAN i cache</div><div class="stat">${d.ean_cache}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Synk pågår</div><div class="stat">${d.syncing ? "Ja" : "Nej"}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>
+        </div>
+        <div class="card p-3"><h6>Kedjor</h6>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Kedja</th><th>Butiker</th><th>Synkstatus</th><th>Senast synk</th><th>Fel</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+    }
+
+    async function loadCalls() {
+      const d = await (await fetch("/v1/admin/calls")).json();
+      const stats = d.stats.map(s => `<tr>
+        <td>${chip(s.chain)}</td><td class="mono">${esc(s.host)}</td><td>${s.count}</td>
+        <td class="${s.errors?'call-err':''}">${s.errors}</td><td>${s.avg_ms ?? "-"} ms</td></tr>`).join("");
+      const recent = d.recent.map(c => `<tr>
+        <td class="text-muted">${ago(c.ts)}</td><td>${chip(c.chain)}</td>
+        <td>${esc(c.method)}</td>
+        <td class="${c.status>=400?'call-err':''}">${c.status}</td>
+        <td>${c.ms ?? "-"}</td>
+        <td class="mono text-truncate" style="max-width:340px">${esc(c.host)}${esc(c.path)}</td></tr>`).join("");
+      document.getElementById("calls").innerHTML = `
+        <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Per källa (sedan start)</h6>
+          <span class="ms-auto small text-muted">uppdateras var 5:e s</span></div>
+        <div class="card p-2 mb-3"><table class="table table-sm mb-0">
+          <thead><tr><th>Kedja</th><th>Host</th><th>Anrop</th><th>Fel</th><th>Snitt</th></tr></thead>
+          <tbody>${stats || '<tr><td colspan=5 class="text-muted">Inga anrop än.</td></tr>'}</tbody></table></div>
+        <h6>Senaste anrop</h6>
+        <div class="card p-2"><table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Tid</th><th>Kedja</th><th>Metod</th><th>Status</th><th>ms</th><th>URL</th></tr></thead>
+          <tbody>${recent}</tbody></table></div>`;
+    }
+
+    async function loadSources() {
+      const d = await (await fetch("/v1/admin/sources")).json();
+      const rows = d.sources.map(s => `<tr>
+        <td>${chip(s.chain)}</td><td>${esc(s.what)}</td>
+        <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td></tr>`).join("");
+      document.getElementById("sources").innerHTML = `
+        <div class="card p-3"><h6>Datakällor per kedja</h6>
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Kedja</th><th>Vad</th><th>Endpoint</th><th>Auth</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`;
+    }
+
+    async function loadTags() {
+      const d = await (await fetch("/v1/tags")).json();
+      const opts = (sel) => `<option value="">(auto)</option>` +
+        d.types.map(t => `<option value="${t}" ${t===sel?'selected':''}>${t}</option>`).join("");
+      const rows = d.tags.map(t => {
+        const attn = (!t.overridden && t.type === "other") ? "attn" : "";
+        return `<tr class="${attn}">
+          <td>${esc(t.label)}</td><td>${t.count}</td>
+          <td><select class="form-select form-select-sm tagsel" data-label="${esc(t.label)}" style="width:auto;display:inline-block">${opts(t.overridden ? t.type : "")}</select>
+            <span class="small text-muted ms-1">${t.overridden ? "manuell" : "auto → " + esc(t.type)}</span></td></tr>`;
+      }).join("");
+      document.getElementById("tags").innerHTML = `
+        <div class="card p-3"><h6>Tagg-normalisering</h6>
+        <div class="small text-muted mb-2">Råetikett → kanonisk typ. Gulmarkerade behöver mappas (auto landade på "other").
+          "(auto)" återställer till regelbaserad klassning.</div>
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Råetikett</th><th>Butiker</th><th>Kanonisk typ</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>`;
+      document.querySelectorAll(".tagsel").forEach(sel => {
+        sel.addEventListener("change", async () => {
+          const label = sel.dataset.label, type = sel.value;
+          if (!type) await fetch("/v1/tags/map/" + encodeURIComponent(label), { method: "DELETE" });
+          else await fetch("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, type }) });
+          loadTags();
+        });
+      });
+    }
+
+    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags };
+
+    function show(tab) {
+      active = tab;
+      document.querySelectorAll("#tabs .nav-link").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      document.querySelectorAll(".tab").forEach(s => s.classList.toggle("d-none", s.id !== tab));
+      LOADERS[tab]();
+      clearInterval(callsTimer);
+      if (tab === "calls") callsTimer = setInterval(loadCalls, 5000);
+    }
+
+    document.querySelectorAll("#tabs .nav-link").forEach(b =>
+      b.addEventListener("click", () => show(b.dataset.tab)));
+    show("overview");
+  </script>
+</body>
+</html>

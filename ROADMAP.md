@@ -98,16 +98,17 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
   (a) **manuellt** välja/para ihop motsvarande produkter mellan kedjor, och/eller
   (b) **smart** föreslå par baserat på namn + vikt + kategori (ev. LLM/embeddings
   som domare). Lagras som en manuell/föreslagen mappnings-tabell ovanpå EAN-matchningen.
-- [ ] **Normalisera butikernas metadata-taggar.** Idag är taggen `{type, label}`
-  där `type` klassas grovt av `classify_service` och `label` är kedjans råsträng
-  (t.ex. "Apoteksombud" / "Receptfria läkemedel" -> pharmacy). Behov: en mer
-  fullständig kanonisk vokabulär (parkering, post, ombud, laddstation, apotek...)
-  med mappning från varje kedjas råetiketter, så att man kan filtrera enhetligt
-  över kedjor.
-  - [ ] **Underhålls-UI:** ett enkelt admin-gränssnitt för att se okända/omappade
-    råetiketter och para ihop dem mot den kanoniska vokabulären, så nya etiketter
-    (när kedjorna ändrar) kan hanteras utan kodändring. Samma mönster passar för
-    märkesvaru-mappningen ovan.
+- [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
+  + editerbar `tag_map` (label -> typ). Typen härleds vid läsning (`tags.effective_type`):
+  override från tag_map annars `classify_service`-seed, så admin-ändringar slår igenom
+  direkt utan omsynk.
+- [x] **Admin-dashboard BYGGD** (`/admin`, `web/admin.html`) - blev större än bara
+  taggar: översikt (kedjor/cacher/schemaläggare), **API-anrop** (logg + statistik per
+  källa via httpx-hook i `apilog.py`), datakällor per kedja, och tagg-underhållet
+  (mappa omappade råetiketter mot vokabulären).
+  - [ ] Ev. auth på admin-muterande endpoints om instansen exponeras publikt
+    (nu öppet; normal deploy är lokal Unraid). Persistent anropslogg (nu in-memory).
+  - [ ] Samma mapp-mönster passar för märkesvaru-paringen ovan.
 - **Favoritbutiker: BYGGD (klient-lokalt).** Stjärn-toggle i butikslistan, sparas i
   `localStorage`; "Bara favoriter"-filter; "Jämför mina favoriter" -> `GET
   /v1/compare/stores?stores=chain:id,...` (delar `_compare_rows` med compare/near).

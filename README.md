@@ -39,6 +39,7 @@ startar automatiskt i bakgrunden; kartan fylls på medan kedjorna blir klara
 | `GET /v1/compare/near?lat=&lng=&radius_km=&min_chains=2` | Produkter (per EAN) på erbjudande hos >= N närliggande kedjor, jämfört på enhetspris (ICA, Coop, Willys, Hemköp) |
 | `GET /v1/compare/stores?stores=chain:id,...` | Samma jämförelse men bland angivna butiker (favoriter) |
 | `GET /v1/chains` | Integrationsstatus + antal per kedja |
+| `GET /admin` | Admin-dashboard: översikt, API-anrop (logg/statistik), datakällor, tagg-normalisering |
 | `POST /v1/sync` | Starta omsynk (butiker) |
 | `GET /v1/sync/status` | Synkstatus per kedja |
 

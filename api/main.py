@@ -4,12 +4,11 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-import httpx
-from fastapi import FastAPI, Query
+from fastapi import Body, FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import config
+from . import apilog, config, database, matching, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -21,7 +20,6 @@ from .database import (
     row_to_store,
     save_eans,
 )
-from . import matching
 from .geo import haversine
 from .sync import STATE, run_scheduler, run_sync, sync_and_warm, warm_axfood_eans
 
@@ -37,6 +35,7 @@ WEB_DIR = config.BASE_DIR / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    tags.set_map(database.load_tag_map())
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
     conn.close()
@@ -98,6 +97,99 @@ async def index():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+# ---- Admin-dashboard ----
+@app.get("/admin", response_class=FileResponse)
+async def admin_page():
+    return FileResponse(WEB_DIR / "admin.html")
+
+
+@app.get("/v1/admin/overview")
+async def admin_overview():
+    conn = get_conn()
+    store_counts = {
+        r["chain"]: r["c"] for r in conn.execute("SELECT chain, COUNT(*) c FROM stores GROUP BY chain")
+    }
+    offers_rows = conn.execute("SELECT COUNT(*) c FROM offers").fetchone()["c"]
+    offers_stores = conn.execute(
+        "SELECT COUNT(*) c FROM (SELECT 1 FROM offers GROUP BY chain, store_id)"
+    ).fetchone()["c"]
+    ean_n = conn.execute("SELECT COUNT(*) c FROM ean_cache WHERE ean!=''").fetchone()["c"]
+    conn.close()
+
+    next_run = None
+    try:
+        from croniter import croniter
+        from zoneinfo import ZoneInfo
+
+        if config.SYNC_CRON.strip():
+            now = datetime.now(ZoneInfo(config.SYNC_TZ))
+            next_run = croniter(config.SYNC_CRON, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "chains": [
+            {
+                "chain": c,
+                "store_count": store_counts.get(c, 0),
+                "status": STATE["chains"][c]["status"],
+                "last_sync": STATE["chains"][c]["last_sync"],
+                "error": STATE["chains"][c]["error"],
+            }
+            for c in config.CHAINS
+        ],
+        "offers": {"rows": offers_rows, "stores_cached": offers_stores},
+        "ean_cache": ean_n,
+        "syncing": STATE["running"],
+        "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
+    }
+
+
+@app.get("/v1/admin/calls")
+async def admin_calls():
+    return {"stats": apilog.stats(), "recent": apilog.recent()}
+
+
+@app.get("/v1/admin/sources")
+async def admin_sources():
+    return {"sources": config.DATA_SOURCES}
+
+
+@app.get("/v1/tags")
+async def list_tags():
+    counts = database.tag_label_counts()
+    items = [
+        {
+            "label": label,
+            "count": count,
+            "type": tags.effective_type(label),
+            "overridden": label in tags.TAG_TYPES,
+        }
+        for label, count in counts.items()
+    ]
+    # Behöver-uppmärksamhet (ej override och type "other") först, sedan på antal.
+    items.sort(key=lambda x: (x["overridden"] or x["type"] != "other", -x["count"]))
+    return {"types": config.CANONICAL_TAG_TYPES, "tags": items}
+
+
+@app.post("/v1/tags/map")
+async def set_tag(payload: dict = Body(...)):
+    label = (payload.get("label") or "").strip()
+    typ = (payload.get("type") or "").strip()
+    if not label or typ not in config.CANONICAL_TAG_TYPES:
+        return JSONResponse({"detail": "Ogiltig label eller typ."}, status_code=400)
+    database.set_tag_map(label, typ)
+    tags.put(label, typ)
+    return {"label": label, "type": typ}
+
+
+@app.delete("/v1/tags/map/{label:path}")
+async def del_tag(label: str):
+    database.delete_tag_map(label)
+    tags.remove(label)
+    return {"label": label, "removed": True}
 
 
 @app.get("/v1/stores")
@@ -209,7 +301,7 @@ async def store_offers(chain: str, store_id: str, refresh: bool = False):
             "note": f"Erbjudande-ingestion för {chain} är inte byggd än.",
         }
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with apilog.make_client(follow_redirects=True) as client:
             offers = await _ensure_offers(
                 client, chain, store_id, row["link_offers"], row["native"], refresh
             )
@@ -309,7 +401,7 @@ async def compare_near(
     if not near:
         return {"count": 0, "stores_compared": 0, "radius_km": radius_km, "products": []}
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with apilog.make_client(follow_redirects=True) as client:
         products = await _compare_rows(client, near, min_chains)
     return {
         "count": len(products),
@@ -346,7 +438,7 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2):
             rows.append(r)
     conn.close()
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with apilog.make_client(follow_redirects=True) as client:
         products = await _compare_rows(client, [(None, r) for r in rows], min_chains)
     return {"count": len(products), "stores_compared": len(rows), "products": products}
 

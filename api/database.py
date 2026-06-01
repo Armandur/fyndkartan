@@ -2,6 +2,7 @@ import json
 import sqlite3
 
 from .config import DB_PATH
+from .tags import effective_type
 
 
 def get_conn():
@@ -77,6 +78,8 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS ean_cache (code TEXT PRIMARY KEY, ean TEXT, fetched_at TEXT)"
     )
+    # Editerbar mappning råetikett -> kanonisk taggtyp (admin-UI override).
+    conn.execute("CREATE TABLE IF NOT EXISTS tag_map (label TEXT PRIMARY KEY, type TEXT)")
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
@@ -88,6 +91,41 @@ def _ensure_column(conn, table, col, coltype):
     cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     if col not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+
+
+def load_tag_map():
+    conn = get_conn()
+    rows = conn.execute("SELECT label, type FROM tag_map").fetchall()
+    conn.close()
+    return {r["label"]: r["type"] for r in rows}
+
+
+def set_tag_map(label, type_):
+    conn = get_conn()
+    conn.execute("INSERT OR REPLACE INTO tag_map (label, type) VALUES (?,?)", (label, type_))
+    conn.commit()
+    conn.close()
+
+
+def delete_tag_map(label):
+    conn = get_conn()
+    conn.execute("DELETE FROM tag_map WHERE label=?", (label,))
+    conn.commit()
+    conn.close()
+
+
+def tag_label_counts():
+    """Distinkta råetiketter över alla butikers tags, med antal butiker."""
+    conn = get_conn()
+    rows = conn.execute("SELECT tags FROM stores WHERE tags IS NOT NULL AND tags != '[]'").fetchall()
+    conn.close()
+    counts = {}
+    for r in rows:
+        for t in json.loads(r["tags"]):
+            lbl = t.get("label")
+            if lbl:
+                counts[lbl] = counts.get(lbl, 0) + 1
+    return counts
 
 
 def get_cached_eans(codes):
@@ -244,7 +282,11 @@ def row_to_store(r):
             "offers": r["link_offers"],
             "online_shopping": r["link_online"],
         },
-        "tags": json.loads(r["tags"]) if r["tags"] else [],
+        # Typen härleds vid läsning (label = sanning), så admin-mappningen slår igenom direkt.
+        "tags": [
+            {"type": effective_type(t.get("label")), "label": t.get("label")}
+            for t in (json.loads(r["tags"]) if r["tags"] else [])
+        ],
         "native": json.loads(r["native"]) if r["native"] else None,
         "source": {"method": r["method"], "fetched_at": r["fetched_at"]},
     }

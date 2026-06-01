@@ -3,10 +3,9 @@ import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import httpx
 from croniter import croniter
 
-from . import config
+from . import apilog, config
 from .adapters import axfood_offers, coop, hemkop, ica, lidl, willys
 from .database import get_cached_eans, get_conn, replace_chain, save_eans
 from .geo import grid
@@ -51,7 +50,7 @@ async def run_sync():
     STATE["finished_at"] = None
     boxes = grid(config.SWEDEN_BOUNDS, config.LIDL_BOX_DLAT, config.LIDL_BOX_DLNG)
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
+        async with apilog.make_client(follow_redirects=True) as client:
             await asyncio.gather(
                 _run_one("ica", ica.fetch_all(client, config.ICA_TOKEN)),
                 _run_one("coop", coop.fetch_all(client, config.COOP_KEY)),
@@ -89,7 +88,7 @@ async def warm_axfood_eans():
     conn.close()
 
     resolved = 0
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with apilog.make_client(follow_redirects=True) as client:
         for chain, ids in samples.items():
             if not ids:
                 continue
