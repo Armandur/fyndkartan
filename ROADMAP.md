@@ -314,7 +314,9 @@ domäner:
     grönsaker+kaffe). Förvärmar nu `product_info` per Coop-EAN via personalization-API:t
     (batchat, EAN-array). coop_nav-vokabulären rättad mot verkliga API-namn. Coop-täckning
     0% -> 70%; resterande ~30% är viktvaror (slump-EAN) utan produktdetalj.
-  - [ ] **Kategori-filter även i compare/favorit-vyer** (nu bara enskild butiks offers).
+  - [x] **Kategori- + deal_type-filter + sort i compare/favorit-vyer BYGGT.** Alla tre
+    erbjudande-vyerna (enskild butik, prisjämför nära, favoriters erbjudanden) har nu samma
+    kontroller: text/sort/kategori/deal. compare-produkter bär kanonisk category-nyckel.
   - [ ] Frukt/grönt-viktvaror hos Coop får `ovrigt` (ingen produktdetalj på slump-EAN);
     ev. namn-heuristik eller annan Coop-signal senare.
   - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).
