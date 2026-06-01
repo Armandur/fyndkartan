@@ -278,7 +278,13 @@ function renderProductInfo(d, chain) {
     const b = x.nutrition_basis ? ` (per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")})` : "";
     P.push(`<p class="small mb-1"><strong>Näring${b}:</strong> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</p>`);
   }
-  if (x.sources && x.sources.length) P.push(`<p class="text-muted fst-italic small mb-0">Källa: ${x.sources.map(esc).join(", ")} (samma EAN)</p>`);
+  if (x.sources && x.sources.length) {
+    const chips = x.sources.map((c) => {
+      const m = state.chains[c] || {};
+      return `<span class="badge" style="background:${m.color || "#666"};color:#fff">${esc(m.label || c)}</span>`;
+    }).join(" ");
+    P.push(`<p class="small mb-0 mt-1"><span class="text-muted">Källa:</span> ${chips}</p>`);
+  }
   return P.join("") || '<div class="text-muted small">Ingen detaljdata.</div>';
 }
 

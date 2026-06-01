@@ -115,7 +115,8 @@
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", other:"#777" };
-    const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(c)}</span>`;
+    const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl" };
+    const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(CHAIN_LABELS[c]||c)}</span>`;
     const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
 
     const gate = document.getElementById("loginGate");
@@ -575,7 +576,7 @@
         P.push(`<div><span class="fw-semibold">Näring${b}:</span> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</div>`);
       }
       if (x.labels && x.labels.length) P.push(`<div class="mt-1">${x.labels.map(l => `<span class="badge bg-light text-dark">${esc(l)}</span>`).join(" ")}</div>`);
-      if (x.sources && x.sources.length) P.push(`<div class="text-muted fst-italic mt-1">Källa: ${x.sources.map(esc).join(", ")} (samma EAN)</div>`);
+      if (x.sources && x.sources.length) P.push(`<div class="mt-1"><span class="text-muted small">Källa:</span> ${x.sources.map(chip).join(" ")}</div>`);
       return P.join("") || `<span class="text-muted">Ingen detaljdata.</span>`;
     }
 
