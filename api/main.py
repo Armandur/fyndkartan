@@ -23,7 +23,7 @@ from .database import (
 )
 from . import matching
 from .geo import haversine
-from .sync import STATE, run_scheduler, run_sync
+from .sync import STATE, run_scheduler, run_sync, sync_and_warm, warm_axfood_eans
 
 OFFERS_TTL = timedelta(hours=6)  # erbjudanden uppdateras veckovis; 6h cache räcker gott
 
@@ -41,8 +41,11 @@ async def lifespan(app: FastAPI):
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
     conn.close()
     if n == 0:
-        log.info("Cachen tom - startar synk i bakgrunden.")
-        asyncio.create_task(run_sync())
+        log.info("Cachen tom - startar synk + EAN-förvärmning i bakgrunden.")
+        asyncio.create_task(sync_and_warm())
+    else:
+        # Värm EAN-cachen vid uppstart (idempotent; snabbt när redan varm).
+        asyncio.create_task(warm_axfood_eans())
     scheduler = asyncio.create_task(run_scheduler(config.SYNC_CRON, config.SYNC_TZ))
     yield
     scheduler.cancel()

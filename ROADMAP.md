@@ -84,8 +84,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     persistent) + `axfood_offers.fetch_eans` (bunden parallellism). Compare resolvar
     bundet (`EAN_RESOLVE_CAP=150` nya/anrop), cachen warmar över tid. Alla fyra
     kedjor (ICA, Coop, Willys, Hemköp) är nu med i `COMPARE_CHAINS`.
-    - [ ] Ev. bakgrunds-/förhämtningsjobb för EAN så första compare-anropet i ett
-      område inte tar ~5s (warmar f.n. över flera anrop).
+    - [x] **EAN-förvärmning BYGGD** (`warm_axfood_eans`): bakgrundsjobb som efter
+      varje synk + vid uppstart samlar Axfood-koder från ett urval butiker
+      (kampanjerna är nationella) och fyller den globala code->EAN-cachen. Compare
+      i ett färskt område gick från ~6s till ~1,6s (bara lazy offers-hämtning kvar).
   - [x] Frontend "jämför i närheten"-vy ovanpå `/v1/compare/near` ("Prisjämför här"
         i sidopanelen -> produktkort med pris per kedja, billigast markerad).
 - **Nivå 1 - kategori + enhetspris** ("billigaste mjölk per liter"): separat feature,

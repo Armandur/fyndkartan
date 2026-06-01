@@ -7,8 +7,8 @@ import httpx
 from croniter import croniter
 
 from . import config
-from .adapters import coop, hemkop, ica, lidl, willys
-from .database import replace_chain
+from .adapters import axfood_offers, coop, hemkop, ica, lidl, willys
+from .database import get_cached_eans, get_conn, replace_chain, save_eans
 from .geo import grid
 
 log = logging.getLogger("matbutiker")
@@ -68,6 +68,63 @@ async def run_sync():
     return STATE
 
 
+# Antal butiker per Axfood-kedja att samla koder från vid förvärmning. Kampanjerna
+# är i stort nationella, så ett urval täcker nästan hela kodmängden.
+WARM_SAMPLE = 15
+
+
+async def warm_axfood_eans():
+    """Förvärm code->EAN-cachen för Willys/Hemköp så `compare` blir snabbt direkt.
+
+    Cachen (code->EAN) är global, så att värma den en gång gynnar alla områden.
+    Idempotent: bara ocachade koder slås upp."""
+    conn = get_conn()
+    samples = {}
+    for chain in ("willys", "hemkop"):
+        rows = conn.execute(
+            "SELECT store_id FROM stores WHERE chain=? ORDER BY RANDOM() LIMIT ?",
+            (chain, WARM_SAMPLE),
+        ).fetchall()
+        samples[chain] = [r["store_id"] for r in rows]
+    conn.close()
+
+    resolved = 0
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        for chain, ids in samples.items():
+            if not ids:
+                continue
+            sem = asyncio.Semaphore(6)
+
+            async def grab(sid):
+                async with sem:
+                    try:
+                        offers = await axfood_offers.fetch_offers(client, chain, sid)
+                        return [o["offer_id"] for o in offers]
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("förvärmning %s/%s misslyckades: %s", chain, sid, e)
+                        return []
+
+            lists = await asyncio.gather(*(grab(s) for s in ids))
+            codes = {c for lst in lists for c in lst}
+            cached = get_cached_eans(codes)
+            missing = [c for c in codes if c not in cached]
+            for i in range(0, len(missing), 200):
+                fetched = await axfood_offers.fetch_eans(client, chain, missing[i : i + 200])
+                save_eans(fetched)
+                resolved += sum(1 for v in fetched.values() if v)
+            log.info("EAN-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
+    log.info("EAN-förvärmning klar (%d nya EAN cachade)", resolved)
+
+
+async def sync_and_warm():
+    """Butikssynk följt av EAN-förvärmning (används av schemaläggare + uppstart)."""
+    await run_sync()
+    try:
+        await warm_axfood_eans()
+    except Exception:  # noqa: BLE001
+        log.exception("EAN-förvärmning misslyckades")
+
+
 async def run_scheduler(cron_expr, tz_name="Europe/Stockholm"):
     """Kör butikssynken enligt ett cron-uttryck (tomt/'off' = av).
 
@@ -95,6 +152,6 @@ async def run_scheduler(cron_expr, tz_name="Europe/Stockholm"):
         await asyncio.sleep(delay)
         try:
             log.info("Schemalagd synk startar")
-            await run_sync()
+            await sync_and_warm()
         except Exception:  # noqa: BLE001
             log.exception("Schemalagd synk misslyckades")
