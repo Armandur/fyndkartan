@@ -244,9 +244,10 @@ domäner:
     produktdetaljen (Axfood `googleAnalyticsCategory`, Coop `navCategories`-topp),
     lagras i `product_info`, och föredras framför offer-nivån i `get_store_offers`
     (fixar t.ex. Willys ovrigt -> brod_bageri). Lazy: gäller där produktinfo hämtats.
-  - [ ] **Förvärm kategori för bulk** (särskilt Willys, vars kampanj saknar kategori)
-    - bakgrundsjobb som hämtar produktdetalj för cachade offers så filtret täcker fler
-    utan att man först öppnat produkten.
+  - [x] **Bulk-förvärmning av kategori BYGGT.** `ean_cache` fick `category`-kolumn;
+    `warm_axfood_eans` fångar nu Axfoods `googleAnalyticsCategory` i samma `/p/{code}`-anrop
+    som EAN-warmingen. get_store_offers fyller Willys saknade kategori därifrån. Willys
+    gick 0% -> 70% täckning (warmas mot ~100% över fler körningar; koderna är nationella).
   - [ ] **Admin-flik för kategori-mappning** (spegla tagg-fliken: redigera category_map).
   - [ ] **Kategori-filter även i compare/favorit-vyer** (nu bara enskild butiks offers).
   - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).

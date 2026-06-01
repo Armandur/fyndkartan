@@ -7,7 +7,7 @@ from croniter import croniter
 
 from . import apilog, config
 from .adapters import axfood_offers, coop, hemkop, ica, lidl, willys
-from .database import get_cached_eans, get_conn, replace_chain, save_eans
+from .database import codes_missing_category, get_conn, replace_chain, save_ean_meta
 from .geo import grid
 
 log = logging.getLogger("matbutiker")
@@ -73,10 +73,11 @@ WARM_SAMPLE = 15
 
 
 async def warm_axfood_eans():
-    """Förvärm code->EAN-cachen för Willys/Hemköp så `compare` blir snabbt direkt.
+    """Förvärm code->{EAN, kategori}-cachen för Willys/Hemköp (`/p/{code}`).
 
-    Cachen (code->EAN) är global, så att värma den en gång gynnar alla områden.
-    Idempotent: bara ocachade koder slås upp."""
+    Ger snabb compare (EAN) OCH fyller Willys saknade offer-kategori (Willys-kampanjer
+    bär ingen kategori; produktdetaljen gör det). Cachen är global -> värma en gång
+    gynnar alla områden/butiker. Idempotent: bara koder utan kategori hämtas."""
     conn = get_conn()
     samples = {}
     for chain in ("willys", "hemkop"):
@@ -105,14 +106,13 @@ async def warm_axfood_eans():
 
             lists = await asyncio.gather(*(grab(s) for s in ids))
             codes = {c for lst in lists for c in lst}
-            cached = get_cached_eans(codes)
-            missing = [c for c in codes if c not in cached]
+            missing = codes_missing_category(codes)  # saknar kategori (-> även EAN hämtas)
             for i in range(0, len(missing), 200):
-                fetched = await axfood_offers.fetch_eans(client, chain, missing[i : i + 200])
-                save_eans(fetched)
-                resolved += sum(1 for v in fetched.values() if v)
-            log.info("EAN-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
-    log.info("EAN-förvärmning klar (%d nya EAN cachade)", resolved)
+                meta = await axfood_offers.fetch_p_meta(client, chain, missing[i : i + 200])
+                save_ean_meta(meta)
+                resolved += sum(1 for m in meta.values() if m.get("category"))
+            log.info("EAN/kategori-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
+    log.info("EAN/kategori-förvärmning klar (%d nya kategorier cachade)", resolved)
 
 
 async def sync_and_warm():

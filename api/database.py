@@ -190,6 +190,7 @@ def init_db():
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
+    _ensure_column(conn, "ean_cache", "category", "TEXT")  # Axfood googleAnalyticsCategory (förvärmd)
     conn.commit()
     conn.close()
 
@@ -323,6 +324,50 @@ def save_eans(mapping):
     conn.close()
 
 
+def save_ean_meta(mapping):
+    """Förvärm code -> {ean, category} (Axfood /p/{code}). category = googleAnalyticsCategory."""
+    if not mapping:
+        return
+    conn = get_conn()
+    conn.executemany(
+        "INSERT OR REPLACE INTO ean_cache (code, ean, category, fetched_at) VALUES (?,?,?,?)",
+        [(c, m.get("ean") or "", m.get("category") or "", _now()) for c, m in mapping.items()],
+    )
+    conn.commit()
+    conn.close()
+
+
+def codes_missing_category(codes):
+    """Vilka av koderna saknar category i ean_cache (ej warmade än)."""
+    codes = list(codes)
+    if not codes:
+        return []
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT code FROM ean_cache WHERE code IN ({','.join('?' * len(codes))}) "
+        f"AND category IS NOT NULL AND category != ''",
+        codes,
+    ).fetchall()
+    conn.close()
+    have = {r["code"] for r in rows}
+    return [c for c in codes if c not in have]
+
+
+def get_axfood_categories(codes):
+    """{code: category_raw} ur ean_cache för Axfood-koder (förvärmd kategori)."""
+    codes = list(codes)
+    if not codes:
+        return {}
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT code, category FROM ean_cache WHERE category IS NOT NULL AND category != '' "
+        f"AND code IN ({','.join('?' * len(codes))})",
+        codes,
+    ).fetchall()
+    conn.close()
+    return {r["code"]: r["category"] for r in rows}
+
+
 _OFFER_COLS = (
     "chain,store_id,offer_id,name,brand,package,price,price_text,comparison_price,"
     "comparison_value,comparison_unit,category_raw,category_id,mechanic_type,valid_to,"
@@ -363,8 +408,15 @@ def get_store_offers(chain, store_id):
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
         d["category"] = category_for(chain, d.get("category_raw"))  # offer-nivå (fallback)
         out.append(d)
-    # Berika: föredra produktdetalj-kategori per EAN där den finns (rikare; fixar t.ex.
-    # Willys som saknar offer-kategori). Axfood-offers har ean via ean_cache (offer_id).
+    # Axfood: fyll saknad offer-kategori (särskilt Willys) från förvärmad ean_cache
+    # (googleAnalyticsCategory per code). category_for hanterar pipe-pathens första segment.
+    if chain in ("willys", "hemkop"):
+        axc = get_axfood_categories([o["offer_id"] for o in out if not o.get("category_raw")])
+        for o in out:
+            if not o.get("category_raw") and axc.get(o["offer_id"]):
+                o["category"] = category_for(chain, axc[o["offer_id"]])
+    # Berika: föredra produktdetalj-kategori per EAN där den finns (rikast; cross-chain).
+    # Axfood-offers har ean via ean_cache (offer_id).
     code_eans = get_cached_eans([o["offer_id"] for o in out if not o["eans"]])
     for o in out:
         o["_ean"] = o["eans"][0] if o["eans"] else code_eans.get(o["offer_id"])

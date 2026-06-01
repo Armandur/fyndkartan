@@ -15,11 +15,9 @@ DOMAIN = {"willys": "www.willys.se", "hemkop": "www.hemkop.se"}
 _EAN_CONCURRENCY = 10
 
 
-async def fetch_eans(client, chain, codes):
-    """Slå upp EAN per artikelkod via produktdetaljen (`/axfood/rest/p/{code}`).
-
-    Returnerar {code: ean} (ean='' när ingen hittades). Bunden parallellism.
-    Anroparen ansvarar för cap + cachning."""
+async def fetch_p_meta(client, chain, codes):
+    """{code: {"ean":..., "category":...}} via produktdetaljen (`/axfood/rest/p/{code}`).
+    category = googleAnalyticsCategory (pipe-path). Bunden parallellism."""
     domain = DOMAIN.get(chain)
     if not domain or not codes:
         return {}
@@ -31,12 +29,19 @@ async def fetch_eans(client, chain, codes):
             try:
                 r = await client.get(f"https://{domain}/axfood/rest/p/{code}", headers=headers, timeout=15)
                 if r.status_code == 200:
-                    return code, (r.json().get("ean") or "")
+                    d = r.json()
+                    return code, {"ean": d.get("ean") or "", "category": d.get("googleAnalyticsCategory") or ""}
             except Exception as e:  # noqa: BLE001
-                log.warning("Axfood EAN %s misslyckades: %s", code, e)
-        return code, ""
+                log.warning("Axfood meta %s misslyckades: %s", code, e)
+        return code, {"ean": "", "category": ""}
 
     return dict(await asyncio.gather(*(one(c) for c in codes)))
+
+
+async def fetch_eans(client, chain, codes):
+    """{code: ean} via produktdetaljen (ean='' när ingen hittades)."""
+    meta = await fetch_p_meta(client, chain, codes)
+    return {c: m["ean"] for c, m in meta.items()}
 
 
 def _money(s):
