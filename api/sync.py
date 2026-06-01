@@ -1,8 +1,10 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
+from croniter import croniter
 
 from . import config
 from .adapters import coop, hemkop, ica, lidl, willys
@@ -66,17 +68,31 @@ async def run_sync():
     return STATE
 
 
-async def run_scheduler(interval_hours):
-    """Kör butikssynken var `interval_hours`:e timme (0/negativt = av).
+async def run_scheduler(cron_expr, tz_name="Europe/Stockholm"):
+    """Kör butikssynken enligt ett cron-uttryck (tomt/'off' = av).
 
-    Resilient: ett synkfel dödar inte loopen. Första körningen sker efter ett
-    helt intervall (uppstartssynken hanteras separat i lifespan)."""
-    if interval_hours <= 0:
-        log.info("Schemalagd synk avstängd (SYNC_INTERVAL_HOURS=%s)", interval_hours)
+    Cron ger både intervall ('0 */6 * * *') och bestämd tid ('0 4 * * *').
+    Resilient: ett synkfel dödar inte loopen. Uppstartssynken hanteras separat."""
+    expr = (cron_expr or "").strip()
+    if not expr or expr.lower() in ("off", "disabled", "none"):
+        log.info("Schemalagd synk avstängd (SYNC_CRON tomt)")
         return
-    log.info("Schemalagd synk aktiv: var %s:e timme", interval_hours)
+    if not croniter.is_valid(expr):
+        log.error("Ogiltig SYNC_CRON '%s' - schemalagd synk avstängd", expr)
+        return
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001
+        log.warning("Okänd SYNC_TZ '%s', faller tillbaka på Europe/Stockholm", tz_name)
+        tz = ZoneInfo("Europe/Stockholm")
+
+    log.info("Schemalagd synk aktiv: cron '%s' (%s)", expr, tz_name)
     while True:
-        await asyncio.sleep(interval_hours * 3600)
+        now = datetime.now(tz)
+        nxt = croniter(expr, now).get_next(datetime)
+        delay = max(1.0, (nxt - now).total_seconds())
+        log.info("Nästa schemalagda synk: %s (om %.0f min)", nxt.strftime("%Y-%m-%d %H:%M"), delay / 60)
+        await asyncio.sleep(delay)
         try:
             log.info("Schemalagd synk startar")
             await run_sync()

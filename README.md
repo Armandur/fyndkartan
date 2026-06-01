@@ -104,4 +104,4 @@ Sync-jobbet kör alla butiks-adaptrar (`app/adapters/`), normaliserar till
 mot kedjorna. Lidl sveps via ett geo_box-rutnät; övriga fyra hämtar hela
 beståndet i ett eller få anrop. Erbjudanden ligger i en separat `offers`-tabell
 med egen lazy-cache (ej del av butikssynken). Butikssynken körs dessutom på
-schema inifrån appen var `SYNC_INTERVAL_HOURS`:e timme (default 24).
+schema inifrån appen enligt `SYNC_CRON` (cron-uttryck, default dagligen 04:00).

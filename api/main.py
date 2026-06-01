@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
     if n == 0:
         log.info("Cachen tom - startar synk i bakgrunden.")
         asyncio.create_task(run_sync())
-    scheduler = asyncio.create_task(run_scheduler(config.SYNC_INTERVAL_HOURS))
+    scheduler = asyncio.create_task(run_scheduler(config.SYNC_CRON, config.SYNC_TZ))
     yield
     scheduler.cancel()
 
