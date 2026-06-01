@@ -64,3 +64,21 @@ async def run_sync():
         STATE["running"] = False
         STATE["finished_at"] = _now()
     return STATE
+
+
+async def run_scheduler(interval_hours):
+    """Kör butikssynken var `interval_hours`:e timme (0/negativt = av).
+
+    Resilient: ett synkfel dödar inte loopen. Första körningen sker efter ett
+    helt intervall (uppstartssynken hanteras separat i lifespan)."""
+    if interval_hours <= 0:
+        log.info("Schemalagd synk avstängd (SYNC_INTERVAL_HOURS=%s)", interval_hours)
+        return
+    log.info("Schemalagd synk aktiv: var %s:e timme", interval_hours)
+    while True:
+        await asyncio.sleep(interval_hours * 3600)
+        try:
+            log.info("Schemalagd synk startar")
+            await run_sync()
+        except Exception:  # noqa: BLE001
+            log.exception("Schemalagd synk misslyckades")

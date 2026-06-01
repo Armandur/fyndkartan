@@ -60,10 +60,11 @@ docker compose -f docker-compose.dev.yml up --build
 ## Synk / data
 
 - Vid första start (tom DB) körs en butikssynk automatiskt i bakgrunden (~20-30s).
-- Erbjudanden hämtas lazy per butik och cachas 6h.
-- **Schemalagd omsynk** är inte inbyggd. Lägg t.ex. en cron/systemd-timer på hosten
-  som dygnsvis kör `curl -fsS -X POST http://localhost:8000/v1/sync` (i app-containern),
-  eller en sidecar. Se ROADMAP.
+- **Schemalagd omsynk är inbyggd** i appen (intern asyncio-task, ingen extra
+  container): butikssynken körs var `SYNC_INTERVAL_HOURS`:e timme (default 24,
+  `0` = av). Sätt i `.env` eller som container-env.
+- Erbjudanden hämtas lazy per butik och cachas 6h (ingår inte i den schemalagda
+  synken). Manuell omsynk: `POST /v1/sync`.
 
 ## Nycklar
 

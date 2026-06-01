@@ -14,6 +14,10 @@ COOP_KEY = os.getenv("COOP_KEY", "")
 COOP_OFFERS_KEY = os.getenv("COOP_OFFERS_KEY", "")
 LIDL_KEY = os.getenv("LIDL_KEY", "")
 
+# Schemalagd butikssynk: kör var N:te timme (0 = av). Erbjudanden sköts av sin
+# egen 6h lazy-cache och ingår inte här.
+SYNC_INTERVAL_HOURS = int(os.getenv("SYNC_INTERVAL_HOURS", "24"))
+
 CHAINS = ["ica", "coop", "willys", "hemkop", "lidl"]
 
 # label = visningsnamn, color = markörfärg (kedjans profil), offers = stöder erbjudande-länk

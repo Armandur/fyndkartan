@@ -23,7 +23,7 @@ from .database import (
 )
 from . import matching
 from .geo import haversine
-from .sync import STATE, run_sync
+from .sync import STATE, run_scheduler, run_sync
 
 OFFERS_TTL = timedelta(hours=6)  # erbjudanden uppdateras veckovis; 6h cache räcker gott
 
@@ -43,7 +43,9 @@ async def lifespan(app: FastAPI):
     if n == 0:
         log.info("Cachen tom - startar synk i bakgrunden.")
         asyncio.create_task(run_sync())
+    scheduler = asyncio.create_task(run_scheduler(config.SYNC_INTERVAL_HOURS))
     yield
+    scheduler.cancel()
 
 
 app = FastAPI(title="Fyndkartan API", version="0.1.0", lifespan=lifespan)
