@@ -32,11 +32,12 @@ frontend anropar `/v1/...` same-origin. Splitten till två repon är billig sena
 
 ```
 api/                 # Python-paketet (importeras som `api`)
-  main.py            # FastAPI-app, lifespan, alla routes, serverar web/ statiskt
-  config.py          # env (valfria nycklar), CHAIN_META, Lidl-svepets bounds. BASE_DIR = repo-roten
-  database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict
+  main.py            # FastAPI-app, lifespan, alla routes, custom openapi() (taggar /docs per prefix), serverar web/ statiskt
+  config.py          # env (valfria nycklar), CHAIN_META, Lidl-bounds, ORIGIN_COUNTRIES (babel), OWN_APIS (konsol-katalog, returns deriveras ur schemas)
+  schemas.py         # Pydantic-responsmodeller - sanningskälla för API-kontraktet (document-only) + konsolens fält-doc (fields_doc)
+  database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict, list_products() (produktsök/kategori)
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
-  matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons() (manual_groups)
+  matching.py        # cross-chain EAN-matchning: normalize_ean(), _norm_unit() (kanonisk jämförenhet), build_comparisons()
   brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
@@ -44,18 +45,23 @@ api/                 # Python-paketet (importeras som `api`)
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
   categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
-  sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja
+  sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories() (kategori-förvärmning). STATE per kedja
   adapters/
-    base.py          # make_store(), tags_from_services(), classify_service(), normalize_hours()
+    base.py          # make_store(), tags_from_services(), normalize_hours() + week/exceptions (expand_sv_label, enrich_exceptions via holidays), _norm_phone (phonenumbers)
     ica.py coop.py willys.py hemkop.py lidl.py   # butiks-adaptrar, fetch_all() -> UnifiedStore[]
-    axfood_common.py # fetch_features() - Willys/Hemköp storeFeatures (CMS) -> tags
+    axfood_common.py # fetch_features() (CMS -> tags) + parse_week/parse_exceptions (Axfood-öppettider)
     ica_token.py keys.py     # token/nyckel-hämtning (auto-förnyelse, scrape-on-401)
     ica_offers.py axfood_offers.py coop_offers.py   # erbjudande-adaptrar
 web/                 # frontend (statisk, ingen build)
-  index.html app.js style.css   # karta + sidopanel + erbjudande-/jämförelse-paneler
-  admin.html         # API-konsol (/admin, egen admin-login): översikt+synk, API-anrop, datakällor+test, taggar, märkesvaror, API-nycklar
+  index.html app.js style.css   # karta + sidopanel + erbjudande-/jämförelse-/produktsök-paneler
+  admin.html         # API-konsol (/admin): översikt+synk, API-anrop, datakällor (egna API:er som utfällbara kort + JSON-trädvy), taggar, kategorier, märkesvaror, API-nycklar
+tests/test_schemas.py  # drift-test: verkliga svar valideras mot schemas-modellerna
 pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 ```
+
+**Beroenden utöver basstacken:** `babel` (CLDR-landnamn för brand/origin-split),
+`phonenumbers` (telefon-normalisering), `holidays` (svensk helgdagskalender för
+öppettidsavvikelser). Se `pyproject.toml`.
 
 ## Datamodell
 
@@ -168,6 +174,18 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   Konsolkontot seedas vid uppstart (`ensure_admin` -> `admin_users`) från `ADMIN_EMAIL`
   (generisk default `admin@example.com` i koden, sätts per instans via env/`.env`) +
   `ADMIN_PASSWORD` (annars genererat + loggat en gång).
+- **Produktsök/-bläddring (`database.list_products` + `GET /v1/products/search|by-category`):**
+  distinkta produkter ur **offers-cachen**, grupperade på EAN (cross-chain, Axfood-EAN via
+  `ean_cache`) annars (kedja, namn), med samma berikning som `get_store_offers` (kanonisk
+  kategori, brand/origin, package, deal_type) + kedjor + prisintervall. Namnmatchning i
+  Python (Unicode-skiftläge; SQLite `LOWER` fäller bara ASCII). Begränsning: bara butiker
+  vars offers hämtats (lazy-cache).
+- **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
+  endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
+  `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och
+  konsolens fält-doc (`config.OWN_APIS` `returns`) deriveras ur samma modeller
+  (`schemas.fields_doc`). `tests/test_schemas.py` validerar verkliga svar mot modellerna
+  (document-only enforcar inte i runtime). `app.openapi()` taggar /docs per path-prefix.
 
 ## Vanliga ändringar
 
@@ -176,8 +194,12 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **Ny erbjudande-adapter:** spegla `ica_offers.py`, koppla in i offers-routen i
   `main.py` (villkoret `if chain != "ica"`). Aktivera knappen i `web/app.js`
   (`s.chain === "ica"`).
-- **Verifiera efter ändring:** `.venv/bin/python -c "from api.main import app; print('OK')"`,
-  starta sedan om dev-servern (se Körning ovan) och kontrollera `dev.log` för fel.
+- **Ny/ändrad konsument-endpoint:** lägg/uppdatera en modell i `schemas.py`, koppla
+  `responses={200: {"model": M}}` på routen, lägg en post i `config.OWN_APIS` (med
+  `returns=schemas.fields_doc(M)`), och täck shapen i `tests/test_schemas.py`.
+- **Verifiera efter ändring:** `.venv/bin/python -c "from api.main import app; print('OK')"`
+  + `.venv/bin/python tests/test_schemas.py`, starta sedan om dev-servern (se Körning ovan)
+  och kontrollera `dev.log` för fel.
 
 ## Kända datakälle-fakta (dyrköpt research)
 

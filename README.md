@@ -1,11 +1,13 @@
 # Matbutiker - Unified Store & Offers API
 
 Ett gemensamt API för fem svenska matbutikskedjor (ICA, Coop, Willys, Hemköp,
-Lidl): hittar butiker, deras erbjudandesidor och - för ICA - de faktiska
-veckoerbjudandena, plus en webbkarta på OpenStreetMap.
+Lidl): hittar butiker (med normaliserade veckoöppettider/taggar) och - för fyra
+kedjor - de faktiska veckoerbjudandena, plus cross-chain prisjämförelse, produktsök
+och EAN-produktinfo, och en webbkarta på OpenStreetMap.
 
 - **Steg 1 (butiker):** klart - 5 kedjor, ~2682 butiker. Spec: [`UNIFIED-API.md`](UNIFIED-API.md).
-- **Steg 2 (erbjudanden):** pågår - ICA byggt, Axfood-källa klar. Status + plan: [`ROADMAP.md`](ROADMAP.md).
+- **Steg 2 (erbjudanden):** byggt för ICA, Willys, Hemköp, Coop (Lidl kvar). Status + plan: [`ROADMAP.md`](ROADMAP.md).
+- **API-kontrakt:** Pydantic-modeller i `api/schemas.py`, grupperat `/docs`.
 - **Kodbasöversikt för utveckling:** [`CLAUDE.md`](CLAUDE.md).
 
 ## Stack
@@ -38,8 +40,14 @@ startar automatiskt i bakgrunden; kartan fylls på medan kedjorna blir klara
 | `GET /v1/stores/{chain}/{store_id}/offers` | Butikens erbjudanden (lazy, 6h cache; ICA/Willys/Hemköp/Coop) |
 | `GET /v1/compare/near?lat=&lng=&radius_km=&min_chains=2` | Produkter (per EAN) på erbjudande hos >= N närliggande kedjor, jämfört på enhetspris (ICA, Coop, Willys, Hemköp) |
 | `GET /v1/compare/stores?stores=chain:id,...` | Samma jämförelse men bland angivna butiker (favoriter) |
+| `GET /v1/products/search?q=` | Sök produkter på namn (ur offers-cachen), EAN-grupperat |
+| `GET /v1/products/by-category?category=` | Bläddra produkter i en kanonisk kategori |
+| `GET /v1/products/{ean}` | EAN-produktinfo (ingredienser/näring/ursprung/allergener) |
+| `GET /v1/products/{ean}/image?size=` | Produktbild per EAN (resizad, cachad) |
+| `GET /v1/categories` | Kanonisk produktkategori-vokabulär |
 | `GET /v1/chains` | Integrationsstatus + antal per kedja |
-| `GET /admin` | Admin-dashboard: översikt, API-anrop (logg/statistik), datakällor, tagg-normalisering |
+| `GET /docs` | OpenAPI-kontrakt (grupperat per domän) |
+| `GET /admin` | API-konsol: översikt+synk, API-anrop, datakällor + egna API:er (utfällbara), taggar, kategorier, märkesvaror, API-nycklar |
 | `POST /v1/auth/register\|login\|logout`, `GET /v1/auth/me` | Konton (e-post + lösenord, session-cookie) |
 | `GET\|POST\|DELETE /v1/favorites` | Favoritbutiker knutna till kontot (inloggad); annars localStorage i klienten |
 | `POST /v1/sync` | Starta omsynk (butiker) |
@@ -61,8 +69,9 @@ Totalt ~2682 butiker i cachen (ICA 1288, Coop 722, Lidl 212, Hemköp 206, Willys
 
 - **Lidl** har ingen erbjudande-länk per butik (erbjudanden är regionala,
   `offerRegion`/`zone` sparas i `native`) och erbjudande-adaptern är inte byggd än.
-- **EAN för Willys/Hemköp** hämtas inte vid visning (ligger i produktdetaljen);
-  resolvas separat när matchningslagret byggs. ICA + Coop har EAN inline.
+- **Produktsök/-bläddring** täcker bara butiker vars erbjudanden hämtats (lazy-cache),
+  inte fulla sortiment. EAN för Willys/Hemköp resolvas via `ean_cache` (förvärmas i
+  bakgrunden); ICA + Coop har EAN inline.
 
 ## Nycklar (självförnyande)
 
