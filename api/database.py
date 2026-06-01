@@ -1,4 +1,5 @@
 import json
+import re
 import sqlite3
 
 from .config import (
@@ -442,6 +443,27 @@ def replace_store_offers(chain, store_id, offers):
         conn.close()
 
 
+# Deal-typen ligger i price_text, INTE i mechanic_type (som är opålitlig och kedje-
+# specifik: ICA "Standard" blandar platt+multibuy, Axfood "MixMatch" är platt pris osv).
+_MB_BUY_PAY = re.compile(r"k[öo]p\s*(\d+)\s*betala", re.I)   # "Köp 3 betala för 2"
+_MB_N_FOR = re.compile(r"\b(\d+)\s*f[öo]r\b", re.I)          # "3 för 95 kr"
+_BY_WEIGHT = re.compile(r"/\s*(kg|hg|g|l|liter)\b", re.I)    # "74,90 kr/kg"
+
+
+def _deal_type(price_text):
+    """Normaliserad deal-typ + ev. multibuy-antal, härledd ur price_text."""
+    t = price_text or ""
+    m = _MB_BUY_PAY.search(t)
+    if m:
+        return "multibuy", int(m.group(1))
+    m = _MB_N_FOR.search(t)
+    if m:
+        return "multibuy", int(m.group(1))
+    if _BY_WEIGHT.search(t):
+        return "by_weight", None
+    return "flat", None
+
+
 def get_store_offers(chain, store_id):
     conn = get_conn()
     rows = conn.execute(
@@ -454,6 +476,7 @@ def get_store_offers(chain, store_id):
         d = dict(r)
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
         d["category"] = category_for(chain, d.get("category_raw"))  # offer-nivå (fallback)
+        d["deal_type"], d["multibuy_qty"] = _deal_type(d.get("price_text"))
         out.append(d)
     # Axfood: fyll saknad offer-kategori (särskilt Willys) från förvärmad ean_cache
     # (googleAnalyticsCategory per code). category_for hanterar pipe-pathens första segment.

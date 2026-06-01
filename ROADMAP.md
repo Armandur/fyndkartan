@@ -189,9 +189,13 @@ kedja). Rangordnat efter värde:
   första token före whitespace/komma/slash/plus, så `liter + pant`/`kg utan spad`/
   `kg 26,67/liter` -> `l`/`kg`), och platshållaren `Inget` -> None. Verifierat: en grupp
   som blandar liter/l jämför nu på enhetspris.
-- [ ] **#2 `mechanic_type`** - onormaliserad deal-typ, helt per kedja: `Standard`/`MultiLine`
-  (ICA), `pris`/`styckpris` (Coop), `MixMatchPricePromotion`/`SubtotalOrderPromotion`
-  (Axfood). Kanonisera till t.ex. `standard`/`multibuy`/`threshold` (tag/kategori-mönstret).
+- [x] **#2 Normaliserad deal-typ (`deal_type`) FIXAD - härledd ur `price_text`.** Upptäckt
+  under bygget: `mechanic_type` är opålitlig (ICA "Standard" blandar platt pris OCH multibuy;
+  Axfood "MixMatchPricePromotion" är bara platt pris trots namnet; "SubtotalOrderPromotion"
+  är viktpris, inte threshold). Den faktiska signalen ligger i `price_text`. `_deal_type()`
+  i get_store_offers (derive-at-read) sätter `deal_type` (`multibuy`/`by_weight`/`flat`) +
+  `multibuy_qty`: `"N för M"`/`"Köp N betala"` -> multibuy, `"X kr/kg|l"` -> by_weight, annars
+  flat. Rå `mechanic_type` behålls. Coop bär ingen multibuy-text -> alltid flat (ärligt).
 - [ ] **#3 `package`** - varumärke + ordenheter inklistrade. Axfood `"ARLA, ca: 2.2kg"`,
   Coop `"900 Gram"`, ICA `"12 x 33 cl"`. Normalisera till `{value, unit}` (+ ev. approx-flagga).
 - [ ] **#4 `offers.brand`** - brand + ursprung blandat hos ICA (`"Guldfågeln.Ursprung Sverige"`)

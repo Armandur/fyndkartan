@@ -67,7 +67,9 @@ email, oh_today, open_now, link_store, link_offers, link_online) + JSON-kolumner
 
 **`offers`** (PK `(chain, store_id, offer_id)`): name, brand, package, price,
 price_text, comparison_price/value/unit, category_raw/id, mechanic_type,
-valid_to, `eans` (JSON), image, fetched_at.
+valid_to, `eans` (JSON), image, fetched_at. `get_store_offers` berikar varje rad
+med härledda fält: `category` (kanonisk), `deal_type`+`multibuy_qty` (ur `price_text`,
+inte opålitliga `mechanic_type`).
 
 UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md`.
 
