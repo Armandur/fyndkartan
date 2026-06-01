@@ -1,8 +1,8 @@
 import json
 import sqlite3
 
-from .config import DB_PATH
-from .tags import effective_type
+from .config import DB_PATH, DEFAULT_TAG_TYPES
+from .tags import build_tag
 
 
 def get_conn():
@@ -78,8 +78,15 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS ean_cache (code TEXT PRIMARY KEY, ean TEXT, fetched_at TEXT)"
     )
-    # Editerbar mappning råetikett -> kanonisk taggtyp (admin-UI override).
-    conn.execute("CREATE TABLE IF NOT EXISTS tag_map (label TEXT PRIMARY KEY, type TEXT)")
+    # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
+    _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
+    if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
+        conn.execute("DROP TABLE tag_map")
+    conn.execute("CREATE TABLE IF NOT EXISTS tag_map (label TEXT PRIMARY KEY, types TEXT)")
+    # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
+    conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
+    if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
+        conn.executemany("INSERT INTO tag_types (type) VALUES (?)", [(t,) for t in DEFAULT_TAG_TYPES])
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
@@ -95,14 +102,17 @@ def _ensure_column(conn, table, col, coltype):
 
 def load_tag_map():
     conn = get_conn()
-    rows = conn.execute("SELECT label, type FROM tag_map").fetchall()
+    rows = conn.execute("SELECT label, types FROM tag_map").fetchall()
     conn.close()
-    return {r["label"]: r["type"] for r in rows}
+    return {r["label"]: json.loads(r["types"]) for r in rows}
 
 
-def set_tag_map(label, type_):
+def set_tag_map(label, types):
     conn = get_conn()
-    conn.execute("INSERT OR REPLACE INTO tag_map (label, type) VALUES (?,?)", (label, type_))
+    conn.execute(
+        "INSERT OR REPLACE INTO tag_map (label, types) VALUES (?,?)",
+        (label, json.dumps(list(types), ensure_ascii=False)),
+    )
     conn.commit()
     conn.close()
 
@@ -114,18 +124,52 @@ def delete_tag_map(label):
     conn.close()
 
 
-def tag_label_counts():
-    """Distinkta råetiketter över alla butikers tags, med antal butiker."""
+def load_tag_types():
     conn = get_conn()
-    rows = conn.execute("SELECT tags FROM stores WHERE tags IS NOT NULL AND tags != '[]'").fetchall()
+    rows = conn.execute("SELECT type FROM tag_types ORDER BY rowid").fetchall()
     conn.close()
-    counts = {}
+    return [r["type"] for r in rows]
+
+
+def add_tag_type(type_):
+    conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO tag_types (type) VALUES (?)", (type_,))
+    conn.commit()
+    conn.close()
+
+
+def remove_tag_type(type_):
+    conn = get_conn()
+    conn.execute("DELETE FROM tag_types WHERE type=?", (type_,))
+    conn.commit()
+    conn.close()
+
+
+def tag_type_in_use(type_):
+    """True om någon tag_map-rad använder typen."""
+    conn = get_conn()
+    rows = conn.execute("SELECT types FROM tag_map").fetchall()
+    conn.close()
+    return any(type_ in json.loads(r["types"]) for r in rows)
+
+
+def tag_label_counts():
+    """Distinkta råetiketter över alla butikers tags: antal butiker + vilka kedjor."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, tags FROM stores WHERE tags IS NOT NULL AND tags != '[]'"
+    ).fetchall()
+    conn.close()
+    out = {}
     for r in rows:
         for t in json.loads(r["tags"]):
             lbl = t.get("label")
-            if lbl:
-                counts[lbl] = counts.get(lbl, 0) + 1
-    return counts
+            if not lbl:
+                continue
+            e = out.setdefault(lbl, {"count": 0, "chains": set()})
+            e["count"] += 1
+            e["chains"].add(r["chain"])
+    return out
 
 
 def get_cached_eans(codes):
@@ -282,11 +326,8 @@ def row_to_store(r):
             "offers": r["link_offers"],
             "online_shopping": r["link_online"],
         },
-        # Typen härleds vid läsning (label = sanning), så admin-mappningen slår igenom direkt.
-        "tags": [
-            {"type": effective_type(t.get("label")), "label": t.get("label")}
-            for t in (json.loads(r["tags"]) if r["tags"] else [])
-        ],
+        # Typerna härleds vid läsning (label = sanning), så admin-mappningen slår igenom direkt.
+        "tags": [build_tag(t.get("label")) for t in (json.loads(r["tags"]) if r["tags"] else [])],
         "native": json.loads(r["native"]) if r["native"] else None,
         "source": {"method": r["method"], "fetched_at": r["fetched_at"]},
     }

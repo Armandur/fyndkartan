@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -36,6 +37,7 @@ WEB_DIR = config.BASE_DIR / "web"
 async def lifespan(app: FastAPI):
     init_db()
     tags.set_map(database.load_tag_map())
+    tags.set_types(database.load_tag_types())
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
     conn.close()
@@ -85,7 +87,9 @@ def _query_stores(chain=None, city=None, q=None, brand=None, features=None, has_
     stores = [row_to_store(r) for r in rows]
     if features:
         wanted = {f.strip() for f in features.split(",") if f.strip()}
-        stores = [s for s in stores if wanted <= {t["type"] for t in s["tags"]}]
+        stores = [
+            s for s in stores if wanted <= {ty for t in s["tags"] for ty in t["types"]}
+        ]
     return stores
 
 
@@ -159,30 +163,67 @@ async def admin_sources():
 
 @app.get("/v1/tags")
 async def list_tags():
-    counts = database.tag_label_counts()
-    items = [
-        {
-            "label": label,
-            "count": count,
-            "type": tags.effective_type(label),
-            "overridden": label in tags.TAG_TYPES,
-        }
-        for label, count in counts.items()
-    ]
-    # Behöver-uppmärksamhet (ej override och type "other") först, sedan på antal.
-    items.sort(key=lambda x: (x["overridden"] or x["type"] != "other", -x["count"]))
-    return {"types": config.CANONICAL_TAG_TYPES, "tags": items}
+    from .adapters.base import classify_provider
+
+    items = []
+    for label, info in database.tag_label_counts().items():
+        types = tags.effective_types(label)
+        overridden = label in tags.TAG_MAP
+        items.append(
+            {
+                "label": label,
+                "count": info["count"],
+                "chains": sorted(info["chains"]),
+                "types": types,
+                "provider": classify_provider(label),
+                "overridden": overridden,
+            }
+        )
+    # Behöver-uppmärksamhet (ej override och bara "other") först, sedan på antal.
+    items.sort(key=lambda x: (x["overridden"] or x["types"] != ["other"], -x["count"]))
+    return {"types": tags.CANONICAL, "tags": items}
 
 
 @app.post("/v1/tags/map")
 async def set_tag(payload: dict = Body(...)):
     label = (payload.get("label") or "").strip()
-    typ = (payload.get("type") or "").strip()
-    if not label or typ not in config.CANONICAL_TAG_TYPES:
-        return JSONResponse({"detail": "Ogiltig label eller typ."}, status_code=400)
-    database.set_tag_map(label, typ)
-    tags.put(label, typ)
-    return {"label": label, "type": typ}
+    types = [t for t in (payload.get("types") or []) if tags.valid_type(t)]
+    if not label or not types:
+        return JSONResponse({"detail": "Ogiltig label eller typer."}, status_code=400)
+    database.set_tag_map(label, types)
+    tags.put(label, types)
+    return {"label": label, "types": types}
+
+
+# ---- Kanonisk vokabulär (typer) ----
+@app.get("/v1/tags/types")
+async def list_types():
+    return {"types": tags.CANONICAL, "builtin": sorted(config.BUILTIN_TAG_TYPES)}
+
+
+@app.post("/v1/tags/types")
+async def add_type(payload: dict = Body(...)):
+    raw = (payload.get("type") or "").strip().lower()
+    for a, b in (("å", "a"), ("ä", "a"), ("ö", "o"), ("é", "e"), ("ü", "u")):
+        raw = raw.replace(a, b)
+    type_ = re.sub(r"[^a-z0-9_]+", "_", raw).strip("_")
+    if not type_:
+        return JSONResponse({"detail": "Ogiltig typ."}, status_code=400)
+    if type_ not in tags.CANONICAL:
+        database.add_tag_type(type_)
+        tags.set_types(database.load_tag_types())
+    return {"type": type_, "types": tags.CANONICAL}
+
+
+@app.delete("/v1/tags/types/{type_}")
+async def remove_type(type_: str):
+    if type_ in config.BUILTIN_TAG_TYPES:
+        return JSONResponse({"detail": "Inbyggd typ kan inte tas bort."}, status_code=400)
+    if database.tag_type_in_use(type_):
+        return JSONResponse({"detail": "Typen används i en mappning."}, status_code=400)
+    database.remove_tag_type(type_)
+    tags.set_types(database.load_tag_types())
+    return {"type": type_, "removed": True, "types": tags.CANONICAL}
 
 
 @app.delete("/v1/tags/map/{label:path}")

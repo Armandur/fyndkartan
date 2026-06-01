@@ -18,6 +18,15 @@
     .badge-chain { color: #fff; font-weight: 700; }
     .call-err { color: #c0392b; font-weight: 700; }
     .attn { background: #fff7e6; }
+    .toggles { max-width: 540px; }
+    .tchip { display: inline-block; font-size: .66rem; padding: 1px 7px; margin: 1px; border-radius: 11px;
+             background: #eef1f4; color: #8b95a4; cursor: pointer; user-select: none; }
+    .tchip.on { background: #19c37d; color: #04231a; font-weight: 700; }
+    .typechip { display: inline-block; font-size: .72rem; padding: 2px 8px; border-radius: 12px;
+                background: #14181f; color: #fff; }
+    .typechip.bi { background: #d6dbe0; color: #46505c; }
+    .type-del { margin-left: 5px; cursor: pointer; opacity: .7; font-weight: 700; }
+    .type-del:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -104,29 +113,74 @@
           <tbody>${rows}</tbody></table></div>`;
     }
 
+    async function loadTypes() {
+      const d = await (await fetch("/v1/tags/types")).json();
+      const builtin = new Set(d.builtin);
+      const chips = d.types.map(t => {
+        const x = builtin.has(t) ? "" : `<span class="type-del" data-type="${t}" title="ta bort">&times;</span>`;
+        return `<span class="typechip${builtin.has(t) ? " bi" : ""}">${esc(t)}${x}</span>`;
+      }).join(" ");
+      document.getElementById("typesPanel").innerHTML = `
+        <div class="d-flex align-items-center mb-1"><h6 class="mb-0">Kanoniska typer</h6>
+          <span class="ms-2 small text-muted">inbyggda (grå) kan inte tas bort</span></div>
+        <div class="mb-2">${chips}</div>
+        <div class="input-group input-group-sm" style="max-width:320px">
+          <input id="newType" class="form-control" placeholder="ny typ (a-z, _)">
+          <button id="addType" class="btn btn-dark">Lägg till</button>
+        </div>`;
+      document.querySelectorAll(".type-del").forEach(x => x.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const r = await fetch("/v1/tags/types/" + encodeURIComponent(x.dataset.type), { method: "DELETE" });
+        if (!r.ok) alert((await r.json()).detail || "Kunde inte ta bort.");
+        loadTags();
+      }));
+      document.getElementById("addType").addEventListener("click", async () => {
+        const v = document.getElementById("newType").value.trim();
+        if (!v) return;
+        await fetch("/v1/tags/types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: v }) });
+        loadTags();
+      });
+    }
+
     async function loadTags() {
+      document.getElementById("tags").innerHTML =
+        `<div id="typesPanel" class="card p-3 mb-3"></div><div id="tagTable" class="card p-3"></div>`;
+      await loadTypes();
       const d = await (await fetch("/v1/tags")).json();
-      const opts = (sel) => `<option value="">(auto)</option>` +
-        d.types.map(t => `<option value="${t}" ${t===sel?'selected':''}>${t}</option>`).join("");
       const rows = d.tags.map(t => {
-        const attn = (!t.overridden && t.type === "other") ? "attn" : "";
-        return `<tr class="${attn}">
-          <td>${esc(t.label)}</td><td>${t.count}</td>
-          <td><select class="form-select form-select-sm tagsel" data-label="${esc(t.label)}" style="width:auto;display:inline-block">${opts(t.overridden ? t.type : "")}</select>
-            <span class="small text-muted ms-1">${t.overridden ? "manuell" : "auto → " + esc(t.type)}</span></td></tr>`;
+        const attn = (!t.overridden && t.types.length === 1 && t.types[0] === "other") ? "attn" : "";
+        const chains = t.chains.map(chip).join(" ");
+        const prov = t.provider ? `<span class="badge bg-secondary ms-1">${esc(t.provider)}</span>` : "";
+        const chips = d.types.map(ty =>
+          `<span class="tchip${t.types.includes(ty) ? " on" : ""}" data-type="${ty}">${ty}</span>`).join("");
+        return `<tr class="${attn}" data-label="${esc(t.label)}">
+          <td>${esc(t.label)}${prov}</td>
+          <td>${chains}</td>
+          <td>${t.count}</td>
+          <td><div class="toggles">${chips}</div>
+            <button class="btn btn-sm btn-link p-0 auto-btn">↺ auto</button>
+            <span class="small text-muted ms-2">${t.overridden ? "manuell" : "auto"}</span></td></tr>`;
       }).join("");
-      document.getElementById("tags").innerHTML = `
-        <div class="card p-3"><h6>Tagg-normalisering</h6>
-        <div class="small text-muted mb-2">Råetikett → kanonisk typ. Gulmarkerade behöver mappas (auto landade på "other").
-          "(auto)" återställer till regelbaserad klassning.</div>
+      document.getElementById("tagTable").innerHTML = `
+        <h6>Tagg-normalisering</h6>
+        <div class="small text-muted mb-2">Klicka typ-chip för att (av)markera. En tagg kan ha flera typer
+          (t.ex. "Posten Brev &amp; paket" = postal + parcel). Gulmarkerade behöver mappas. "↺ auto" återställer.</div>
         <table class="table table-sm align-middle mb-0">
-          <thead><tr><th>Råetikett</th><th>Butiker</th><th>Kanonisk typ</th></tr></thead>
-          <tbody>${rows}</tbody></table></div>`;
-      document.querySelectorAll(".tagsel").forEach(sel => {
-        sel.addEventListener("change", async () => {
-          const label = sel.dataset.label, type = sel.value;
-          if (!type) await fetch("/v1/tags/map/" + encodeURIComponent(label), { method: "DELETE" });
-          else await fetch("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, type }) });
+          <thead><tr><th>Råetikett</th><th>Kedjor</th><th>Butiker</th><th>Kanoniska typer</th></tr></thead>
+          <tbody>${rows}</tbody></table>`;
+      document.querySelectorAll("#tags .tchip").forEach(c => {
+        c.addEventListener("click", async () => {
+          const tr = c.closest("tr");
+          c.classList.toggle("on");
+          const types = [...tr.querySelectorAll(".tchip.on")].map(x => x.dataset.type);
+          if (!types.length) { c.classList.add("on"); return; }  // minst en typ
+          await fetch("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: tr.dataset.label, types }) });
+          loadTags();
+        });
+      });
+      document.querySelectorAll("#tags .auto-btn").forEach(b => {
+        b.addEventListener("click", async () => {
+          await fetch("/v1/tags/map/" + encodeURIComponent(b.closest("tr").dataset.label), { method: "DELETE" });
           loadTags();
         });
       });
@@ -136,6 +190,7 @@
 
     function show(tab) {
       active = tab;
+      if (location.hash.slice(1) !== tab) location.hash = tab;
       document.querySelectorAll("#tabs .nav-link").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
       document.querySelectorAll(".tab").forEach(s => s.classList.toggle("d-none", s.id !== tab));
       LOADERS[tab]();
@@ -143,9 +198,18 @@
       if (tab === "calls") callsTimer = setInterval(loadCalls, 5000);
     }
 
+    const tabFromHash = () => {
+      const t = location.hash.slice(1);
+      return LOADERS[t] ? t : "overview";
+    };
+
     document.querySelectorAll("#tabs .nav-link").forEach(b =>
       b.addEventListener("click", () => show(b.dataset.tab)));
-    show("overview");
+    window.addEventListener("hashchange", () => {
+      const t = tabFromHash();
+      if (t !== active) show(t);
+    });
+    show(tabFromHash());
   </script>
 </body>
 </html>

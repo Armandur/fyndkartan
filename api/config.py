@@ -39,14 +39,19 @@ DATA_SOURCES = [
     {"chain": "lidl", "what": "erbjudanden", "url": "regionalt (offerRegion) - ej byggt", "auth": "-"},
 ]
 
-# Kanonisk vokabulär för butikstjänst-taggar. Råetiketter (kedjespecifika) mappas
-# hit via classify_service (seed) + en editerbar tag_map (admin-UI, override).
-CANONICAL_TAG_TYPES = [
+# Kanonisk vokabulär för butikstjänst-taggar. Editerbar i admin-UI (tag_types-tabell),
+# seedas med listan nedan. BUILTIN är de typer seed_types kan producera - de skyddas
+# från radering (annars blir seed-output ogiltig).
+DEFAULT_TAG_TYPES = [
     "pharmacy", "postal", "parcel", "atg", "gambling", "parking",
     "parking_disabled", "e_charging", "bakery", "deli", "self_scan",
     "cash", "click_collect", "loyalty_app", "gift_card", "catering",
     "recycling", "franchise", "other",
 ]
+BUILTIN_TAG_TYPES = {
+    "pharmacy", "postal", "parcel", "atg", "gambling", "bakery",
+    "self_scan", "cash", "click_collect", "e_charging", "other",
+}
 
 # label = visningsnamn, color = markörfärg (kedjans profil), offers = stöder erbjudande-länk
 CHAIN_META = {

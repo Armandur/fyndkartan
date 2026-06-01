@@ -113,3 +113,58 @@ def classify_service(s):
     if "ladd" in t:
         return "e_charging"
     return "other"
+
+
+def seed_types(label):
+    """Regelbaserad seed: lista av kanoniska typer (kan vara flera, t.ex. en
+    'Posten Brev & paket' är både postal och parcel). Override sker via tag_map."""
+    t = (label or "").lower()
+    out = []
+    if "apotek" in t or "läkemedel" in t:
+        out.append("pharmacy")
+    if "atg" in t:
+        out.append("atg")
+    if "post" in t or "frimärk" in t:
+        out.append("postal")
+    if any(x in t for x in ("dhl", "schenker", "privpak", "instabox", "bring", "budbee", "paket")):
+        out.append("parcel")
+    if "spel" in t:
+        out.append("gambling")
+    if "bröd" in t or "bageri" in t or "bakat" in t:
+        out.append("bakery")
+    if "scan" in t or "självscan" in t:
+        out.append("self_scan")
+    if "kontant" in t or "uttag" in t:
+        out.append("cash")
+    if "hämta" in t or "e-handel" in t:
+        out.append("click_collect")
+    if "ladd" in t:
+        out.append("e_charging")
+    # dedupe, behåll ordning
+    seen, res = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x)
+            res.append(x)
+    return res or ["other"]
+
+
+def classify_provider(label):
+    """Speditör/aktör för paket-/post-taggar (annars None). Behålls vid sidan av
+    den kanoniska typen så man vet *vilken* speditör ett paketombud gäller."""
+    t = (label or "").lower()
+    if "dhl" in t:
+        return "DHL"
+    if "schenker" in t or "privpak" in t:
+        return "Schenker"
+    if "dsv" in t:
+        return "DSV"
+    if "instabox" in t:
+        return "Instabox"
+    if "budbee" in t:
+        return "Budbee"
+    if "bring" in t:
+        return "Bring"
+    if "postnord" in t or "posten" in t or "postombud" in t:
+        return "PostNord"
+    return None

@@ -1,31 +1,51 @@
 """Normalisering av butikstjänst-taggar.
 
-Råetiketten (kedjespecifik, t.ex. "Receptfria läkemedel") får en kanonisk typ
-via:
+Råetiketten (kedjespecifik, t.ex. "Posten Brev & paket") får en lista av
+kanoniska typer (en tagg kan vara flera, t.ex. postal + parcel) via:
   1. en editerbar override-mappning (tag_map, sätts i admin-UI), annars
-  2. den regelbaserade `classify_service` (seed).
+  2. den regelbaserade `seed_types` (seed).
 
-Typen beräknas vid läsning, så ändringar i admin-UI:t slår igenom direkt utan
-omsynk."""
+För paket-/post-taggar bevaras dessutom speditören (`provider`, t.ex. DHL/
+PostNord) vid sidan av typerna. Typerna härleds vid läsning, så ändringar i
+admin-UI:t slår igenom direkt utan omsynk."""
 
-from .adapters.base import classify_service
+from .adapters.base import classify_provider, seed_types
 
-# label -> kanonisk typ (admin-override). Laddas från DB vid uppstart.
-TAG_TYPES = {}
+# label -> [kanoniska typer] (admin-override). Laddas från DB vid uppstart.
+TAG_MAP = {}
+
+# Aktuell kanonisk vokabulär (editerbar i admin-UI). Laddas från DB vid uppstart.
+CANONICAL = []
 
 
-def effective_type(label):
-    return TAG_TYPES.get(label) or classify_service(label)
+def set_types(types):
+    CANONICAL[:] = list(types)
+
+
+def valid_type(t):
+    return t in CANONICAL
+
+
+def effective_types(label):
+    return TAG_MAP.get(label) or seed_types(label)
+
+
+def build_tag(label):
+    tag = {"types": effective_types(label), "label": label}
+    provider = classify_provider(label)
+    if provider:
+        tag["provider"] = provider
+    return tag
 
 
 def set_map(mapping):
-    TAG_TYPES.clear()
-    TAG_TYPES.update(mapping or {})
+    TAG_MAP.clear()
+    TAG_MAP.update(mapping or {})
 
 
-def put(label, type_):
-    TAG_TYPES[label] = type_
+def put(label, types):
+    TAG_MAP[label] = list(types)
 
 
 def remove(label):
-    TAG_TYPES.pop(label, None)
+    TAG_MAP.pop(label, None)
