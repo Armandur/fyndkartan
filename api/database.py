@@ -191,6 +191,7 @@ def init_db():
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
     _ensure_column(conn, "ean_cache", "category", "TEXT")  # Axfood googleAnalyticsCategory (förvärmd)
+    _ensure_column(conn, "stores", "hours", "TEXT")  # JSON {week, exceptions} - normaliserad veckoöppettid
     conn.commit()
     conn.close()
 
@@ -493,6 +494,8 @@ def _to_row(s):
     contact = s.get("contact") or {}
     open_now = oh.get("open_now")
     raw = oh.get("raw")
+    hours = {"week": oh.get("week"), "exceptions": oh.get("exceptions")}
+    hours = hours if (hours["week"] or hours["exceptions"]) else None
     return {
         "chain": s["chain"],
         "store_id": str(s["store_id"]),
@@ -512,6 +515,7 @@ def _to_row(s):
         "link_online": links.get("online_shopping"),
         "tags": json.dumps(s.get("tags") or [], ensure_ascii=False),
         "raw": json.dumps(raw, ensure_ascii=False) if raw is not None else None,
+        "hours": json.dumps(hours, ensure_ascii=False) if hours is not None else None,
         "native": json.dumps(s.get("native"), ensure_ascii=False) if s.get("native") else None,
         "method": (s.get("source") or {}).get("method"),
         "fetched_at": (s.get("source") or {}).get("fetched_at"),
@@ -520,7 +524,7 @@ def _to_row(s):
 
 _COLS = (
     "chain,store_id,name,brand,street,postal_code,city,lat,lng,phone,email,"
-    "oh_today,open_now,link_store,link_offers,link_online,tags,raw,native,method,fetched_at"
+    "oh_today,open_now,link_store,link_offers,link_online,tags,raw,hours,native,method,fetched_at"
 )
 _PLACEHOLDERS = ",".join(f":{c}" for c in _COLS.split(","))
 
@@ -552,6 +556,8 @@ def row_to_store(r):
         "opening_hours": {
             "today": r["oh_today"],
             "open_now": None if r["open_now"] is None else bool(r["open_now"]),
+            "week": (json.loads(r["hours"]).get("week") if r["hours"] else None),
+            "exceptions": (json.loads(r["hours"]).get("exceptions") if r["hours"] else None),
             "raw": json.loads(r["raw"]) if r["raw"] else None,
         },
         "links": {

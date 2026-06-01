@@ -62,7 +62,8 @@ pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 **`stores`** (en rad per butik, PK `(chain, store_id)`): gemensamma kolumner
 (chain, store_id, name, brand, street, postal_code, city, lat, lng, phone,
 email, oh_today, open_now, link_store, link_offers, link_online) + JSON-kolumner
-`tags`, `raw` (öppettider), `native` (kedjans sekundär-id:n). Se `row_to_store()`.
+`tags`, `raw` (öppettidernas råformat), `hours` (normaliserad vecka:
+`{week, exceptions}`), `native` (kedjans sekundär-id:n). Se `row_to_store()`.
 
 **`offers`** (PK `(chain, store_id, offer_id)`): name, brand, package, price,
 price_text, comparison_price/value/unit, category_raw/id, mechanic_type,
@@ -132,6 +133,12 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   använder den med `onerror`-fallback till original-CDN-URL.
 - **Normalisering:** öppettider -> `HH:MM` (`normalize_hours`), taggar som
   positiva påståenden (avsaknad = okänt), `0,0`-koordinater = saknad position.
+- **Veckoöppettider (`opening_hours.week`/`exceptions`):** varje adapter parsar sitt
+  råformat till en gemensam veckoform (`{day 0-6, closed, opens, closes}`) + daterade
+  avvikelser. Delade hjälpare i `base.py` (`expand_sv_label` för ICA+Coops etikettgrupper,
+  `day_entry`/`exception_entry` som kör tider genom `_hhmm`, som tål `HH:MM:SS`). Axfood
+  per veckodag-sträng (`axfood_common.parse_week`), Lidl härleder veckodag ur datum.
+  Coops vecka ligger i butiksdetaljen vi redan hämtar. Avsaknad av en veckodag = okänt.
 - **Två skilda auth-domäner.** App-konton (`users`, slutanvändare) och konsol-
   admins (`admin_users`, drift) är helt separata: olika tabeller och olika
   session-nycklar (`uid` resp. `admin_uid` i samma signerade cookie). En app-

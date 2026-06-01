@@ -1,4 +1,4 @@
-from .axfood_common import fetch_features
+from .axfood_common import fetch_features, parse_exceptions, parse_week
 from .base import classify_service, make_store
 
 # Hemköp använder samma Axfood-endpoint som Willys (SAP Commerce). Ingen auth,
@@ -44,6 +44,8 @@ def _map(s, name, features):
             "openingHours": s.get("openingHours"),
             "specialOpeningHours": s.get("specialOpeningHours"),
         },
+        week=parse_week(s.get("openingHours")),
+        exceptions=parse_exceptions(s.get("specialOpeningHours")),
         open_now=s.get("open"),
         link_store=f"https://www.hemkop.se/butik/{store_id}",
         link_offers=f"https://www.hemkop.se/erbjudanden/{store_id}",

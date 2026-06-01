@@ -1,8 +1,9 @@
 import asyncio
 import logging
+from datetime import date as _date
 
 from . import keys
-from .base import make_store
+from .base import day_entry, exception_entry, make_store
 
 log = logging.getLogger("matbutiker")
 
@@ -93,6 +94,8 @@ def _map(s):
         lng=a.get("longitude"),
         oh_today=_today(s.get("openingHours")),
         raw=s.get("openingHours"),
+        week=_week(s.get("openingHours")),
+        exceptions=_exceptions(s.get("openingHours")),
         open_now=True if status == "open" else (False if status else None),
         native={
             "objectNumber": s.get("objectNumber"),
@@ -109,3 +112,44 @@ def _today(oh):
         tr = items[0]["timeRanges"][0]
         return f"{tr['from'][11:16]}-{tr['to'][11:16]}"
     return None
+
+
+def _weekday(item):
+    try:
+        return _date.fromisoformat(item.get("date") or "").weekday()  # 0=mån..6=sön
+    except ValueError:
+        return None
+
+
+def _week(oh):
+    """Lidls per-datum-schema (kommande dagar) -> normaliserad vecka. Regelbundna dagar
+    (REGULAR/SUNDAY_REPEAT); tom timeRanges = stängt. En veckodag kan saknas om ett
+    helgdatum ligger på den i fönstret (avsaknad = okänt)."""
+    by_day = {}
+    for it in (oh or {}).get("items") or []:
+        if it.get("reason") == "SPECIAL_DAY":
+            continue
+        d = _weekday(it)
+        if d is None or d in by_day:
+            continue
+        tr = (it.get("timeRanges") or [{}])[0]
+        if it.get("timeRanges"):
+            by_day[d] = day_entry(d, tr.get("from", "")[11:16], tr.get("to", "")[11:16], False)
+        else:
+            by_day[d] = day_entry(d, None, None, True)
+    return [by_day[d] for d in sorted(by_day)] or None
+
+
+def _exceptions(oh):
+    """Lidl-datum markerade SPECIAL_DAY -> daterade avvikelser."""
+    out = []
+    for it in (oh or {}).get("items") or []:
+        if it.get("reason") != "SPECIAL_DAY":
+            continue
+        ranges = it.get("timeRanges") or []
+        if ranges:
+            tr = ranges[0]
+            out.append(exception_entry(it.get("date"), None, tr.get("from", "")[11:16], tr.get("to", "")[11:16], False))
+        else:
+            out.append(exception_entry(it.get("date"), None, None, None, True))
+    return out or None

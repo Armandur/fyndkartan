@@ -133,8 +133,18 @@ resten blir taggad metadata.** Konkret:
 
   "opening_hours": {
     "today": "9-20",                  // kort sträng för UI, §3.3
-    "raw": { /* kedjans original-struktur, oförändrad */ },
-    "open_now": null                  // bool om kedjan rapporterar status, annars null
+    "open_now": null,                 // bool om kedjan rapporterar status, annars null
+    "week": [                         // normaliserad vecka, §3.3 (null om okänt)
+      { "day": 0, "closed": false, "opens": "08:00", "closes": "20:00" }
+      // day: 0=måndag .. 6=söndag. closed=true -> opens/closes null.
+      // En veckodag kan saknas (avsaknad = okänt; t.ex. Lidl-helg i fönstret)
+    ],
+    "exceptions": [                   // daterade avvikelser (helgdagar), null om inga
+      { "date": "2026-06-06", "label": "Nationaldagen", "closed": false,
+        "opens": "09:00", "closes": "18:00" }
+      // date: "YYYY-MM-DD" eller null (ICA anger bara helgnamn, inte datum)
+    ],
+    "raw": { /* kedjans original-struktur, oförändrad */ }
   },
 
   "links": {
@@ -178,13 +188,12 @@ i adaptern; rå-värdet bevaras i `native`.
 | `hemkop` | Hemköp | konstant (ev. `hemkop_express` om det dyker upp) |
 | `lidl` | Lidl | konstant |
 
-### 3.3 opening_hours - medvetet grunt i steg 1
+### 3.3 opening_hours
 
 Öppettidsformaten skiljer sig **kraftigt** mellan kedjor (ICA: strukturerade
 objekt med `regulars`/`deviations`/`divisions`; Lidl: dag-för-dag med
-ISO-tidsstämplar; Willys: array av strängar; Coop/Hemköp: korta strängar).
-
-Steg 1 ska **inte** bygga en fullständig öppettidsparser. Regeln:
+ISO-tidsstämplar; Willys/Hemköp: array av strängar; Coop: etikettgrupperade
+objekt med `HH:MM:SS`). Regeln:
 
 1. `opening_hours.raw` = kedjans originalstruktur, oförändrad. Inget tappas.
 2. `opening_hours.today` = dagens öppettid normaliserad till **`HH:MM-HH:MM`**
@@ -195,9 +204,15 @@ Steg 1 ska **inte** bygga en fullständig öppettidsparser. Regeln:
    det blir fältet `null`.
 3. `open_now` = bool om kedjan rapporterar status (Willys `open`, Lidl
    `status.name`, ICA-status härledd), annars `null`.
-
-En riktig veckoschema-normalisering är ett eget arbete och görs vid behov
-i steg 2/3 ovanpå `raw`.
+4. `opening_hours.week` = **normaliserad vecka** parsad ur `raw` per kedja:
+   en lista `{day (0=mån..6=sön), closed, opens, closes}`, tider `HH:MM`.
+   ICA/Coop expanderar etikettgrupper (`"Måndag-fredag"` -> dag 0-4), Axfood
+   per veckodag-sträng, Lidl härleder veckodag ur datum. En veckodag kan
+   **saknas** (avsaknad = okänt, t.ex. när en Lidl-helgdag ligger på dagen i
+   det 7-dagarsfönster Lidl exponerar). `null` om kedjan inte ger veckodata.
+5. `opening_hours.exceptions` = **daterade avvikelser** (helgdagar):
+   `{date, label, closed, opens, closes}`. `date` är `YYYY-MM-DD` eller `null`
+   (ICA anger bara helgnamn, inte datum). `null` om inga.
 
 ### 3.4 tags - taggad metadata
 

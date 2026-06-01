@@ -1,7 +1,7 @@
 import logging
 
 from . import ica_token
-from .base import make_store, tags_from_services
+from .base import day_entry, exception_entry, expand_sv_label, make_store, tags_from_services
 
 log = logging.getLogger("matbutiker")
 
@@ -87,6 +87,8 @@ def _map(s):
         email=s.get("emailAddress"),
         oh_today=_today(s.get("openingHours")),
         raw=s.get("openingHours"),
+        week=_week(s.get("openingHours")),
+        exceptions=_exceptions(s.get("openingHours")),
         link_store=s.get("bhsUrl"),
         link_offers=offers,
         link_online=s.get("onlineUrl") or f"https://handlaprivatkund.ica.se/stores/{store_id}",
@@ -109,3 +111,23 @@ def _today(oh):
     if t.get("opens") and t.get("closes"):
         return f"{t['opens']}-{t['closes']}"
     return None
+
+
+def _week(oh):
+    """Normaliserad vecka ur ICA:s etikettgrupperade `regulars` (ej `divisions`,
+    som är butiksinterna tjänstediskar med egna tider)."""
+    out = []
+    for g in (oh or {}).get("regulars") or []:
+        closed = bool(g.get("isClosed"))
+        for d in expand_sv_label(g.get("label")):
+            out.append(day_entry(d, g.get("opens"), g.get("closes"), closed))
+    return sorted(out, key=lambda e: e["day"]) or None
+
+
+def _exceptions(oh):
+    """ICA:s `deviations` (helgdagar) - bär bara helgnamn, inget datum -> date=None."""
+    out = [
+        exception_entry(None, g.get("label"), g.get("opens"), g.get("closes"), bool(g.get("isClosed")))
+        for g in (oh or {}).get("deviations") or []
+    ]
+    return out or None

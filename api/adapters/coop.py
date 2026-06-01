@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from . import keys
-from .base import make_store, tags_from_services
+from .base import day_entry, exception_entry, expand_sv_label, make_store, tags_from_services
 
 log = logging.getLogger("matbutiker")
 
@@ -79,6 +79,28 @@ def _brand(concept):
     )
 
 
+def _week(detail):
+    """Normaliserad vecka ur Coops etikettgrupperade `openingHours` (tider HH:MM:SS).
+    Hoppar special-datum (de hör hemma i exceptions)."""
+    out = []
+    for g in (detail or {}).get("openingHours") or []:
+        if g.get("isSpecialDate"):
+            continue
+        closed = bool(g.get("isClosed"))
+        for d in expand_sv_label(g.get("text")):
+            out.append(day_entry(d, g.get("openFrom"), g.get("openTo"), closed))
+    return sorted(out, key=lambda e: e["day"]) or None
+
+
+def _exceptions(detail):
+    """Coops `futureIrregularOpeningHours` (helgdagar med datum) -> avvikelser."""
+    out = []
+    for g in (detail or {}).get("futureIrregularOpeningHours") or []:
+        date = (g.get("date") or "")[:10] or None
+        out.append(exception_entry(date, g.get("text"), g.get("openFrom"), g.get("openTo"), bool(g.get("isClosed"))))
+    return out or None
+
+
 def _map(s, detail):
     ledger = s.get("ledgerAccountNumber")
     url = s.get("url") or ""
@@ -97,6 +119,12 @@ def _map(s, detail):
         phone=s.get("phone"),
         email=detail.get("email"),
         oh_today=s.get("openingHoursToday"),
+        raw={
+            "openingHours": detail.get("openingHours"),
+            "futureIrregularOpeningHours": detail.get("futureIrregularOpeningHours"),
+        } if detail.get("openingHours") else None,
+        week=_week(detail),
+        exceptions=_exceptions(detail),
         link_store="https://www.coop.se" + url if url else None,
         link_offers=f"https://dr.coop.se/butik/{ledger}" if ledger else None,
         tags=tags_from_services(services),
