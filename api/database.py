@@ -400,6 +400,20 @@ def get_axfood_categories(codes):
     return {r["code"]: r["category"] for r in rows}
 
 
+def coop_offer_eans():
+    """Distinkta EAN ur Coop-erbjudanden (för kategori-förvärmning av product_info)."""
+    conn = get_conn()
+    rows = conn.execute("SELECT DISTINCT eans FROM offers WHERE chain='coop' AND eans NOT IN ('','[]')").fetchall()
+    conn.close()
+    out = set()
+    for r in rows:
+        try:
+            out.update(json.loads(r["eans"]))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return [e for e in out if e]
+
+
 _OFFER_COLS = (
     "chain,store_id,offer_id,name,brand,package,price,price_text,comparison_price,"
     "comparison_value,comparison_unit,category_raw,category_id,mechanic_type,valid_to,"

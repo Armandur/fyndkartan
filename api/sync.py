@@ -5,9 +5,17 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
-from . import apilog, config
+from . import apilog, config, details
 from .adapters import axfood_offers, coop, hemkop, ica, lidl, willys
-from .database import codes_missing_category, get_conn, replace_chain, save_ean_meta
+from .database import (
+    codes_missing_category,
+    coop_offer_eans,
+    get_conn,
+    get_product_categories,
+    replace_chain,
+    save_ean_meta,
+    save_product_info,
+)
 from .geo import grid
 
 log = logging.getLogger("matbutiker")
@@ -115,6 +123,40 @@ async def warm_axfood_eans():
     log.info("EAN/kategori-förvärmning klar (%d nya kategorier cachade)", resolved)
 
 
+# EAN per batch till Coops personalization-API (POST tar en array).
+COOP_WARM_BATCH = 40
+
+
+async def warm_coop_categories():
+    """Förvärm product_info-kategori för Coop-EAN via personalization-API (batchat).
+
+    Coops offer-nivå (Färsk/Kolonial/Nonfood) är för grov och delvis felklassad;
+    produktdetaljens navCategories ger rätt kategori. Cachen är EAN-global (butiks-
+    oberoende). Idempotent: bara EAN utan redan mappbar kategori hämtas. Lagrar full
+    product_info (gynnar även lazy detalj-vyn)."""
+    eans = coop_offer_eans()
+    if not eans:
+        return
+    have = get_product_categories(eans)  # EAN med redan mappbar kategori
+    todo = [e for e in eans if e not in have]
+    if not todo:
+        log.info("Coop-kategoriförvärmning: inget att göra (%d EAN klara)", len(eans))
+        return
+    saved = 0
+    async with apilog.make_client(follow_redirects=True) as client:
+        for i in range(0, len(todo), COOP_WARM_BATCH):
+            batch = todo[i : i + COOP_WARM_BATCH]
+            try:
+                infos = await details.fetch_coop_batch(client, batch)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Coop-kategoriförvärmning batch misslyckades: %s", e)
+                continue
+            for ean, info in infos.items():
+                save_product_info(ean, info)
+                saved += 1
+    log.info("Coop-kategoriförvärmning klar: %d EAN att hämta, %d cachade", len(todo), saved)
+
+
 async def sync_and_warm():
     """Butikssynk följt av EAN-förvärmning (används av schemaläggare + uppstart)."""
     await run_sync()
@@ -122,6 +164,10 @@ async def sync_and_warm():
         await warm_axfood_eans()
     except Exception:  # noqa: BLE001
         log.exception("EAN-förvärmning misslyckades")
+    try:
+        await warm_coop_categories()
+    except Exception:  # noqa: BLE001
+        log.exception("Coop-kategoriförvärmning misslyckades")
 
 
 async def run_scheduler(cron_expr, tz_name="Europe/Stockholm"):

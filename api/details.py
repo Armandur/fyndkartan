@@ -88,7 +88,7 @@ async def _resolve_coop_key(client, force=False):
     return _coop_key
 
 
-async def _coop_post(client, ean, key):
+async def _coop_post(client, eans, key):
     return await client.post(
         "https://external.api.coop.se/personalization/search/entities/by-id",
         params={"api-version": "v1", "store": config.COOP_DETAIL_STORE,
@@ -97,25 +97,25 @@ async def _coop_post(client, ean, key):
             "Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json",
             "Origin": "https://www.coop.se", "Accept": "application/json", "User-Agent": UA,
         },
-        content=json.dumps([str(ean)]), timeout=15,
+        content=json.dumps([str(e) for e in eans]), timeout=20,
     )
 
 
-async def _fetch_coop(client, ean):
-    """Coop personalization-API: POST med EAN-array -> produktentitet med ingredienser,
-    ursprung och förvaring. Produktdata är butiksoberoende (fast store-param)."""
+async def _coop_items(client, eans):
+    """POST EAN-array -> produktentiteter (scrape-on-401). [] vid fel/tomt."""
     key = await _resolve_coop_key(client)
-    r = await _coop_post(client, ean, key)
+    r = await _coop_post(client, eans, key)
     if r.status_code in (401, 403):
         log.info("Coop detalj: %s, skrapar ny personalization-nyckel", r.status_code)
         key = await _resolve_coop_key(client, force=True)
-        r = await _coop_post(client, ean, key)
+        r = await _coop_post(client, eans, key)
     if r.status_code != 200:
-        return None
-    items = ((r.json().get("results") or {}).get("items")) or []
-    if not items:
-        return None
-    p = items[0]
+        return []
+    return ((r.json().get("results") or {}).get("items")) or []
+
+
+def _parse_coop_item(p):
+    """Coop personalization-entitet -> normaliserad info-del (en källa)."""
     s = lambda v: (v or "").strip() or None
     origin = ", ".join(x.get("value") for x in (p.get("countryOfOriginCodes") or []) if x.get("value")) or None
     storage = (p.get("consumerInstructions") or {}).get("storageInstructions")
@@ -144,6 +144,26 @@ async def _fetch_coop(client, ean):
         "source": "coop",
         "category_raw": cat_raw,
     }
+
+
+async def _fetch_coop(client, ean):
+    """Coop personalization-API: POST med EAN-array -> produktentitet med ingredienser,
+    ursprung och förvaring. Produktdata är butiksoberoende (fast store-param)."""
+    items = await _coop_items(client, [ean])
+    return _parse_coop_item(items[0]) if items else None
+
+
+async def fetch_coop_batch(client, eans):
+    """Batch-hämta Coop-produktinfo för förvärmning: {ean: merged_info} (samma form som
+    `fetch_for_ean` sparar). Tar bara med entiteter som har ingredienser, beskrivning
+    eller kategori. Använder personalization-API:ts array-stöd (en POST per batch)."""
+    out = {}
+    for p in await _coop_items(client, eans):
+        e = str(p.get("ean") or "")
+        part = _parse_coop_item(p)
+        if e and (part.get("ingredients") or part.get("description") or part.get("category_raw")):
+            out[e] = _merge([part])
+    return out
 
 
 def _merge(parts):

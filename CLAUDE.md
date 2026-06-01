@@ -42,6 +42,7 @@ api/                 # Python-paketet (importeras som `api`)
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
+  categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja
   adapters/
@@ -88,6 +89,15 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **Coop-berikning:** `coop.py` gör ett detalj-anrop per butik (bunden
   parallellism) för `services` -> tags och `concept` -> brand. Tyngre synk men
   ger samma metadata som ICA.
+- **Kategori-normalisering (`categories.py` + `category_map`):** kedjornas råkategorier
+  mappas till en kanonisk lista (`CANONICAL_CATEGORIES`), derive-at-read (admin-flik
+  redigerar mappningen utan omsynk). Offer-nivån är grov; **produktdetaljens kategori
+  föredras** i `get_store_offers` när den finns (`product_info.category_raw/source` ->
+  `category_from_detail`). Förvärmas globalt per EAN: Axfood via `ean_cache.category`
+  (`warm_axfood_eans`, samma `/p/{code}` som EAN-warmingen), Coop via `product_info`
+  (`warm_coop_categories`, batchat personalization-API). Coops offer-nivå
+  (Färsk/Kolonial/Nonfood) är opålitlig -> coop_nav (navCategories-topp) overridar.
+  Viktvaror (slump-EAN) saknar produktdetalj -> faller till `ovrigt`.
 - **Matchning (`matching.py` + `/v1/compare/near`):** grupperar närliggande
   butikers erbjudanden per EAN (>= 2 olika kedjor). Strikt `normalize_ean`
   (rejekta 2-prefix/ogiltig längd). Jämför på **enhetspris** (jämförpris) när alla

@@ -252,7 +252,14 @@ domäner:
     `category_map` in-place, omappade sorteras först/markeras). Avslöjade att
     produktdetaljens `googleAnalyticsCategory` använder andra segment-namn än kampanjen
     (t.ex. `kott-chark-och-fagel` vs `kott-fagel-och-chark`) - varianterna seedade.
+  - [x] **Coop-kategoriförvärmning BYGGT** (`warm_coop_categories`). Coops offer-nivå
+    (Färsk/Kolonial/Nonfood) är för grov och delvis felklassad (Nonfood innehöll
+    grönsaker+kaffe). Förvärmar nu `product_info` per Coop-EAN via personalization-API:t
+    (batchat, EAN-array). coop_nav-vokabulären rättad mot verkliga API-namn. Coop-täckning
+    0% -> 70%; resterande ~30% är viktvaror (slump-EAN) utan produktdetalj.
   - [ ] **Kategori-filter även i compare/favorit-vyer** (nu bara enskild butiks offers).
+  - [ ] Frukt/grönt-viktvaror hos Coop får `ovrigt` (ingen produktdetalj på slump-EAN);
+    ev. namn-heuristik eller annan Coop-signal senare.
   - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).
 
 ---

@@ -25,7 +25,7 @@ from .database import (
     save_eans,
 )
 from .geo import haversine
-from .sync import STATE, run_scheduler, run_sync, sync_and_warm, warm_axfood_eans
+from .sync import STATE, run_scheduler, run_sync, sync_and_warm, warm_axfood_eans, warm_coop_categories
 
 OFFERS_TTL = timedelta(hours=6)  # erbjudanden uppdateras veckovis; 6h cache räcker gott
 OFFERS_MIN_REFRESH = timedelta(minutes=30)  # golv för validitets-driven tidig refresh
@@ -70,8 +70,9 @@ async def lifespan(app: FastAPI):
         log.info("Cachen tom - startar synk + EAN-förvärmning i bakgrunden.")
         asyncio.create_task(sync_and_warm())
     else:
-        # Värm EAN-cachen vid uppstart (idempotent; snabbt när redan varm).
+        # Värm cacharna vid uppstart (idempotenta; snabba när redan varma).
         asyncio.create_task(warm_axfood_eans())
+        asyncio.create_task(warm_coop_categories())
     scheduler = asyncio.create_task(run_scheduler(config.SYNC_CRON, config.SYNC_TZ))
     yield
     scheduler.cancel()
