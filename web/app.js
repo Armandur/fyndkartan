@@ -348,6 +348,14 @@ function sortOffers(list, mode) {
   return arr;
 }
 
+function sortCompareCards(list, mode) {
+  const arr = [...list];
+  if (mode === "savings") arr.sort((a, b) => (b.spread || 0) - (a.spread || 0));
+  else if (mode === "price") arr.sort((a, b) => (a.min ?? 1e9) - (b.min ?? 1e9));
+  else if (mode === "name") arr.sort((a, b) => (a.name || "").localeCompare(b.name || "", "sv"));
+  return arr;
+}
+
 let catLabels = {};
 
 async function loadCategories() {
@@ -380,6 +388,7 @@ function populateCompareCategory() {
     : currentCompare;
   fillCatSelect("compareCategory", items);
   document.getElementById("compareDeal").value = "";
+  document.getElementById("favSort").value = "default";
 }
 
 function renderOffers(filterText) {
@@ -471,10 +480,11 @@ function renderCompare(filterText) {
   const q = (filterText || "").toLowerCase();
   const cat = document.getElementById("compareCategory").value;
   const deal = document.getElementById("compareDeal").value;
-  const list = currentCompare.filter((p) =>
+  let list = currentCompare.filter((p) =>
     (!q || `${p.name} ${p.brand} ${p.category}`.toLowerCase().includes(q)) &&
     (!cat || p.category === cat) &&
     (!deal || (p.offers || []).some((o) => o.deal_type === deal)));
+  list = sortCompareCards(list, document.getElementById("favSort").value);
   document.getElementById("compareList").innerHTML = list.length
     ? list.map(compareCard).join("")
     : `<div class="text-muted small p-2">Inga produkter på erbjudande hos flera kedjor här.</div>`;
@@ -482,7 +492,6 @@ function renderCompare(filterText) {
 
 async function showCompare() {
   compareRender = renderCompare;
-  document.getElementById("favSort").classList.add("d-none");
   const c = map.getCenter();
   const radius = document.getElementById("compareRadius").value;
   const panel = document.getElementById("comparePanel");
@@ -547,9 +556,6 @@ async function showFavoriteOffers() {
   const panel = document.getElementById("comparePanel");
   document.getElementById("offersPanel").classList.add("d-none");
   document.getElementById("compareFilter").value = "";
-  const sort = document.getElementById("favSort");
-  sort.value = "default";
-  sort.classList.remove("d-none");
   document.getElementById("compareTitle").textContent = "Mina favoriters erbjudanden…";
   panel.classList.remove("d-none");
   openNav();
@@ -582,9 +588,11 @@ function renderFavOffers(filterText) {
   const hit = (s) => !q || s.toLowerCase().includes(q);
   const okCat = (o) => !cat || o.category === cat;
   const okDealCard = (p) => !deal || (p.offers || []).some((o) => o.deal_type === deal);
-  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`) && okCat(p) && okDealCard(p));
+  const mode = document.getElementById("favSort").value;
+  let compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`) && okCat(p) && okDealCard(p));
+  compared = sortCompareCards(compared, mode);
   let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`) && okCat(o) && (!deal || o.deal_type === deal));
-  offers = sortOffers(offers, document.getElementById("favSort").value);
+  offers = sortOffers(offers, mode);
   const parts = [];
   if (compared.length)
     parts.push(`<div class="fav-sec">Finns hos flera av dina favoriter</div>` + compared.map(compareCard).join(""));
@@ -595,12 +603,11 @@ function renderFavOffers(filterText) {
 
 document.getElementById("compareFavBtn").addEventListener("click", () => {
   compareRender = renderCompare;
-  document.getElementById("favSort").classList.add("d-none");
   showCompareFavorites();
 });
 document.getElementById("favOffersBtn").addEventListener("click", showFavoriteOffers);
 document.getElementById("favSort").addEventListener("change", () => {
-  renderFavOffers(document.getElementById("compareFilter").value.trim());
+  compareRender(document.getElementById("compareFilter").value.trim());
 });
 document.getElementById("compareBack").addEventListener("click", () => {
   document.getElementById("comparePanel").classList.add("d-none");
