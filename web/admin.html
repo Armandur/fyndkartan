@@ -58,6 +58,12 @@
     .api-ep[open] { background: #fbfcfd; }
     .api-ep .ep-h { font-weight: 600; font-size: .72rem; text-transform: uppercase; color: #6b7480; margin: .5rem 0 .15rem; }
     .api-ep table td { padding: 2px 6px 2px 0; }
+    #apiOut .j-meta { color: #8b949e; }
+    #apiOut .j-key { color: #79c0ff; }
+    #apiOut .j-str { color: #a5d6a7; }
+    #apiOut .j-num { color: #f0a868; }
+    #apiOut .j-bool { color: #d2a8ff; }
+    #apiOut .j-null { color: #8b949e; font-style: italic; }
   </style>
 </head>
 <body>
@@ -229,6 +235,22 @@
             || '<tr><td colspan="6" class="text-muted">Inga anrop.</td></tr>'}</tbody></table></div>`;
     }
 
+    function hlJson(text) {
+      const e = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return e.replace(/("(?:\\.|[^"\\])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g, (m) => {
+        let c = "j-num";
+        if (m[0] === '"') c = /:\s*$/.test(m) ? "j-key" : "j-str";
+        else if (m === "true" || m === "false") c = "j-bool";
+        else if (m === "null") c = "j-null";
+        return `<span class="${c}">${m}</span>`;
+      });
+    }
+
+    function showResult(header, body, json) {
+      document.getElementById("apiOut").innerHTML =
+        `<span class="j-meta">${esc(header)}</span>\n\n` + (json ? hlJson(body) : esc(body));
+    }
+
     async function runApiTest() {
       const path = document.getElementById("apiPath").value.trim();
       const out = document.getElementById("apiOut");
@@ -241,12 +263,12 @@
         const ct = r.headers.get("content-type") || "";
         if (ct.startsWith("image/")) {
           const blob = await r.blob();
-          out.innerHTML = `${r.status} ${r.statusText}  ·  ${ms} ms  ·  ${esc(ct)}  ·  ${Math.round(blob.size / 1024)} KB\n<img src="${URL.createObjectURL(blob)}" style="max-height:240px;margin-top:8px;background:#fff;border-radius:6px">`;
+          out.innerHTML = `<span class="j-meta">${r.status} ${r.statusText}  ·  ${ms} ms  ·  ${esc(ct)}  ·  ${Math.round(blob.size / 1024)} KB</span>\n<img src="${URL.createObjectURL(blob)}" style="max-height:240px;margin-top:8px;background:#fff;border-radius:6px">`;
           return;
         }
-        const body = ct.includes("application/json")
-          ? JSON.stringify(await r.json(), null, 2) : await r.text();
-        out.textContent = `${r.status} ${r.statusText}  ·  ${ms} ms\n\n${body}`;
+        const isJson = ct.includes("application/json");
+        const body = isJson ? JSON.stringify(await r.json(), null, 2) : await r.text();
+        showResult(`${r.status} ${r.statusText}  ·  ${ms} ms`, body, isJson);
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
@@ -261,8 +283,11 @@
         });
         const ms = Math.round(performance.now() - t0);
         const d = await r.json();
-        const body = typeof d.body === "string" ? d.body : JSON.stringify(d.body ?? d, null, 2);
-        out.textContent = `${method || "GET"} ${url}${reqBody ? "\nbody: " + reqBody : ""}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms\n\n${body}`;
+        let body, json = true;
+        if (typeof d.body === "string") {
+          try { body = JSON.stringify(JSON.parse(d.body), null, 2); } catch { body = d.body; json = false; }
+        } else { body = JSON.stringify(d.body ?? d, null, 2); }
+        showResult(`${method || "GET"} ${url}${reqBody ? "\nbody: " + reqBody : ""}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms`, body, json);
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
