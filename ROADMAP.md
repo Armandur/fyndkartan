@@ -172,6 +172,10 @@ Per-domän-REST:en är redan ren (stores/offers/products/compare/chains). Det so
 saknas för en *andra/extern* frontend är tvärgående enablers, inte fler utbrutna
 domäner:
 
+- [x] **Hela API:t gatat (ingen anonym åtkomst) BYGGT.** `require_consumer` på alla
+  `/v1`-dataendpoints kräver inloggad app-användare (session/bearer) eller giltig
+  API-nyckel. Kart-appen är nu en **inloggnings-vägg** (ingen anonym surf). Öppna:
+  `/v1/auth/*`, `/v1/console/auth/login`, `/healthz`, sidorna `/`+`/admin`+`/static`.
 - [x] **CORS för externa origins BYGGT.** Env-allowlist `CORS_ORIGINS` (default tom =
   oförändrat same-origin). Explicita origins + credentials, aldrig `*`. CORSMiddleware
   läggs bara om allowlist är satt.

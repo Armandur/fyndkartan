@@ -582,7 +582,7 @@ async function doLogout() {
   document.getElementById("onlyFavorites").checked = false;
   renderAuthArea();
   await loadFavorites();
-  render();
+  showWall();  // tillbaka till inloggnings-väggen
 }
 
 let authMode = "login";
@@ -597,7 +597,19 @@ function openAuth(mode = "login") {
   document.getElementById("authModal").classList.remove("d-none");
   document.getElementById("authEmail").focus();
 }
-function closeAuth() { document.getElementById("authModal").classList.add("d-none"); }
+function closeAuth() {
+  if (state.user) document.getElementById("authModal").classList.add("d-none");  // väggen går ej att stänga utan inloggning
+}
+
+// Hela appen kräver inloggning: authModal används som icke-stängbar vägg när utloggad.
+function showWall() {
+  document.getElementById("authClose").classList.add("d-none");
+  openAuth("login");
+}
+function hideWall() {
+  document.getElementById("authClose").classList.remove("d-none");
+  document.getElementById("authModal").classList.add("d-none");
+}
 
 async function submitAuth() {
   const errEl = document.getElementById("authError");
@@ -608,9 +620,11 @@ async function submitAuth() {
   });
   if (!r.ok) { errEl.textContent = (await r.json()).detail || "Något gick fel."; errEl.classList.remove("d-none"); return; }
   state.user = await r.json();
-  closeAuth();
-  await loadFavorites();
+  hideWall();
   renderAuthArea();
+  await loadFavorites();
+  await loadChains();   // data laddas först efter inloggning (endpoints är gatade)
+  await loadStores();
   render();
 }
 
@@ -650,7 +664,11 @@ document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key
 
 (async function init() {
   await loadUser();
-  await loadFavorites();
-  await loadChains();
-  await loadStores();
+  if (state.user) {
+    await loadFavorites();
+    await loadChains();
+    await loadStores();
+  } else {
+    showWall();  // hela appen kräver inloggning
+  }
 })();

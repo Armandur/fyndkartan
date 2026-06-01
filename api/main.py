@@ -6,7 +6,7 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Body, Depends, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -117,6 +117,14 @@ async def api_key_gate(request, call_next):
             return JSONResponse({"detail": "Ogiltig eller återkallad API-nyckel."}, status_code=401)
         request.state.api_key = rec
     return await call_next(request)
+
+
+def require_consumer(request: Request, user=Depends(auth.current_user)):
+    """Gatar /v1-dataendpoints: kräver inloggad app-användare (session/bearer) ELLER
+    en giltig API-nyckel (X-API-Key). Inget är öppet anonymt externt."""
+    if user or getattr(request.state, "api_key", None):
+        return user
+    raise HTTPException(status_code=401, detail="Autentisering krävs: logga in eller skicka en API-nyckel.")
 
 
 def _last_sync():
@@ -530,6 +538,7 @@ async def list_stores(
     brand: str | None = None,
     features: str | None = None,
     has_offers: bool = False,
+    _auth=Depends(require_consumer),
 ):
     stores = _query_stores(chain, city, q, brand, features, has_offers)
     return {"count": len(stores), "generated_at": _last_sync(), "stores": stores}
@@ -543,6 +552,7 @@ async def stores_near(
     chain: str | None = None,
     features: str | None = None,
     has_offers: bool = False,
+    _auth=Depends(require_consumer),
 ):
     stores = _query_stores(chain=chain, features=features, has_offers=has_offers)
     hits = []
@@ -559,7 +569,7 @@ async def stores_near(
 
 
 @app.get("/v1/stores/{chain}/{store_id}")
-async def get_store(chain: str, store_id: str):
+async def get_store(chain: str, store_id: str, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
         "SELECT * FROM stores WHERE chain=? AND store_id=?", (chain, store_id)
@@ -611,7 +621,7 @@ async def _ensure_offers(client, chain, store_id, link_offers, native_json, refr
 
 
 @app.get("/v1/stores/{chain}/{store_id}/offers")
-async def store_offers(chain: str, store_id: str, refresh: bool = False):
+async def store_offers(chain: str, store_id: str, refresh: bool = False, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
         "SELECT chain, link_offers, native FROM stores WHERE chain=? AND store_id=?",
@@ -763,6 +773,7 @@ async def compare_near(
     radius_km: float = 5.0,
     min_chains: int = 2,
     chains: str | None = None,
+    _auth=Depends(require_consumer),
 ):
     """Produkter (per EAN) som finns på erbjudande hos >= min_chains olika kedjor
     bland närliggande butiker, med pris per butik. Endast EAN-matchning."""
@@ -798,7 +809,7 @@ async def compare_near(
 
 
 @app.get("/v1/compare/stores")
-async def compare_stores(stores: str = Query(...), min_chains: int = 2):
+async def compare_stores(stores: str = Query(...), min_chains: int = 2, _auth=Depends(require_consumer)):
     """Jämför erbjudanden bland specifika butiker (t.ex. favoriter).
 
     stores = komma-separerad lista 'chain:store_id', t.ex. 'ica:2527,coop:598'."""
@@ -830,7 +841,7 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2):
 
 
 @app.get("/v1/products/{ean}")
-async def product_info(ean: str, prefer_chain: str | None = None):
+async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
     """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.
     Publik (konsument-appen + konsolen delar den). prefer_chain hintar rikare
     native-källa (Axfood har näring); annars Coops EAN-DB. `source` i svaret."""
@@ -852,7 +863,7 @@ async def product_info(ean: str, prefer_chain: str | None = None):
 
 
 @app.get("/v1/chains")
-async def chains():
+async def chains(_auth=Depends(require_consumer)):
     conn = get_conn()
     counts = {
         r["chain"]: r["c"]

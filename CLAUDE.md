@@ -122,10 +122,15 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   frontend (CSS `body:not(.logged-in)` döljer stjärnor/filter, ingen localStorage).
   `current_user` accepterar både session-cookie OCH opak `Authorization: Bearer`-token
   (`POST /v1/auth/token`, lagras hashad i `user_tokens`) för icke-webb-klienter.
-- **Externa API-nycklar:** konsolen utfärdar/återkallar nycklar (`api_keys`, hashade,
-  visas en gång). `X-API-Key`-middleware validerar om nyckel skickas (ogiltig -> 401)
-  men gatar INTE de öppna läs-endpoints (`/v1/products|stores|compare|chains`) - de är
-  fortsatt anonyma för webben. CORS via `CORS_ORIGINS` (env-allowlist, default av).
+- **Hela API:t är gatat (ingen anonym åtkomst).** `require_consumer`-dependency på
+  alla `/v1`-dataendpoints (`products|stores|compare|chains`) kräver inloggad app-
+  användare (session/bearer) ELLER giltig `X-API-Key`. Undantag som måste vara öppna:
+  `/v1/auth/*` (login/register/token), `/v1/console/auth/login`, `/healthz`, sidorna
+  `/` + `/admin` + `/static`. **Kart-appen är en inloggnings-vägg:** `web/app.js` visar
+  authModal som icke-stängbar vägg tills man loggat in, och laddar data först därefter.
+- **Externa API-nycklar:** konsolen utfärdar/återkallar (`api_keys`, hashade, visas en
+  gång). `X-API-Key`-middleware validerar och `require_consumer` accepterar nyckeln som
+  åtkomst. CORS via `CORS_ORIGINS` (env-allowlist, default av).
 - **API-konsol (`web/admin.html` på `/admin`):** drift/dataadministration, skild
   från kartappen. Egen inloggningsruta på sidan (`/v1/console/auth/*`). `require_admin`
   (-> `auth.current_admin`, 403 annars) gatar alla `/v1/admin/*`, `/v1/tags*` och
