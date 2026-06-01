@@ -120,9 +120,10 @@ async def api_key_gate(request, call_next):
 
 
 def require_consumer(request: Request, user=Depends(auth.current_user)):
-    """Gatar /v1-dataendpoints: kräver inloggad app-användare (session/bearer) ELLER
-    en giltig API-nyckel (X-API-Key). Inget är öppet anonymt externt."""
-    if user or getattr(request.state, "api_key", None):
+    """Gatar /v1-dataendpoints: kräver inloggad app-användare (session/bearer), giltig
+    API-nyckel (X-API-Key) ELLER inloggad konsol-admin (betrodd, t.ex. API-testaren).
+    Inget är öppet anonymt externt."""
+    if user or getattr(request.state, "api_key", None) or auth.current_admin(request):
         return user
     raise HTTPException(status_code=401, detail="Autentisering krävs: logga in eller skicka en API-nyckel.")
 

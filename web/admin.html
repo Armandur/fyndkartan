@@ -192,6 +192,7 @@
 
     const API_PRESETS = [
       ["Produktinfo (EAN)", "/v1/products/7311870010970"],
+      ["Produktbild (EAN)", "/v1/products/7311870010970/image"],
       ["Butikens erbjudanden", "/v1/stores/ica/2527/offers"],
       ["Butiker nära", "/v1/stores/near?lat=59.33&lng=18.06&radius_km=5"],
       ["Prisjämför nära", "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5"],
@@ -209,6 +210,11 @@
         const r = await fetch(path);
         const ms = Math.round(performance.now() - t0);
         const ct = r.headers.get("content-type") || "";
+        if (ct.startsWith("image/")) {
+          const blob = await r.blob();
+          out.innerHTML = `${r.status} ${r.statusText}  ·  ${ms} ms  ·  ${esc(ct)}  ·  ${Math.round(blob.size / 1024)} KB\n<img src="${URL.createObjectURL(blob)}" style="max-height:240px;margin-top:8px;background:#fff;border-radius:6px">`;
+          return;
+        }
         const body = ct.includes("application/json")
           ? JSON.stringify(await r.json(), null, 2) : await r.text();
         out.textContent = `${r.status} ${r.statusText}  ·  ${ms} ms\n\n${body}`;
