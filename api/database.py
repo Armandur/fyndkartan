@@ -570,6 +570,78 @@ def get_store_offers(chain, store_id):
     return out
 
 
+def search_products(q, limit=40, chain=None):
+    """Sök produkter på namn ur cachade erbjudanden. Distinkta produkter grupperade på
+    EAN (cross-chain) - annars (kedja, namn) när EAN saknas. Per produkt: representativ
+    metadata (normaliserad), kedjor, prisintervall och antal erbjudanden. Namnmatchning
+    sker i Python (Unicode-skiftlägesokänsligt; SQLite LOWER fäller bara ASCII)."""
+    ql = (q or "").strip().lower()
+    if len(ql) < 2:
+        return []
+    conn = get_conn()
+    sql, params = "SELECT * FROM offers", []
+    if chain:
+        sql += " WHERE chain=?"
+        params.append(chain)
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    hits = [dict(r) for r in rows if ql in (r["name"] or "").lower()]
+    if not hits:
+        return []
+    # EAN-resolution: inline-array, annars ean_cache (Axfood code->EAN).
+    code_eans = get_cached_eans([h["offer_id"] for h in hits if not h["eans"]])
+    groups = {}
+    for h in hits:
+        eans = json.loads(h["eans"]) if h["eans"] else []
+        ean = eans[0] if eans else code_eans.get(h["offer_id"])
+        key = ean or f"{h['chain']}:{(h['name'] or '').lower()}"
+        g = groups.setdefault(key, {"ean": ean, "chains": set(), "offs": []})
+        g["chains"].add(h["chain"])
+        g["offs"].append(h)
+    # Kategori-berikning som get_store_offers (offer-nivå + Axfood ean_cache + product_info).
+    reps = {k: g["offs"][0] for k, g in groups.items()}
+    axc = get_axfood_categories(
+        [r["offer_id"] for r in reps.values() if r["chain"] in ("willys", "hemkop") and not r.get("category_raw")]
+    )
+    pc = get_product_categories([g["ean"] for g in groups.values() if g["ean"]])
+    out = []
+    for key, g in groups.items():
+        rep = g["offs"][0]
+        ch = rep["chain"]
+        cat = category_for(ch, rep.get("category_raw"))
+        if ch in ("willys", "hemkop") and not rep.get("category_raw") and axc.get(rep["offer_id"]):
+            cat = category_for(ch, axc[rep["offer_id"]])
+        if g["ean"] and pc.get(g["ean"]):
+            cat = pc[g["ean"]]
+        brand, origin = _split_brand_origin(ch, rep.get("brand"))
+        psize, pval, punit, _ = _clean_package(rep.get("package"))
+        dt, mb = _deal_type(rep.get("price_text"))
+        prices = [o["price"] for o in g["offs"] if o.get("price") is not None]
+        out.append({
+            "ean": g["ean"],
+            "name": rep.get("name"),
+            "brand": brand,
+            "origin": origin,
+            "image": rep.get("image"),
+            "category": cat,
+            "package_size": psize,
+            "package_value": pval,
+            "package_unit": punit,
+            "deal_type": dt,
+            "multibuy_qty": mb,
+            "chains": sorted(g["chains"]),
+            "offer_count": len(g["offs"]),
+            "price_min": min(prices) if prices else None,
+            "price_max": max(prices) if prices else None,
+        })
+    # Relevans: prefix-träff först, sen flest kedjor/erbjudanden, sen namn.
+    out.sort(key=lambda p: (
+        not (p["name"] or "").lower().startswith(ql),
+        -len(p["chains"]), -p["offer_count"], (p["name"] or "").lower(),
+    ))
+    return out[:limit]
+
+
 def offers_fetched_at(chain, store_id):
     """Senaste hämtningstidpunkt för en butiks erbjudanden, eller None."""
     conn = get_conn()

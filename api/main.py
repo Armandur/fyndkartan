@@ -898,6 +898,20 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2, _auth=De
     return {"count": len(products), "stores_compared": len(rows), "products": products}
 
 
+@app.get("/v1/products/search")
+async def products_search(
+    q: str = Query(..., min_length=2, description="Söktext mot produktnamn"),
+    limit: int = 40,
+    chain: str | None = None,
+    _auth=Depends(require_consumer),
+):
+    """Sök produkter på namn ur cachade erbjudanden. Distinkta produkter (EAN-grupperade,
+    cross-chain), med normaliserade fält, kedjor, prisintervall och antal erbjudanden.
+    OBS: bara produkter som finns i offers-cachen (butiker vars erbjudanden hämtats)."""
+    products = database.search_products(q, limit=max(1, min(limit, 100)), chain=chain)
+    return {"query": q, "count": len(products), "products": products}
+
+
 @app.get("/v1/products/{ean}")
 async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
     """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.

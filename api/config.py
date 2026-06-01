@@ -188,6 +188,8 @@ OWN_APIS = [
      "desc": "En butik med all metadata inkl. normaliserad veckoöppettid (week/exceptions)."},
     {"group": "Butiker", "method": "GET", "path": "/v1/stores/ica/2527/offers",
      "desc": "Butikens erbjudanden (hämtas live första gången, cachas sedan)."},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/search?q=mj%C3%B6lk",
+     "desc": "Sök produkter på namn (ur erbjudande-cachen, EAN-grupperat): kedjor, prisintervall, normaliserade fält."},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
      "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor."},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/image",

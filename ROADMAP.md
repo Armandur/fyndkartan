@@ -248,10 +248,13 @@ domäner:
 - [ ] **Kurera OpenAPI-kontraktet.** `/docs` finns auto men oputsat - tagga endpoints
   per domän, markera publikt vs admin, lägg beskrivningar/responsmodeller, så
   integratörer har ett stabilt kontrakt att bygga mot.
-- [ ] **Produktsök-endpoint (på namn/text).** Produkter nås nu bara via EAN
-  (`/v1/products/{ean}`) eller offers/compare. En andra app vill kunna söka produkter
-  på namn -> exponera sök (över cachade offers/produkter nu, fullständigt med
-  sortiment-jobbet).
+- [x] **Produktsök-endpoint BYGGT** (`GET /v1/products/search?q=&limit=&chain=`).
+  `database.search_products` söker namn ur offers-cachen (Unicode-skiftlägesokänsligt),
+  grupperar distinkta produkter på EAN (cross-chain) annars (kedja, namn), och returnerar
+  normaliserade fält (brand/origin, package, deal_type, kanonisk category via samma
+  berikning som get_store_offers) + kedjor + prisintervall + antal. Relevans-sort
+  (prefix-träff, flest kedjor/erbjudanden). Begränsning: bara butiker vars offers hämtats
+  (lazy-cache) - full täckning kräver sortiment-jobbet. Kvar: ev. frontend-sökruta.
 - [ ] **Kategori-endpoint** för bläddring/filtrering - beror på kategorinormaliseringen.
 - [ ] (övervägt) Formell repo-/tjänstesplit api/ vs web/ - CLAUDE.md noterar att den
   är billig när en andra konsument dyker upp; men enablers ovan (CORS/auth/kontrakt)
