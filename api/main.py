@@ -109,12 +109,17 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
 
 
+# Konsolens poll-endpoints - loggas inte i anropsloggen (skulle flooda).
+_CALL_LOG_SKIP = {"/v1/admin/calls", "/v1/console/auth/me"}
+
+
 @app.middleware("http")
 async def log_incoming(request, call_next):
     """Logga inkommande anrop mot vårt eget /v1-API (källa 'egen') i anropsloggen.
-    Hoppar över anropslogg-pollern själv (skulle annars flooda)."""
+    Hoppar över konsolens egna poll-endpoints (anropslogg + inloggningskoll) som
+    annars skulle flooda loggen."""
     path = request.url.path
-    if not path.startswith("/v1/") or path == "/v1/admin/calls":
+    if not path.startswith("/v1/") or path in _CALL_LOG_SKIP:
         return await call_next(request)
     t0 = time.perf_counter()
     resp = await call_next(request)
