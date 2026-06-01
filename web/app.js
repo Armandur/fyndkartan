@@ -379,6 +379,7 @@ function populateCompareCategory() {
     ? [...((favOffersData || {}).offers || []), ...((favOffersData || {}).compared || [])]
     : currentCompare;
   fillCatSelect("compareCategory", items);
+  document.getElementById("compareDeal").value = "";
 }
 
 function renderOffers(filterText) {
@@ -469,9 +470,11 @@ function compareCard(p) {
 function renderCompare(filterText) {
   const q = (filterText || "").toLowerCase();
   const cat = document.getElementById("compareCategory").value;
+  const deal = document.getElementById("compareDeal").value;
   const list = currentCompare.filter((p) =>
     (!q || `${p.name} ${p.brand} ${p.category}`.toLowerCase().includes(q)) &&
-    (!cat || p.category === cat));
+    (!cat || p.category === cat) &&
+    (!deal || (p.offers || []).some((o) => o.deal_type === deal)));
   document.getElementById("compareList").innerHTML = list.length
     ? list.map(compareCard).join("")
     : `<div class="text-muted small p-2">Inga produkter på erbjudande hos flera kedjor här.</div>`;
@@ -574,11 +577,13 @@ async function showFavoriteOffers() {
 function renderFavOffers(filterText) {
   const q = (filterText || "").toLowerCase();
   const cat = document.getElementById("compareCategory").value;
+  const deal = document.getElementById("compareDeal").value;
   const d = favOffersData || { offers: [], compared: [] };
   const hit = (s) => !q || s.toLowerCase().includes(q);
   const okCat = (o) => !cat || o.category === cat;
-  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`) && okCat(p));
-  let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`) && okCat(o));
+  const okDealCard = (p) => !deal || (p.offers || []).some((o) => o.deal_type === deal);
+  const compared = (d.compared || []).filter((p) => hit(`${p.name} ${p.brand} ${p.category}`) && okCat(p) && okDealCard(p));
+  let offers = (d.offers || []).filter((o) => hit(`${o.name} ${o.brand} ${o.category_raw} ${o.store_name}`) && okCat(o) && (!deal || o.deal_type === deal));
   offers = sortOffers(offers, document.getElementById("favSort").value);
   const parts = [];
   if (compared.length)
@@ -604,6 +609,9 @@ document.getElementById("compareFilter").addEventListener("input", (e) => {
   compareRender(e.target.value.trim());
 });
 document.getElementById("compareCategory").addEventListener("change", () => {
+  compareRender(document.getElementById("compareFilter").value.trim());
+});
+document.getElementById("compareDeal").addEventListener("change", () => {
   compareRender(document.getElementById("compareFilter").value.trim());
 });
 
