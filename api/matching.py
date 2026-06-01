@@ -23,6 +23,8 @@ _OFFER_KEYS = (
     "comparison_unit",
     "member_price",
     "mechanic_type",
+    "deal_type",
+    "multibuy_qty",
     "valid_to",
 )
 

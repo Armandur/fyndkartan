@@ -212,7 +212,8 @@ kedja). Rangordnat efter värde:
 - [x] **#6 Frontend för `deal_type` BYGGT** - badge på erbjudande-kortet (Flerköp med
   multibuy-antal / Per vikt) + filter-dropdown (Alla typer/Flerköp/Per vikt/Fast pris) i
   erbjudande-panelen. Korten använder nu även normaliserad `package_size` + `origin` i
-  meta-raden. Gäller även favoritvyn (samma offerCard). Ej webbläsartestad.
+  meta-raden. Gäller även favoritvyn och jämför-vyn (`deal_type` tillagt i `_OFFER_KEYS`
+  så compare-utdata bär det; badge per rad). Ej webbläsartestad.
 - Redan rent: `valid_to` (ISO), butikernas `brand` (snake_case-vokabulär), `comparison_value`.
 
 ### Plattform / aktivera andra frontend-appar

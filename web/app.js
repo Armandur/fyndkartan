@@ -264,7 +264,7 @@ function offerCard(o) {
   const valid = o.valid_to ? `t.o.m. ${esc(o.valid_to)}` : "";
   const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
   const sv = Math.round((o.savings || 0) * 100) / 100;
-  const save = sv > 0 ? `<span class="o-save">spar ${sv} kr</span>` : "";
+  const save = sv > 0 ? `<span class="o-save">spara ${sv} kr</span>` : "";
   const deal = dealBadge(o);
   const pkg = o.package_size || o.package;
   const origin = (o.origin && o.origin.length) ? o.origin.join("/") : "";
@@ -436,7 +436,7 @@ function compareCard(p) {
     return `<div class="cmp-row${i === 0 ? " cmp-best" : ""}">
       <span class="dot" style="background:${meta.color || "#666"}"></span>
       <span class="cmp-chain">${esc(meta.label || o.chain)}</span>
-      <span class="cmp-big">${big}</span>${member}
+      <span class="cmp-big">${big}</span>${member}${dealBadge(o)}
       <div class="cmp-sub">${esc(o.price_text || "")} &middot; ${esc(o.store_name || "")}${o.distance_km != null ? " " + o.distance_km + "km" : ""}</div>
     </div>`;
   }).join("");
@@ -444,7 +444,7 @@ function compareCard(p) {
     <div class="cmp-top">
       ${img}
       <div class="cmp-id"><div class="o-name">${esc(p.name || "")}</div><div class="o-meta">${sub}</div></div>
-      <span class="cmp-spread" title="prisskillnad">spar ${spreadLabel}</span>
+      <span class="cmp-spread" title="prisskillnad">spara ${spreadLabel}</span>
     </div>
     <div class="cmp-rows">${rows}</div>
   </div>`;
