@@ -138,9 +138,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       hämtas även när Axfood har gles näring. **Coop-näring fixad** (låg i `nutrientLinks`,
       inte `nutrientInformation` - 8-12 poster). **Allergener** extraheras ur VERSALA ord
       i ingredienserna (`extract_allergens`). Visas i paringsvyn + erbjudande-modalen.
-      - [ ] Strukturera/mappa näring till kanoniska fält + ordna (nu rå label/value/unit).
-      - [ ] Allergener via vokabulär-match (nu alla VERSALA ord; ingen kedja har rent
-        strukturerat allergen-fält - dietTypeInformation/labels är diet/ursprung).
+      - [x] **Näring + allergener normaliserade (read-time, `details.normalize_info`).**
+        Näring: kanonisk etikett-form (`energi`->`Energi` osv) + standardordning
+        (`_NUT_ORDER`) + enhetsförkortningar (Kilojoule->kJ, Gram->g, Mikrogram->µg).
+        Allergener: vokabulär-match (`_ALLERGENS`, EU:s 14 grupper) i stället för alla
+        VERSALA ord - inget KRAV/BCAA/trunkerings-skräp längre. Appliceras i
+        `/v1/products/{ean}` på både cachad och färsk data (täcker de 507 cachade direkt),
+        idempotent. Övervarnar hellre än missar (växtdrycker med "mjölk" i namnet). Kvar:
+        ev. finputs av vokabulären (plant-milk-falskpositiv).
     - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
       täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/

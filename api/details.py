@@ -20,19 +20,78 @@ _AXFOOD = ("willys", "hemkop")
 
 _coop_key = None  # skrapad personalization-nyckel (cache), scrape-on-401
 
-# Svenska ingredienslistor VERSALISERAR allergener (t.ex. "SMÖR (pastöriserad GRÄDDE
-# ...), ... MJÖLK"). Plocka ut VERSALA ord (>=2 bokstäver), filtrera bort rubrik/stopp.
-_ALLERGEN_STOP = {"INGREDIENSER", "INNEHÅLL", "INNEHÅLLER", "KAN", "SPÅR", "AV", "OCH", "EU", "EG"}
+# Allergen-vokabulär: kanonisk allergen -> indikator-termer (matchas skiftlägesokänsligt
+# som delsträng i ingredienslistan). Ersätter den gamla "alla VERSALA ord"-heuristiken som
+# gav skräp (trunkeringar "LK"/"TTER", icke-allergener KRAV/BCAA, främmande språk). Kurerad
+# lista över EU:s 14 allergengrupper; över-varnar hellre än missar (t.ex. växtdrycker med
+# "mjölk" i namnet) - säker riktning för allergi.
+_ALLERGENS = {
+    "Gluten": ("vete", "råg", "havre", "spelt", "dinkel", "durum", "gluten", "mannagryn", "semolina", "couscous", "bulgur"),
+    "Mjölk": ("mjölk", "grädde", "ost", "vassle", "laktos", "kasein", "kvarg", "kärnmjölk", "smörfett"),
+    "Ägg": ("ägg", "albumin"),
+    "Soja": ("soja", "soya", "tofu", "edamame"),
+    "Jordnötter": ("jordnöt",),
+    "Nötter": ("mandel", "hasselnöt", "valnöt", "cashew", "pekannöt", "paranöt", "pistasch", "pistage", "macadamia", "nötter"),
+    "Fisk": ("fisk", "lax", "torsk", "sill", "tonfisk", "ansjovis", "makrill"),
+    "Skaldjur": ("räk", "krabb", "hummer", "kräftdjur", "skaldjur", "languster", "scampi"),
+    "Blötdjur": ("blötdjur", "mussl", "ostron", "bläckfisk", "snäck", "pilgrimsmuss"),
+    "Sesam": ("sesam",),
+    "Senap": ("senap",),
+    "Selleri": ("selleri",),
+    "Lupin": ("lupin",),
+    "Sulfit": ("sulfit", "svaveldioxid"),
+}
 
 
 def extract_allergens(ingredients):
-    if not ingredients:
+    """Kanoniska allergener ur ingredienslistan via vokabulär-match (i kanonisk ordning)."""
+    t = (ingredients or "").lower()
+    if not t:
         return []
+    return [name for name, terms in _ALLERGENS.items() if any(term in t for term in terms)]
+
+
+# Näringsdeklaration: kanonisk etikett-form + standardordning + enhetsförkortningar.
+_NUT_ORDER = [
+    "Energi", "Fett", "Varav mättat fett", "Varav enkelomättat fett", "Varav fleromättat fett",
+    "Kolhydrat", "Varav sockerarter", "Varav polyoler", "Fiber", "Protein", "Salt",
+    "Vitamin A", "Vitamin D", "Vitamin E", "Vitamin C", "Tiamin", "Riboflavin", "Niacin",
+    "Vitamin B6", "Folsyra", "Vitamin B12", "Biotin", "Kalcium", "Kalium", "Natrium",
+    "Magnesium", "Selen", "Jod",
+]
+_NUT_ORDER_IX = {n.lower(): i for i, n in enumerate(_NUT_ORDER)}
+_NUT_CANON = {  # lowercased variant -> kanonisk (de flesta är redan kanoniska)
+    "energi": "Energi",
+    "kolhydrat": "Kolhydrat", "kolhydrater": "Kolhydrat",
+    "varav socker": "Varav sockerarter", "varav sockerarter": "Varav sockerarter",
+    "mättat fett": "Varav mättat fett",
+    "fibrer": "Fiber", "kostfiber": "Fiber",
+}
+_NUT_UNIT = {"kilojoule": "kJ", "kilokalori": "kcal", "gram": "g", "milligram": "mg", "mikrogram": "µg"}
+
+
+def _normalize_nutrition(nutrition):
     out = []
-    for w in re.findall(r"[A-ZÅÄÖ]{2,}", ingredients):
-        if w not in _ALLERGEN_STOP and w not in out:
-            out.append(w)
+    for n in nutrition or []:
+        lbl = (n.get("label") or "").strip()
+        out.append({
+            "label": _NUT_CANON.get(lbl.lower(), lbl),
+            "value": n.get("value"),
+            "unit": _NUT_UNIT.get((n.get("unit") or "").strip().lower(), n.get("unit")),
+        })
+    out.sort(key=lambda n: _NUT_ORDER_IX.get((n["label"] or "").lower(), 999))
     return out
+
+
+def normalize_info(info):
+    """Read-time-normalisering av produktinfo: kanonisk + ordnad näring och allergener ur
+    vokabulär. Idempotent. Täcker även gamla cachade rader (raw label/value/unit)."""
+    if not info:
+        return info
+    info = dict(info)
+    info["nutrition"] = _normalize_nutrition(info.get("nutrition"))
+    info["allergens"] = extract_allergens(info.get("ingredients"))
+    return info
 
 
 def _axfood_code(ean):

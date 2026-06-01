@@ -989,7 +989,7 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
     cached = database.get_product_info(e)
     if cached is not None:
-        return {"ean": e, "found": True, "info": cached}
+        return {"ean": e, "found": True, "info": details.normalize_info(cached)}
     try:
         async with apilog.make_client(follow_redirects=True) as client:
             info = await details.fetch_for_ean(client, e, prefer_chain=prefer_chain)
@@ -998,7 +998,7 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
         info = None
     if info is not None:
         database.save_product_info(e, info)
-    return {"ean": e, "found": info is not None, "info": info}
+    return {"ean": e, "found": info is not None, "info": details.normalize_info(info)}
 
 
 @app.get("/v1/products/{ean}/image")
