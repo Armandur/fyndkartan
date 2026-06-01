@@ -97,27 +97,34 @@ DEFAULT_CATEGORY_MAP = {
     ("ica", "Hälsa & skönhet"): "halsa_skonhet",
     ("ica", "Hem & fritid"): "hem_hushall",
     ("ica", "Ospecificerat"): "ovrigt",
+    # Offer-nivåns 3 buckets är opålitliga (Färsk blandar kött+ost; Kolonial blandar
+    # skafferi+glass; Nonfood är en grab-bag med grönsaker+kaffe). Färsk/Kolonial är
+    # försvarbara grova fallbacks; Nonfood mappas till ovrigt (innehållet är inte non-food).
+    # Den finare coop_nav (produktdetalj) overridar dessa när den finns.
     ("coop", "Kolonial"): "skafferi",
     ("coop", "Färsk"): "farskvaror",
-    ("coop", "Nonfood"): "hem_hushall",
-    # Coop navCategories topp-namn (produktdetalj, finare än offer-nivåns 3 buckets).
-    ("coop_nav", "Frukt & Grönt"): "frukt_gront",
+    ("coop", "Nonfood"): "ovrigt",
+    # Coop navCategories topp-namn (produktdetalj). Namnen nedan är de personalization-API:t
+    # faktiskt returnerar (verifierat mot 449 EAN) - tidigare seedade namn var fel-gissade.
+    ("coop_nav", "Frukt & Grönsaker"): "frukt_gront",
     ("coop_nav", "Mejeri & Ägg"): "mejeri_agg",
     ("coop_nav", "Ost"): "mejeri_agg",
-    ("coop_nav", "Kött & Fågel"): "kott_chark",
-    ("coop_nav", "Chark & Deli"): "kott_chark",
+    ("coop_nav", "Kött, Fågel & Chark"): "kott_chark",
     ("coop_nav", "Fisk & Skaldjur"): "fisk_skaldjur",
-    ("coop_nav", "Bröd & Kakor"): "brod_bageri",
+    ("coop_nav", "Bröd & Bageri"): "brod_bageri",
+    ("coop_nav", "Skafferi"): "skafferi",
     ("coop_nav", "Kryddor & Smaksättare"): "skafferi",
     ("coop_nav", "Dryck"): "dryck",
     ("coop_nav", "Frys"): "fryst",
     ("coop_nav", "Godis, Glass & Snacks"): "godis_snacks",
-    ("coop_nav", "Färdigmat"): "fardigmat",
-    ("coop_nav", "Vegetariskt & Veganskt"): "vegetariskt",
-    ("coop_nav", "Barn"): "barn",
-    ("coop_nav", "Djur"): "djur",
-    ("coop_nav", "Hälsa & Skönhet"): "halsa_skonhet",
-    ("coop_nav", "Hem & Hushåll"): "hem_hushall",
+    ("coop_nav", "Färdigmat & Mellanmål"): "fardigmat",
+    ("coop_nav", "Vegetariskt"): "vegetariskt",
+    ("coop_nav", "Djurmat & Tillbehör"): "djur",
+    ("coop_nav", "Skönhet & Hygien"): "halsa_skonhet",
+    ("coop_nav", "Apotek, hälsa & tillskott"): "halsa_skonhet",
+    ("coop_nav", "Hushåll"): "hem_hushall",
+    ("coop_nav", "Hem & inredning"): "hem_hushall",
+    ("coop_nav", "Fritid"): "hem_hushall",
 }
 
 # Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI

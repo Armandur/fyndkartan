@@ -363,7 +363,7 @@ def save_ean_meta(mapping):
     conn = get_conn()
     conn.executemany(
         "INSERT OR REPLACE INTO ean_cache (code, ean, category, fetched_at) VALUES (?,?,?,?)",
-        [(c, m.get("ean") or "", m.get("category") or "", _now()) for c, m in mapping.items()],
+        [(c, m.get("ean") or "", m.get("category") or None, _now()) for c, m in mapping.items()],
     )
     conn.commit()
     conn.close()

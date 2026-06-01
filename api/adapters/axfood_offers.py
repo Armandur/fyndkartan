@@ -30,10 +30,10 @@ async def fetch_p_meta(client, chain, codes):
                 r = await client.get(f"https://{domain}/axfood/rest/p/{code}", headers=headers, timeout=15)
                 if r.status_code == 200:
                     d = r.json()
-                    return code, {"ean": d.get("ean") or "", "category": d.get("googleAnalyticsCategory") or ""}
+                    return code, {"ean": d.get("ean") or "", "category": d.get("googleAnalyticsCategory") or None}
             except Exception as e:  # noqa: BLE001
                 log.warning("Axfood meta %s misslyckades: %s", code, e)
-        return code, {"ean": "", "category": ""}
+        return code, {"ean": "", "category": None}
 
     return dict(await asyncio.gather(*(one(c) for c in codes)))
 
