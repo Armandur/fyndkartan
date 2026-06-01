@@ -145,11 +145,14 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
     )
-    # Lokalt cachade produktbilder per EAN (bytes på disk, metadata här) - gör oss
-    # CDN-oberoende och snabbare. source_url = varifrån bilden hämtades.
+    # Lokalt cachade produktbilder per (ean, storlek) (bytes på disk, metadata här) -
+    # CDN-oberoende + snabbare. Migrera bort gammalt ean-PK-schema (cache regenererbar).
+    _icols = {r[1] for r in conn.execute("PRAGMA table_info(product_images)")}
+    if _icols and "size" not in _icols:
+        conn.execute("DROP TABLE product_images")
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS product_images (ean TEXT PRIMARY KEY, content_type TEXT, "
-        "source_url TEXT, fetched_at TEXT)"
+        "CREATE TABLE IF NOT EXISTS product_images (ean TEXT, size TEXT, content_type TEXT, "
+        "source_url TEXT, fetched_at TEXT, PRIMARY KEY (ean, size))"
     )
     # Opaka bearer-tokens för slutanvändare (icke-webb-klienter). Lagras hashade.
     conn.execute(
@@ -604,20 +607,20 @@ def _now():
 
 
 # ---- Produktbilds-cache (metadata; bytes ligger på disk) ----
-def get_image_meta(ean):
+def get_image_meta(ean, size):
     conn = get_conn()
     row = conn.execute(
-        "SELECT content_type, source_url FROM product_images WHERE ean=?", (str(ean),)
+        "SELECT content_type, source_url FROM product_images WHERE ean=? AND size=?", (str(ean), size)
     ).fetchone()
     conn.close()
     return dict(row) if row else None
 
 
-def save_image_meta(ean, content_type, source_url):
+def save_image_meta(ean, size, content_type, source_url):
     conn = get_conn()
     conn.execute(
-        "INSERT OR REPLACE INTO product_images (ean, content_type, source_url, fetched_at) VALUES (?,?,?,?)",
-        (str(ean), content_type, source_url, _now()),
+        "INSERT OR REPLACE INTO product_images (ean, size, content_type, source_url, fetched_at) VALUES (?,?,?,?,?)",
+        (str(ean), size, content_type, source_url, _now()),
     )
     conn.commit()
     conn.close()

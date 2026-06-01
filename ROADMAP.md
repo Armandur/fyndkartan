@@ -131,8 +131,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (c_limit
       400px - Coop gav 11 MB full-res, nu ~16 KB), cachar lokalt -> CDN-oberoende + snabbt.
       Erbjudande-/jämförelsekort använder den (fallback till CDN-URL vid fel).
-      - [ ] **Storleks-/kvalitetsvarianter:** `?size=thumb|full` cachat per (ean, storlek)
-        + välj bästa källa på kvalitet. Nu en fast storlek (400px).
+      - [x] **Storleksvarianter BYGGT.** `?size=thumb|default|full` (150/400/800px via
+        Cloudinary-transform), cachat separat per (ean, size). Erbjudande-/jämförelsekort
+        använder `thumb`. Ogiltig size -> default.
+        - [ ] Kvalitetsval av bästa källa per EAN (nu första träffen).
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;

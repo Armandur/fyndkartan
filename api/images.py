@@ -47,13 +47,19 @@ def _resolve_url(ean):
     return row["image"] if row else _ICA_CDN.format(ean=ean)
 
 
-async def get_cached_image(ean):
-    """(path, content_type) för EAN:ens produktbild - hämtar+cachar vid behov, None om ingen."""
-    path = IMG_DIR / str(ean)
-    meta = db.get_image_meta(ean)
+# Valbara storleksvarianter (max-dimension i px, begränsas via Cloudinary-transform).
+SIZES = {"thumb": 150, "default": 400, "full": 800}
+
+
+async def get_cached_image(ean, size="default"):
+    """(path, content_type) för EAN:ens produktbild i vald storlek - hämtar+cachar vid
+    behov, None om ingen. Varianter cachas separat per (ean, size)."""
+    px = SIZES.get(size) or SIZES["default"]
+    path = IMG_DIR / f"{ean}_{size}"
+    meta = db.get_image_meta(ean, size)
     if meta and path.exists():
         return path, meta["content_type"]
-    url = _sized(_resolve_url(ean))
+    url = _sized(_resolve_url(ean), px)
     if not url:
         return None
     try:
@@ -67,5 +73,5 @@ async def get_cached_image(ean):
         return None
     IMG_DIR.mkdir(parents=True, exist_ok=True)
     path.write_bytes(r.content)
-    db.save_image_meta(ean, ct, url)
+    db.save_image_meta(ean, size, ct, url)
     return path, ct

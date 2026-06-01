@@ -902,13 +902,15 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
 
 
 @app.get("/v1/products/{ean}/image")
-async def product_image(ean: str, _auth=Depends(require_consumer)):
+async def product_image(ean: str, size: str = "default", _auth=Depends(require_consumer)):
     """Lokalt cachad produktbild för EAN:en (proxas + cachas -> CDN-oberoende).
-    Same-origin <img> i appen skickar session-cookie -> require_consumer passerar."""
+    `size` = thumb|default|full (cachas separat). Same-origin <img> skickar cookie."""
     e = matching.normalize_ean(ean)
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
-    res = await images.get_cached_image(e)
+    if size not in images.SIZES:
+        size = "default"
+    res = await images.get_cached_image(e, size)
     if not res:
         return JSONResponse({"detail": "Ingen bild hittades."}, status_code=404)
     path, ct = res

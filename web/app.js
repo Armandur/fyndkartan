@@ -221,7 +221,7 @@ function offerCard(o) {
     ? `<span class="o-cmp">${o.comparison_value}/${esc(o.comparison_unit || "")}</span>`
     : "";
   const imgEan = o.eans && o.eans[0];
-  const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image` : o.image;
+  const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image?size=thumb` : o.image;
   const img = imgSrc
     ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${imgEan && o.image ? ` onerror="this.onerror=null;this.src='${esc(o.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
@@ -354,7 +354,7 @@ function compareCard(p) {
     ? ` <span class="cmp-variants" title="${esc((p.variants || []).join(", "))}">${p.variant_count} sorter</span>`
     : "";
   const sub = [p.brand, p.category].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
-  const cmpSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image` : p.image;
+  const cmpSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
   const img = cmpSrc
     ? `<img class="o-img" src="${esc(cmpSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
