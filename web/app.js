@@ -269,7 +269,10 @@ function offerCard(o) {
   const pkg = o.package_size || o.package;
   const origin = (o.origin && o.origin.length) ? o.origin.join("/") : "";
   const meta = [o.brand, pkg, origin].filter(Boolean).map(esc).join(" &middot; ");
-  const foot = [o.category_raw, valid].filter(Boolean).map(esc).join(" &middot; ");
+  const catChip = o.category ? `<span class="o-cat">${esc(catLabels[o.category] || o.category)}</span>` : "";
+  const foot = (catChip || valid)
+    ? `${catChip}${valid ? `<span class="o-valid">${valid}</span>` : ""}`
+    : "";
   const ean = o.eans && o.eans[0];
   const info = ean
     ? `<button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Innehåll &amp; näring</button>`

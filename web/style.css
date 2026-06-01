@@ -249,7 +249,12 @@ body {
 }
 .o-deal--mb { background: #e8ecfb; color: #2f43a8; }
 .o-deal--bw { background: #fbeede; color: #9a5a16; }
-.o-foot { font-size: .68rem; color: #9aa4b2; margin-top: .1rem; }
+.o-foot { font-size: .68rem; color: #9aa4b2; margin-top: .1rem; display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.o-cat {
+  font-size: .64rem; font-weight: 600;
+  background: #eef1f5; color: #46505c; padding: 1px 7px; border-radius: 10px;
+}
+.o-valid { font-size: .68rem; color: #9aa4b2; }
 .o-store { color: #46505c; font-weight: 600; }
 .fav-sec {
   font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
