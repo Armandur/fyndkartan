@@ -184,6 +184,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **API-testverktyg i konsolen (#sources-fliken) BYGGT.** Kör egna endpoints
       (förinställda exempel + fri sökväg) och kedjornas upstream-API:er via admin-proxy
       (`/v1/admin/proxy`, whitelistade hostar, server-side nyckel/token).
+      - [ ] **Bygg ut "Egna API:er"-katalogen till per-endpoint-utfällning.** API-ytan
+        växer; i stället för en gemensam testruta ska varje endpoint kunna fällas ut och
+        visa mer info: returnerade fält + beskrivning av varje fält (gärna parametrar med),
+        och en testknapp/svarsruta per endpoint. Fält-metadatan kan komma ur kurerat
+        OpenAPI-kontrakt (se nedan) eller en utökad `OWN_APIS`-struktur.
     - [x] **Externa API-nycklar BYGGT.** Konsolflik "API-nycklar": utfärda (visas en
       gång, lagras hashad) + återkalla. `X-API-Key`-middleware validerar om nyckel skickas
       (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
