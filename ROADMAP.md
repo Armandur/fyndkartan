@@ -262,8 +262,13 @@ domäner:
   (lazy-cache) - full täckning kräver sortiment-jobbet.
   - [x] **Frontend-produktsök BYGGT.** Sökruta i sidopanelen + egen produktpanel som gör
     både namnsök och kategori-bläddring (dropdown med kanoniska kategorier). Produktkort:
-    bild, märke/förpackning/ursprung, kategori-chip, kedje-chips, prisintervall, deal-badge;
-    klick öppnar produktinfo-modalen (EAN). Ej webbläsartestad.
+    bild, märke/förpackning/ursprung, kategori-chip, kedje-chips, prisintervall, deal-badge,
+    "Innehåll & näring"-knapp + "N butiker". Ej webbläsartestad.
+  - [ ] **Filtrera kartan på en vald produkt** ("visa butiker som har varan"). BEROR PÅ
+    bredare offer-täckning / fulla sortiment: med lazy-cachen blir filtret antingen
+    missvisande (precist = döljer de flesta butiker som faktiskt har varan, vi har bara en
+    bråkdel cachad) eller meningslöst (per kedja = nästan hela kartan). Bygg när täckningen
+    finns. "N butiker" på produktkortet har samma brasklapp (= cachade butiker, inte totalt).
 - [x] **Kategori-endpoint BYGGT** (`GET /v1/products/by-category?category=&chain=&limit=`).
   Bläddrar distinkta produkter i en kanonisk kategori ur erbjudande-cachen, samma form som
   produktsöket (delar `database.list_products`). Okänd kategori -> 400.
