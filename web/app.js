@@ -14,7 +14,7 @@ const state = {
   query: "",
   onlyOffers: false,
   onlyFavorites: false,
-  favorites: new Set(JSON.parse(localStorage.getItem("favorites") || "[]")),
+  favorites: new Set(),
   user: null,
 };
 
@@ -24,16 +24,12 @@ function favKey(s) { return `${s.chain}:${s.store_id}`; }
 function isFav(s) { return state.favorites.has(favKey(s)); }
 
 async function toggleFav(s) {
+  if (!state.user) { openAuth("login"); return; }  // favoriter kräver inloggning
   const k = favKey(s);
   const had = state.favorites.has(k);
-  if (state.user) {
-    if (had) await fetch(`/v1/favorites/${s.chain}/${s.store_id}`, { method: "DELETE" });
-    else await fetch("/v1/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain: s.chain, store_id: s.store_id }) });
-    if (had) state.favorites.delete(k); else state.favorites.add(k);
-  } else {
-    if (had) state.favorites.delete(k); else state.favorites.add(k);
-    localStorage.setItem("favorites", JSON.stringify([...state.favorites]));
-  }
+  if (had) await fetch(`/v1/favorites/${s.chain}/${s.store_id}`, { method: "DELETE" });
+  else await fetch("/v1/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain: s.chain, store_id: s.store_id }) });
+  if (had) state.favorites.delete(k); else state.favorites.add(k);
   if (state.onlyFavorites) render();
   else renderList();
 }
@@ -204,31 +200,6 @@ async function loadStores() {
   render();
 }
 
-function updateSyncBadge(st) {
-  const badge = document.getElementById("syncBadge");
-  if (st.running) {
-    const done = Object.values(st.chains).filter((c) => c.status === "ok" || c.status === "error").length;
-    badge.className = "sync-badge running";
-    badge.textContent = `● synkar… (${done}/5 kedjor klara)`;
-    return true;
-  }
-  const errors = Object.values(st.chains).filter((c) => c.status === "error");
-  badge.className = "sync-badge " + (errors.length ? "error" : "ok");
-  badge.textContent = errors.length
-    ? `● synk klar, ${errors.length} fel`
-    : `● synk klar`;
-  return false;
-}
-
-async function pollSync() {
-  const r = await fetch("/v1/sync/status");
-  const st = await r.json();
-  const running = updateSyncBadge(st);
-  await loadChains();
-  await loadStores();
-  if (running) setTimeout(pollSync, 2500);
-}
-
 document.getElementById("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();
   render();
@@ -240,10 +211,6 @@ document.getElementById("onlyOffers").addEventListener("change", (e) => {
 document.getElementById("onlyFavorites").addEventListener("change", (e) => {
   state.onlyFavorites = e.target.checked;
   render();
-});
-document.getElementById("syncBtn").addEventListener("click", async () => {
-  await fetch("/v1/sync", { method: "POST" });
-  pollSync();
 });
 
 // ---- Erbjudanden ----
@@ -261,6 +228,10 @@ function offerCard(o) {
   const sv = Math.round((o.savings || 0) * 100) / 100;
   const save = sv > 0 ? `<span class="o-save">spar ${sv} kr</span>` : "";
   const foot = [o.category_raw, valid].filter(Boolean).map(esc).join(" &middot; ");
+  const ean = o.eans && o.eans[0];
+  const info = ean
+    ? `<button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Innehåll &amp; näring</button>`
+    : "";
   return `<div class="offer-card">
     ${img}
     <div class="o-body">
@@ -273,9 +244,48 @@ function offerCard(o) {
         ${save}
       </div>
       ${foot ? `<div class="o-foot">${foot}</div>` : ""}
+      ${info}
     </div>
   </div>`;
 }
+
+async function openProductModal(ean, chain, name) {
+  const modal = document.getElementById("productModal");
+  document.getElementById("productModalTitle").textContent = name || "Produktinfo";
+  const body = document.getElementById("productModalBody");
+  body.innerHTML = '<div class="text-muted small">Laddar produktinfo&hellip;</div>';
+  modal.classList.remove("d-none");
+  try {
+    const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}?prefer_chain=${encodeURIComponent(chain || "")}`)).json();
+    body.innerHTML = renderProductInfo(d, chain);
+  } catch (e) {
+    body.innerHTML = '<div class="text-danger small">Kunde inte hämta produktinfo.</div>';
+  }
+}
+
+function renderProductInfo(d, chain) {
+  if (!d.found || !d.info) return '<div class="text-muted small">Ingen produktinfo hittades för den här varan.</div>';
+  const x = d.info, P = [];
+  if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
+  if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
+  const orig = [x.origin, x.province].filter(Boolean).join(" · ");
+  if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${esc(orig)}</p>`);
+  if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
+  if (x.nutrition && x.nutrition.length) {
+    const b = x.nutrition_basis ? ` (per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")})` : "";
+    P.push(`<p class="small mb-1"><strong>Näring${b}:</strong> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</p>`);
+  }
+  if (x.source && x.source !== chain) P.push(`<p class="text-muted fst-italic small mb-0">Metadata via ${esc(x.source)} (samma EAN)</p>`);
+  return P.join("") || '<div class="text-muted small">Ingen detaljdata.</div>';
+}
+
+function closeProductModal() { document.getElementById("productModal").classList.add("d-none"); }
+document.getElementById("productClose").addEventListener("click", closeProductModal);
+document.getElementById("productModal").addEventListener("click", (e) => { if (e.target.id === "productModal") closeProductModal(); });
+document.getElementById("offersList").addEventListener("click", (e) => {
+  const b = e.target.closest(".o-info");
+  if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
+});
 
 function sortOffers(list, mode) {
   const arr = [...list];
@@ -470,16 +480,29 @@ map.on("popupopen", (e) => {
 
 // ---- Konton ----
 function renderAuthArea() {
+  document.body.classList.toggle("logged-in", !!state.user);
   const el = document.getElementById("authArea");
   if (state.user) {
-    el.innerHTML = `<span class="small text-light d-none d-sm-inline">${esc(state.user.email)}</span>
-      <button id="logoutBtn" class="btn btn-sm btn-outline-light">Logga ut</button>`;
-    el.querySelector("#logoutBtn").onclick = doLogout;
+    el.innerHTML = `<div class="acct">
+        <button id="acctBtn" class="acct-btn">
+          <span class="acct-email">${esc(state.user.email)}</span><span class="acct-caret">&#9662;</span>
+        </button>
+        <div id="acctMenu" class="acct-menu d-none">
+          <button id="acctSettings" class="acct-item">Kontoinställningar</button>
+          <button id="acctLogout" class="acct-item">Logga ut</button>
+        </div>
+      </div>`;
+    el.querySelector("#acctBtn").onclick = (e) => { e.stopPropagation(); document.getElementById("acctMenu").classList.toggle("d-none"); };
+    el.querySelector("#acctSettings").onclick = () => { closeAcctMenu(); openSettings(); };
+    el.querySelector("#acctLogout").onclick = () => { closeAcctMenu(); doLogout(); };
   } else {
     el.innerHTML = `<button id="loginBtn" class="btn btn-sm btn-light">Logga in</button>`;
     el.querySelector("#loginBtn").onclick = () => openAuth();
   }
 }
+
+function closeAcctMenu() { const m = document.getElementById("acctMenu"); if (m) m.classList.add("d-none"); }
+document.addEventListener("click", closeAcctMenu);  // klick utanför stänger menyn
 
 async function loadUser() {
   try { state.user = await (await fetch("/v1/auth/me")).json(); } catch (e) { state.user = null; }
@@ -487,28 +510,18 @@ async function loadUser() {
 }
 
 async function loadFavorites() {
-  if (state.user) {
-    try {
-      const d = await (await fetch("/v1/favorites")).json();
-      state.favorites = new Set(d.favorites || []);
-    } catch (e) { state.favorites = new Set(); }
-  } else {
-    state.favorites = new Set(JSON.parse(localStorage.getItem("favorites") || "[]"));
-  }
-}
-
-async function mergeLocalFavorites() {
-  const local = JSON.parse(localStorage.getItem("favorites") || "[]");
-  for (const k of local) {
-    const [chain, store_id] = k.split(":");
-    if (chain && store_id) await fetch("/v1/favorites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chain, store_id }) });
-  }
-  localStorage.removeItem("favorites");
+  if (!state.user) { state.favorites = new Set(); return; }
+  try {
+    const d = await (await fetch("/v1/favorites")).json();
+    state.favorites = new Set(d.favorites || []);
+  } catch (e) { state.favorites = new Set(); }
 }
 
 async function doLogout() {
   await fetch("/v1/auth/logout", { method: "POST" });
   state.user = null;
+  state.onlyFavorites = false;
+  document.getElementById("onlyFavorites").checked = false;
   renderAuthArea();
   await loadFavorites();
   render();
@@ -518,6 +531,7 @@ let authMode = "login";
 function openAuth(mode = "login") {
   authMode = mode;
   document.getElementById("authError").classList.add("d-none");
+  document.getElementById("authPass").value = "";
   document.getElementById("authTitle").textContent = mode === "login" ? "Logga in" : "Skapa konto";
   document.getElementById("authSubmit").textContent = mode === "login" ? "Logga in" : "Registrera";
   document.getElementById("authToggleText").textContent = mode === "login" ? "Inget konto?" : "Har du konto?";
@@ -528,24 +542,41 @@ function openAuth(mode = "login") {
 function closeAuth() { document.getElementById("authModal").classList.add("d-none"); }
 
 async function submitAuth() {
-  const email = document.getElementById("authEmail").value.trim();
-  const password = document.getElementById("authPass").value;
   const errEl = document.getElementById("authError");
-  const r = await fetch(`/v1/auth/${authMode === "login" ? "login" : "register"}`, {
+  errEl.classList.add("d-none");
+  const r = await fetch(`/v1/auth/${authMode}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: document.getElementById("authEmail").value.trim(), password: document.getElementById("authPass").value }),
   });
-  if (!r.ok) {
-    errEl.textContent = (await r.json()).detail || "Något gick fel.";
-    errEl.classList.remove("d-none");
-    return;
-  }
+  if (!r.ok) { errEl.textContent = (await r.json()).detail || "Något gick fel."; errEl.classList.remove("d-none"); return; }
   state.user = await r.json();
   closeAuth();
-  await mergeLocalFavorites();
   await loadFavorites();
   renderAuthArea();
   render();
+}
+
+// ---- Kontoinställningar (utbyggbar; rymmer just nu lösenordsbyte) ----
+function openSettings() {
+  document.getElementById("setEmail").textContent = state.user.email;
+  document.getElementById("setCur").value = "";
+  document.getElementById("setNew").value = "";
+  document.getElementById("setMsg").classList.add("d-none");
+  document.getElementById("settingsModal").classList.remove("d-none");
+}
+function closeSettings() { document.getElementById("settingsModal").classList.add("d-none"); }
+
+async function saveSettingsPassword() {
+  const msg = document.getElementById("setMsg");
+  const show = (txt, ok) => { msg.textContent = txt; msg.className = "small mb-2 " + (ok ? "text-success" : "text-danger"); };
+  const r = await fetch("/v1/auth/password", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: document.getElementById("setCur").value, new_password: document.getElementById("setNew").value }),
+  });
+  if (!r.ok) { show((await r.json()).detail || "Något gick fel.", false); return; }
+  document.getElementById("setCur").value = "";
+  document.getElementById("setNew").value = "";
+  show("Lösenordet är bytt.", true);
 }
 
 document.getElementById("authClose").addEventListener("click", closeAuth);
@@ -554,10 +585,14 @@ document.getElementById("authSubmit").addEventListener("click", submitAuth);
 document.getElementById("authPass").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
 document.getElementById("authToggle").addEventListener("click", (e) => { e.preventDefault(); openAuth(authMode === "login" ? "register" : "login"); });
 
+document.getElementById("setClose").addEventListener("click", closeSettings);
+document.getElementById("settingsModal").addEventListener("click", (e) => { if (e.target.id === "settingsModal") closeSettings(); });
+document.getElementById("setSave").addEventListener("click", saveSettingsPassword);
+document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key === "Enter") saveSettingsPassword(); });
+
 (async function init() {
   await loadUser();
   await loadFavorites();
   await loadChains();
   await loadStores();
-  pollSync();
 })();

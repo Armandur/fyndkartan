@@ -53,17 +53,28 @@ def _metric(o):
     return v if v is not None else float("inf")
 
 
-def build_comparisons(entries, min_chains=2):
-    """Produktgrupper (per EAN) som finns hos >= min_chains olika kedjor,
-    sorterade på prisspridning (störst besparing först)."""
+def build_comparisons(entries, min_chains=2, manual_groups=None):
+    """Produktgrupper som finns hos >= min_chains olika kedjor, sorterade på
+    prisspridning (störst besparing först). Grupperas per EAN; offers vars
+    (chain, ean) tillhör samma manuella märkesvaru-grupp slås ihop trots olika EAN.
+
+    manual_groups: {ean: group_id}. EAN-nycklad så en paring täcker varje kedja som
+    bär samma EAN (t.ex. Willys+Hemköp som delar Axfood-EAN). Tom = ren EAN-matchning."""
+    manual_groups = manual_groups or {}
     groups = {}
+    meta = {}  # key -> (None, ean) eller (group_id, None)
     for e in entries:
         for ean in {normalize_ean(x) for x in (e.get("eans") or [])}:
-            if ean:
-                groups.setdefault(ean, []).append(e)
+            if not ean:
+                continue
+            gid = manual_groups.get(ean)
+            key = f"m{gid}" if gid is not None else ean
+            groups.setdefault(key, []).append(e)
+            meta[key] = (gid, None) if gid is not None else (None, ean)
 
     out = []
-    for ean, offs in groups.items():
+    for key, offs in groups.items():
+        group_id, ean = meta[key]
         # En post per butik (lägst enhetspris vid dubbletter).
         by_store = {}
         for o in offs:
@@ -92,6 +103,8 @@ def build_comparisons(entries, min_chains=2):
         out.append(
             {
                 "ean": ean,
+                "match_group": group_id,
+                "manual": group_id is not None,
                 "name": named.get("name"),
                 "brand": named.get("brand"),
                 "image": named.get("image"),
@@ -130,10 +143,11 @@ def _merge_same_deal(groups):
         if m:
             if g["name"] and g["name"] not in m["variants"]:
                 m["variants"].append(g["name"])
-            m["eans"].append(g["ean"])
+            if g["ean"]:
+                m["eans"].append(g["ean"])
         else:
             g["variants"] = [g["name"]] if g["name"] else []
-            g["eans"] = [g["ean"]]
+            g["eans"] = [g["ean"]] if g["ean"] else []
             merged[sig] = g
     result = list(merged.values())
     for g in result:

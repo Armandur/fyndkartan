@@ -65,10 +65,8 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - [x] **code -> EAN-cache** för Axfood (byggd i steg 3, se `ean_cache` nedan).
 - [ ] Rekognoscera Lidl erbjudande-källa + EAN (regionalt via `offerRegion`).
       Lidl verkar bara ha PDF-reklamblad -> kräver fångst av nätverksanrop / OCR.
-- [ ] (uppslag) **ICA To Go** - app för obemannade ICA-butiker/kiosk/kylskåp
-      (compileit.com/uppdrag/ica-togo). Undersök om dessa platser finns i
-      storeslist (egen profil/typ) och i så fall tagga dem som obemannade
-      (ny store-type-tagg). Sannolikt inga veckoerbjudanden.
+- [x] **ICA To Go** - hanterad: `togo`-typen finns i vokabulären och `seed_types`
+      taggar labels med "to go"/"togo" automatiskt.
 
 ---
 
@@ -97,11 +95,38 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - **Nivå 1 - kategori + enhetspris** ("billigaste mjölk per liter"): separat feature,
   kräver ingen matchning. Medvetet INTE med i matchningslagret (undviker falsk-
   gruppering). Byggs vid behov.
-- [ ] **Para ihop kedjornas egna märkesvaror** (ICA Basic, Garant, Änglamark...):
-  dessa saknar gemensam EAN och matchar därför aldrig via nivå 2. Behov: kunna
-  (a) **manuellt** välja/para ihop motsvarande produkter mellan kedjor, och/eller
-  (b) **smart** föreslå par baserat på namn + vikt + kategori (ev. LLM/embeddings
-  som domare). Lagras som en manuell/föreslagen mappnings-tabell ovanpå EAN-matchningen.
+- [x] **Para ihop kedjornas egna märkesvaror (v1 BYGGT).** Egna märkesvaror saknar
+  gemensam EAN och matchar aldrig via nivå 2. Konsolflik "Märkesvaror" (`api/brands.py`):
+  redigerbar private-label-vokabulär per kedja (`private_brands`), lista över private-
+  label-produkter ur offers, namn+förpacknings-baserade matchningsförslag, godkänn
+  eller sök manuellt. Stabil EAN-nycklad mappning (`product_matches`) som
+  `matching.build_comparisons` slår ihop på (manual=True-kort). Produktbild visas.
+  - [x] **EAN-produktinfo som egen domän BYGGT.** `details.py` (`fetch_for_ean`) +
+    EAN-nyckad cache `product_info` + **publik** `GET /v1/products/{ean}?prefer_chain=`
+    (utanför admin-routern -> konsument-appen + konsolen delar den). Källor: Axfood
+    `/axfood/rest/p/{code}` (ingredienser/näring/ursprung, EAN via ean_cache) + Coops
+    personalization-API (POST EAN-array, skrapad nyckel, scrape-on-401). Coop funkar
+    EAN-globalt -> berikar branded varor även i ICA (vars ehandel är bot-skyddad).
+    `source` sparas i cachen. Datakällor-fliken listar källorna.
+    - [x] **Visas i paringsvyn** (basprodukt auto, kandidater/paringar via "info").
+    - [x] **Erbjudande-info-modal i konsument-appen BYGGT** ("Innehåll & näring" på
+      erbjudandekort med EAN -> modal). OBS: bara där EAN finns klient-sida (ICA/Coop
+      inline; Axfood-EAN resolvas lazy, saknas ofta på kortet).
+    - [ ] **Normalisera/slå ihop produktinfo över källor.** Nu first-hit-vinner per EAN
+      (Axfood = näring, Coop = ingredienser/ursprung). Olika källor kan ge olika/komplet-
+      terande fält för samma EAN - bör slås ihop per fält eller väljas på rikedom.
+    - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
+      täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
+    - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
+      compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
+      det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
+    - [ ] **Cacha produktbilder.** Nu hotlinkas bilder direkt från kedjornas CDN
+      (assets.icanet.se, cloudinary, axfood) i list-/erbjudande-/paringsvyer. Bör cachas
+      lokalt (proxas/laddas ner) för robusthet, hastighet och oberoende av deras CDN.
+  - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
+    produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
+  - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
+    ev. LLM/embeddings som domare).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
   + editerbar `tag_map` (label -> typ). Typen härleds vid läsning (`tags.effective_type`):
   override från tag_map annars `classify_service`-seed, så admin-ändringar slår igenom
@@ -110,18 +135,42 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
   taggar: översikt (kedjor/cacher/schemaläggare), **API-anrop** (logg + statistik per
   källa via httpx-hook i `apilog.py`), datakällor per kedja, och tagg-underhållet
   (mappa omappade råetiketter mot vokabulären).
-  - [ ] Ev. auth på admin-muterande endpoints om instansen exponeras publikt
-    (nu öppet; normal deploy är lokal Unraid). Persistent anropslogg (nu in-memory).
-  - [ ] Samma mapp-mönster passar för märkesvaru-paringen ovan.
-- **Favoritbutiker: BYGGD (klient-lokalt).** Stjärn-toggle i butikslistan, sparas i
-  `localStorage`; "Bara favoriter"-filter; "Jämför mina favoriter" -> `GET
-  /v1/compare/stores?stores=chain:id,...` (delar `_compare_rows` med compare/near).
+  - [x] **API-konsol med separat admin-auth BYGGT.** Admin/drift är skild från
+    kartappen: `web/admin.html` på `/admin` heter "API-konsol" och har egen
+    inloggningsruta (`/v1/console/auth/*`). Konsol-admins ligger i egen tabell
+    `admin_users` med egen session-nyckel (`admin_uid`) - en app-användare är
+    aldrig admin, ett konsolkonto kan inte logga in i appen. `require_admin`
+    (-> `current_admin`) gatar alla `/v1/admin/*`, `/v1/tags*` och `/v1/sync*`.
+    Synk-knapp + status flyttade till konsolens Översikt-flik. Konsolkontot seedas
+    vid uppstart (`ensure_admin`) från `ADMIN_EMAIL` (generisk default i koden,
+    sätts per instans via env/`.env`) + `ADMIN_PASSWORD` (annars genererat + loggat).
+    - [ ] Persistent anropslogg (nu in-memory).
+    - [ ] **API-testverktyg i konsolen (#sources-fliken):** sökfält/testexempel för att
+      köra API:erna direkt (t.ex. EAN -> produktinfo, butik -> erbjudanden) och se svaret,
+      så man kan utforska datakällorna interaktivt.
+    - [ ] **/admin#tags: ladda inte om/sortera om vid klick.** Idag kör varje
+      typ-toggle `loadTags()` som re-fetchar + re-sorterar, så en tagg man precis
+      mappat "försvinner" ner i listan (sorten lägger omappade först). Uppdatera
+      raden in-place istället (behåll ordning, byt bara manuell/auto-label).
+      Gäller även "Märkesvaror"-fliken - bygg den utan omladdning vid åtgärd.
+    - [ ] **Tillåt borttagning även av inbyggda tagg-typer.** Nu skyddas
+      `BUILTIN_TAG_TYPES` från radering (annars kan `seed_types` producera en typ
+      som inte finns i vokabulären). Vill att användaren ska kunna ta bort dem ändå
+      - hantera följden (seedad typ utan vokabulär-post visas som omappad/other).
+- **Favoritbutiker: BYGGD (endast inloggad).** Stjärn-toggle i butikslistan kräver
+  inloggning (öppnar login-modal annars); "Bara favoriter"-filter + "Jämför mina
+  favoriter" -> `GET /v1/compare/stores?stores=chain:id,...` döljs helt utloggad
+  (CSS `body:not(.logged-in)`). Ingen localStorage-fallback.
   - [x] **Konton + server-favoriter BYGGT.** E-post + lösenord (bcrypt), session-cookie
     (SessionMiddleware, secret persisterad i DB -> överlever omstart). `users`/`favorites`-
-    tabeller, `auth.py`, `/v1/auth/*` + `/v1/favorites`. Inloggad -> server-favoriter (synk
-    mellan enheter), utloggad -> localStorage; lokala favoriter merge:as in vid login.
+    tabeller, `auth.py`, `/v1/auth/*` (inkl. `/v1/auth/password` för lösenordsbyte) +
+    `/v1/favorites`. Favoriter är serverbundna -> synk mellan enheter.
     - [ ] Ev. magic-link/lösenordsåterställning (kräver SMTP) - ej byggt i v1.
-    (nu är favoriterna per webbläsare).
+    - [ ] **Visa ALLA favoriters erbjudanden, inte bara matchade.** "Jämför mina
+      favoriter" visar nu bara produkter som matchas mellan kedjor. Användaren bör
+      kunna se hela listan av sina favoritbutikers erbjudanden. Är en produkt
+      matchad: visa vilka butiker som har den och till vilka priser, billigast
+      först (men visa övriga priser också).
 - **Närliggande erbjudanden:** geosök (finns) + erbjudande-lagret. `compare/near`
   laddar offers lazy för de ~12 närmaste butikerna; för ett tätt flöde kan ett
   schemalagt bulk-/radie-förhämtningsjobb behövas.

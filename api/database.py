@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from .config import BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_TAG_TYPES
+from .config import BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES
 from .tags import build_tag
 
 
@@ -109,6 +109,41 @@ def init_db():
             store_id TEXT NOT NULL,
             PRIMARY KEY (user_id, chain, store_id)
         )"""
+    )
+    # Admin-/konsolkonton är helt skilda från app-konton (users): egen tabell,
+    # egen session (admin_uid). En app-användare har aldrig admin-behörighet.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT
+        )"""
+    )
+    # Editerbar private-label-vokabulär (brand-rötter per kedja); seedas en gång.
+    conn.execute("CREATE TABLE IF NOT EXISTS private_brands (chain TEXT, brand TEXT, PRIMARY KEY (chain, brand))")
+    if not conn.execute("SELECT 1 FROM private_brands LIMIT 1").fetchone():
+        conn.executemany(
+            "INSERT OR IGNORE INTO private_brands (chain, brand) VALUES (?,?)",
+            [(ch, b) for ch, bs in DEFAULT_PRIVATE_BRANDS.items() for b in bs],
+        )
+    # Manuell cross-chain-paring av märkesvaror. EAN-nycklad (stabil, överlever att
+    # offers uppdateras). Snapshot av namn/brand/pkg så posten kan visas även när
+    # erbjudandet försvunnit. En (chain, ean) tillhör som mest en grupp.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS product_matches (
+            group_id INTEGER NOT NULL,
+            chain TEXT NOT NULL,
+            ean TEXT NOT NULL,
+            name TEXT, brand TEXT, package TEXT,
+            PRIMARY KEY (chain, ean)
+        )"""
+    )
+    # Produktinfo per EAN (EAN-global: ingredienser/näring/ursprung), lazy-cachad.
+    # Källan står i datan (`source`). Regenererbar -> gamla per-kedje-cachen släpps.
+    conn.execute("DROP TABLE IF EXISTS product_details")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
     )
     # ALTER TABLE-guards för nya kolumner (ingen Alembic).
     _ensure_column(conn, "offers", "member_price", "INTEGER")
@@ -387,6 +422,154 @@ def create_user(email, password_hash):
     uid = cur.lastrowid
     conn.close()
     return uid
+
+
+def update_password(user_id, password_hash):
+    conn = get_conn()
+    conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
+    conn.commit()
+    conn.close()
+
+
+# ---- Admin-/konsolkonton (skilda från app-konton) ----
+def create_admin(email, password_hash):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO admin_users (email, password_hash, created_at) VALUES (?,?,?)",
+        (email, password_hash, now),
+    )
+    conn.commit()
+    aid = cur.lastrowid
+    conn.close()
+    return aid
+
+
+def get_admin_by_email(email):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM admin_users WHERE email=?", (email,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_admin_by_id(aid):
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM admin_users WHERE id=?", (aid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_admin_password(aid, password_hash):
+    conn = get_conn()
+    conn.execute("UPDATE admin_users SET password_hash=? WHERE id=?", (password_hash, aid))
+    conn.commit()
+    conn.close()
+
+
+# ---- Private-label-vokabulär + märkesvaru-paring ----
+def load_private_brands():
+    conn = get_conn()
+    rows = conn.execute("SELECT chain, brand FROM private_brands ORDER BY chain, brand").fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r["chain"], []).append(r["brand"])
+    return out
+
+
+def add_private_brand(chain, brand):
+    conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO private_brands (chain, brand) VALUES (?,?)", (chain, brand))
+    conn.commit()
+    conn.close()
+
+
+def remove_private_brand(chain, brand):
+    conn = get_conn()
+    conn.execute("DELETE FROM private_brands WHERE chain=? AND brand=?", (chain, brand))
+    conn.commit()
+    conn.close()
+
+
+def load_match_members():
+    """Alla parade medlemmar som lista av dict (för admin-vy + compare-map)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT group_id, chain, ean, name, brand, package FROM product_matches"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def group_for(chain, ean):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT group_id FROM product_matches WHERE chain=? AND ean=?", (chain, str(ean))
+    ).fetchone()
+    conn.close()
+    return row["group_id"] if row else None
+
+
+def link_products(members):
+    """Knyt ihop medlemmar ({chain, ean, name, brand, package}) till en grupp. Om
+    någon redan tillhör en grupp återanvänds det group_id, annars skapas ett nytt."""
+    conn = get_conn()
+    try:
+        gid = None
+        for m in members:
+            row = conn.execute(
+                "SELECT group_id FROM product_matches WHERE chain=? AND ean=?",
+                (m["chain"], str(m["ean"])),
+            ).fetchone()
+            if row:
+                gid = row["group_id"]
+                break
+        if gid is None:
+            gid = conn.execute("SELECT COALESCE(MAX(group_id), 0) + 1 AS g FROM product_matches").fetchone()["g"]
+        conn.executemany(
+            "INSERT OR REPLACE INTO product_matches (group_id, chain, ean, name, brand, package) VALUES (?,?,?,?,?,?)",
+            [(gid, m["chain"], str(m["ean"]), m.get("name"), m.get("brand"), m.get("package")) for m in members],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return gid
+
+
+def unlink_member(chain, ean):
+    conn = get_conn()
+    conn.execute("DELETE FROM product_matches WHERE chain=? AND ean=?", (chain, str(ean)))
+    conn.commit()
+    conn.close()
+
+
+def delete_match_group(group_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM product_matches WHERE group_id=?", (group_id,))
+    conn.commit()
+    conn.close()
+
+
+def get_product_info(ean):
+    conn = get_conn()
+    row = conn.execute("SELECT data FROM product_info WHERE ean=?", (str(ean),)).fetchone()
+    conn.close()
+    return json.loads(row["data"]) if row else None
+
+
+def save_product_info(ean, data):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO product_info (ean, data, fetched_at) VALUES (?,?,?)",
+        (str(ean), json.dumps(data, ensure_ascii=False), now),
+    )
+    conn.commit()
+    conn.close()
 
 
 def get_user_by_email(email):

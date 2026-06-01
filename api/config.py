@@ -14,6 +14,12 @@ COOP_KEY = os.getenv("COOP_KEY", "")
 COOP_OFFERS_KEY = os.getenv("COOP_OFFERS_KEY", "")
 LIDL_KEY = os.getenv("LIDL_KEY", "")
 
+# Coop personalization-API (produktdetalj: ingredienser/ursprung/förvaring). Egen
+# subscription-nyckel (≠ butiks-/dke-nyckeln), i Coops serviceAccess-JSON. Tom =
+# skrapas + scrape-on-401 (self-renewing). store-param är produktoberoende.
+COOP_PERSO_KEY = os.getenv("COOP_PERSO_KEY", "")
+COOP_DETAIL_STORE = os.getenv("COOP_DETAIL_STORE", "251300")
+
 # Schemalagd butikssynk via cron-uttryck (både intervall och bestämd tid).
 # Default: dagligen 04:00 svensk tid. Exempel: "0 */6 * * *" = var 6:e timme.
 # Tomt / "off" = avstängd. Erbjudanden sköts av sin egen 6h lazy-cache.
@@ -25,7 +31,26 @@ SYNC_TZ = os.getenv("SYNC_TZ", "Europe/Stockholm")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")
 SESSION_HTTPS_ONLY = os.getenv("SESSION_HTTPS_ONLY", "false").lower() == "true"
 
+# Konsol-admin. Seedas i admin_users vid uppstart. Sätt ADMIN_EMAIL/ADMIN_PASSWORD i
+# env (image/prod) - default-mejlen nedan är bara en generisk platshållare, INTE en
+# instansspecifik adress. Saknas ADMIN_PASSWORD genereras ett som loggas en gång.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
 CHAINS = ["ica", "coop", "willys", "hemkop", "lidl"]
+
+# Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI
+# (private_brands-tabell), seedas med listan nedan. En produkt räknas som private
+# label om dess brand (case-insensitivt) BÖRJAR med någon rot - så "ICA" fångar
+# "ICA. Ursprung Sverige", "ICA Selection" osv. Dessa matchar aldrig cross-chain
+# via EAN (kedjeinterna), så de paras ihop manuellt i "Märkesvaror"-fliken.
+DEFAULT_PRIVATE_BRANDS = {
+    "ica": ["ICA", "Eldorado", "Skona", "Rätt Sortiment"],
+    "coop": ["Coop", "Änglamark", "Xtra", "X-tra"],
+    "willys": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
+    "hemkop": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
+    "lidl": [],
+}
 
 # Statisk beskrivning av datakällorna (för admin-dashboarden).
 DATA_SOURCES = [
@@ -42,6 +67,11 @@ DATA_SOURCES = [
     {"chain": "hemkop", "what": "erbjudanden + EAN", "url": "hemkop.se/search/campaigns + /axfood/rest/p/{code}", "auth": "ingen"},
     {"chain": "lidl", "what": "butiker", "url": "live.api.schwarz/odj/stores-api/v2/.../stores (geo_box-svep)", "auth": "x-apikey"},
     {"chain": "lidl", "what": "erbjudanden", "url": "regionalt (offerRegion) - ej byggt", "auth": "-"},
+    # Produktinfo (ingredienser/näring/ursprung) per EAN för märkesvaru-paringen.
+    {"chain": "willys", "what": "produktinfo (ingredienser/näring)", "url": "willys.se/axfood/rest/p/{code}", "auth": "ingen"},
+    {"chain": "hemkop", "what": "produktinfo (ingredienser/näring)", "url": "hemkop.se/axfood/rest/p/{code}", "auth": "ingen"},
+    {"chain": "coop", "what": "produktinfo per EAN (+ cross-chain-fallback)", "url": "external.api.coop.se/personalization/search/entities/by-id (POST, EAN-array)", "auth": "personalization-nyckel (skrapas)"},
+    {"chain": "ica", "what": "produktinfo", "url": "ehandel bot-skyddad (AWS WAF) - använder Coop-fallback på EAN för branded varor", "auth": "-"},
 ]
 
 # Kanonisk vokabulär för butikstjänst-taggar. Editerbar i admin-UI (tag_types-tabell),

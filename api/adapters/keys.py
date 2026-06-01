@@ -13,6 +13,7 @@ UA = (
 COOP_PAGE = "https://www.coop.se/butiker-erbjudanden/"
 _COOP_PAT = re.compile(r'"storeApiSubscriptionKey":"([0-9a-fA-F]{32})"')
 _COOP_OFFERS_PAT = re.compile(r'"dkeKey":"([0-9a-fA-F]{32})"')
+_COOP_PERSO_PAT = re.compile(r'"personalizationApiSubscriptionKey":"([0-9a-fA-F]{32})"')
 
 # Lidl: x-apikey ligger inte i HTML utan i storesearch-frontend-bundlen (base.js),
 # vars versionerade sökväg står i butikssidan.
@@ -38,6 +39,16 @@ async def scrape_coop_offers_key(client):
     if not m:
         raise RuntimeError("Coop: hittade inte dkeKey (offers-nyckel - sidan kan ha ändrats)")
     log.info("Coop: ny offers-nyckel (dke) skrapad")
+    return m.group(1)
+
+
+async def scrape_coop_perso_key(client):
+    r = await client.get(COOP_PAGE, headers={"User-Agent": UA}, timeout=30)
+    r.raise_for_status()
+    m = _COOP_PERSO_PAT.search(r.text)
+    if not m:
+        raise RuntimeError("Coop: hittade inte personalizationApiSubscriptionKey (sidan kan ha ändrats)")
+    log.info("Coop: ny personalization-nyckel skrapad")
     return m.group(1)
 
 

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, config, database, matching, tags
+from . import apilog, auth, brands, config, database, details, matching, tags
 from .adapters import axfood_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -35,9 +35,29 @@ log = logging.getLogger("matbutiker")
 WEB_DIR = config.BASE_DIR / "web"
 
 
+def ensure_admin():
+    """Skapa konsol-admin-kontot (admin_users, skilt från app-konton) vid uppstart.
+    Lösenord från ADMIN_PASSWORD, annars genereras ett som loggas en gång."""
+    email = config.ADMIN_EMAIL.strip().lower()
+    if not email:
+        return
+    if database.get_admin_by_email(email):
+        return
+    pw = config.ADMIN_PASSWORD or secrets.token_urlsafe(12)
+    database.create_admin(email, auth.hash_password(pw))
+    if config.ADMIN_PASSWORD:
+        log.info("Skapade konsol-admin %s (lösenord från ADMIN_PASSWORD).", email)
+    else:
+        log.warning(
+            "Skapade konsol-admin %s med genererat lösenord: %s  (logga in och byt det)",
+            email, pw,
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    ensure_admin()
     tags.set_map(database.load_tag_map())
     tags.set_types(database.load_tag_types())
     conn = get_conn()
@@ -70,6 +90,7 @@ app.add_middleware(
     max_age=60 * 60 * 24 * 30,
 )
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
 
 
 def _last_sync():
@@ -151,13 +172,27 @@ async def login(request: Request, payload: dict = Body(...)):
 
 @app.post("/v1/auth/logout")
 async def logout(request: Request):
-    request.session.clear()
+    request.session.pop("uid", None)  # rör inte ev. admin_uid (skild session)
     return {"ok": True}
 
 
 @app.get("/v1/auth/me")
 async def me(user=Depends(auth.current_user)):
     return auth.public_user(user)
+
+
+@app.post("/v1/auth/password")
+async def change_password(payload: dict = Body(...), user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    current = payload.get("current_password") or ""
+    new = payload.get("new_password") or ""
+    if not auth.verify_password(current, user["password_hash"]):
+        return JSONResponse({"detail": "Fel nuvarande lösenord."}, status_code=403)
+    if len(new) < 8:
+        return JSONResponse({"detail": "Nytt lösenord för kort (minst 8 tecken)."}, status_code=400)
+    database.update_password(user["id"], auth.hash_password(new))
+    return {"ok": True}
 
 
 # ---- Favoriter (kräver inloggning) ----
@@ -188,14 +223,54 @@ async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
     return {"favorites": database.list_favorites(user["id"])}
 
 
-# ---- Admin-dashboard ----
+# ---- API-konsol (egen admin-auth, skild från app-konton) ----
+require_admin = auth.require_admin  # bor i auth.py; alias för befintliga Depends nedan
+
+
 @app.get("/admin", response_class=FileResponse)
 async def admin_page():
+    # Konsolen har egen inloggningsruta; data-endpoints är gatade (403 tills inloggad).
     return FileResponse(WEB_DIR / "admin.html")
 
 
+@app.post("/v1/console/auth/login")
+async def console_login(request: Request, payload: dict = Body(...)):
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    admin = database.get_admin_by_email(email)
+    if not admin or not auth.verify_password(password, admin["password_hash"]):
+        return JSONResponse({"detail": "Fel e-post eller lösenord."}, status_code=401)
+    request.session["admin_uid"] = admin["id"]
+    return auth.public_admin(admin)
+
+
+@app.post("/v1/console/auth/logout")
+async def console_logout(request: Request):
+    request.session.pop("admin_uid", None)  # rör inte ev. app-session (uid)
+    return {"ok": True}
+
+
+@app.get("/v1/console/auth/me")
+async def console_me(admin=Depends(auth.current_admin)):
+    return auth.public_admin(admin)
+
+
+@app.post("/v1/console/auth/password")
+async def console_change_password(payload: dict = Body(...), admin=Depends(auth.current_admin)):
+    if not admin:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    current = payload.get("current_password") or ""
+    new = payload.get("new_password") or ""
+    if not auth.verify_password(current, admin["password_hash"]):
+        return JSONResponse({"detail": "Fel nuvarande lösenord."}, status_code=403)
+    if len(new) < 8:
+        return JSONResponse({"detail": "Nytt lösenord för kort (minst 8 tecken)."}, status_code=400)
+    database.update_admin_password(admin["id"], auth.hash_password(new))
+    return {"ok": True}
+
+
 @app.get("/v1/admin/overview")
-async def admin_overview():
+async def admin_overview(_=Depends(require_admin)):
     conn = get_conn()
     store_counts = {
         r["chain"]: r["c"] for r in conn.execute("SELECT chain, COUNT(*) c FROM stores GROUP BY chain")
@@ -237,17 +312,17 @@ async def admin_overview():
 
 
 @app.get("/v1/admin/calls")
-async def admin_calls():
+async def admin_calls(_=Depends(require_admin)):
     return {"stats": apilog.stats(), "recent": apilog.recent()}
 
 
 @app.get("/v1/admin/sources")
-async def admin_sources():
+async def admin_sources(_=Depends(require_admin)):
     return {"sources": config.DATA_SOURCES}
 
 
 @app.get("/v1/tags")
-async def list_tags():
+async def list_tags(_=Depends(require_admin)):
     from .adapters.base import classify_provider
 
     items = []
@@ -270,7 +345,7 @@ async def list_tags():
 
 
 @app.post("/v1/tags/map")
-async def set_tag(payload: dict = Body(...)):
+async def set_tag(payload: dict = Body(...), _=Depends(require_admin)):
     label = (payload.get("label") or "").strip()
     types = [t for t in (payload.get("types") or []) if tags.valid_type(t)]
     if not label or not types:
@@ -282,12 +357,12 @@ async def set_tag(payload: dict = Body(...)):
 
 # ---- Kanonisk vokabulär (typer) ----
 @app.get("/v1/tags/types")
-async def list_types():
+async def list_types(_=Depends(require_admin)):
     return {"types": tags.CANONICAL, "builtin": sorted(config.BUILTIN_TAG_TYPES)}
 
 
 @app.post("/v1/tags/types")
-async def add_type(payload: dict = Body(...)):
+async def add_type(payload: dict = Body(...), _=Depends(require_admin)):
     raw = (payload.get("type") or "").strip().lower()
     for a, b in (("å", "a"), ("ä", "a"), ("ö", "o"), ("é", "e"), ("ü", "u")):
         raw = raw.replace(a, b)
@@ -301,7 +376,7 @@ async def add_type(payload: dict = Body(...)):
 
 
 @app.delete("/v1/tags/types/{type_}")
-async def remove_type(type_: str):
+async def remove_type(type_: str, _=Depends(require_admin)):
     if type_ in config.BUILTIN_TAG_TYPES:
         return JSONResponse({"detail": "Inbyggd typ kan inte tas bort."}, status_code=400)
     if database.tag_type_in_use(type_):
@@ -312,7 +387,7 @@ async def remove_type(type_: str):
 
 
 @app.delete("/v1/tags/map/{label:path}")
-async def del_tag(label: str):
+async def del_tag(label: str, _=Depends(require_admin)):
     database.delete_tag_map(label)
     tags.remove(label)
     return {"label": label, "removed": True}
@@ -493,7 +568,8 @@ async def _compare_rows(client, rows_with_dist, min_chains):
             e["distance_km"] = round(d, 2) if d is not None else None
             entries.append(e)
     await _resolve_axfood_eans(client, entries)
-    return matching.build_comparisons(entries, min_chains=min_chains)
+    manual = {m["ean"]: m["group_id"] for m in database.load_match_members()}
+    return matching.build_comparisons(entries, min_chains=min_chains, manual_groups=manual)
 
 
 @app.get("/v1/compare/near")
@@ -569,6 +645,28 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2):
     return {"count": len(products), "stores_compared": len(rows), "products": products}
 
 
+@app.get("/v1/products/{ean}")
+async def product_info(ean: str, prefer_chain: str | None = None):
+    """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.
+    Publik (konsument-appen + konsolen delar den). prefer_chain hintar rikare
+    native-källa (Axfood har näring); annars Coops EAN-DB. `source` i svaret."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    cached = database.get_product_info(e)
+    if cached is not None:
+        return {"ean": e, "found": True, "info": cached}
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            info = await details.fetch_for_ean(client, e, prefer_chain=prefer_chain)
+    except Exception as ex:  # noqa: BLE001
+        log.warning("produktinfo %s misslyckades: %s", e, ex)
+        info = None
+    if info is not None:
+        database.save_product_info(e, info)
+    return {"ean": e, "found": info is not None, "info": info}
+
+
 @app.get("/v1/chains")
 async def chains():
     conn = get_conn()
@@ -598,7 +696,7 @@ async def chains():
 
 
 @app.post("/v1/sync")
-async def trigger_sync():
+async def trigger_sync(_=Depends(require_admin)):
     if STATE["running"]:
         return {"status": "running", "detail": "Synk pågår redan."}
     asyncio.create_task(run_sync())
@@ -606,5 +704,5 @@ async def trigger_sync():
 
 
 @app.get("/v1/sync/status")
-async def sync_status():
+async def sync_status(_=Depends(require_admin)):
     return STATE

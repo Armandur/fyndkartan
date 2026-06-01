@@ -17,6 +17,33 @@
   width: 330px; max-width: 92vw;
   box-shadow: 0 10px 44px rgba(0, 0, 0, .35);
 }
+
+/* Favorit-UI kräver inloggning */
+body:not(.logged-in) .fav-only,
+body:not(.logged-in) .s-fav,
+body:not(.logged-in) .pop-fav { display: none !important; }
+
+/* Kontomeny (utfällbar) */
+.acct { position: relative; }
+.acct-btn {
+  background: none; border: 1px solid rgba(255, 255, 255, .25); color: #f4f6f8;
+  font-size: .85rem; padding: .25rem .6rem; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: .35rem; max-width: 60vw;
+}
+.acct-btn:hover { background: rgba(255, 255, 255, .1); }
+.acct-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.acct-caret { font-size: .7rem; opacity: .8; flex: 0 0 auto; }
+.acct-menu {
+  position: absolute; right: 0; top: calc(100% + 6px); min-width: 190px; z-index: 1500;
+  background: #fff; border: 1px solid #e3e7ec; border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18); padding: 4px;
+  display: flex; flex-direction: column;
+}
+.acct-item {
+  background: none; border: none; text-align: left; font-size: .85rem; color: #1c2530;
+  padding: .45rem .6rem; border-radius: 6px; cursor: pointer;
+}
+.acct-item:hover { background: #eef1f4; }
 html, body { height: 100%; margin: 0; }
 body {
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -208,6 +235,12 @@ body {
   background: #e7f7ef; color: #137a4d; padding: 1px 6px; border-radius: 4px;
 }
 .o-foot { font-size: .68rem; color: #9aa4b2; margin-top: .1rem; }
+.o-info {
+  margin-top: .35rem; background: none; border: 1px solid #d4dae0; color: #46505c;
+  font-size: .68rem; font-weight: 600; padding: 1px 8px; border-radius: 20px; cursor: pointer;
+}
+.o-info:hover { background: #eef1f4; }
+#productModalBody { max-height: 70vh; overflow: auto; }
 
 /* Jämförelsekort */
 .cmp-card { flex-direction: column; gap: .4rem; }

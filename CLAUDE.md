@@ -11,8 +11,14 @@ pågår), med en Leaflet/OSM-karta. Aktuell status och plan: `ROADMAP.md`.
   (`ALTER TABLE`-guards, ingen Alembic).
 - **Frontend:** vanilla JS, **Bootstrap 5** + **Leaflet** (OSM) med markercluster
   - allt via CDN, ingen bundler. Ren statisk app i `web/`, serveras av API:t.
-- **Körning (dev):** `uv run uvicorn api.main:app --host 0.0.0.0 --port 8700` (kör
-  från repo-roten). Servern nås på `ubuntu-ai:8700`. Ingen `.env` krävs (nycklar auto-hämtas).
+- **Körning (dev):** I DETTA projekt äger Claude start/stopp/reset av dev-servern
+  (avsteg från den globala regeln om att aldrig starta servern). Kör den i bakgrunden
+  från repo-roten och logga till `dev.log`:
+  `​.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8700 > dev.log 2>&1`
+  (Bash `run_in_background: true`). Reset = döda processen (`kill <pid>`, hitta via
+  `ps aux | grep api.main`) och starta om på samma sätt. Servern nås på `ubuntu-ai:8700`.
+  Ingen `.env` krävs (nycklar auto-hämtas). Kör utan `--reload`, så starta om efter
+  kodändringar för att de ska slå igenom (admin-kontot skapas t.ex. först vid uppstart).
 - **Deploy:** monolitisk single-container är normalfallet (lokal Unraid) -
   `docker-compose.yml`. Externt hostad med Caddy/TLS = undantag,
   `docker-compose.hetzner.yml`. CI bygger till `ghcr.io/armandur/fyndkartan`. Se `DOCKER.md`.
@@ -30,10 +36,12 @@ api/                 # Python-paketet (importeras som `api`)
   config.py          # env (valfria nycklar), CHAIN_META, Lidl-svepets bounds. BASE_DIR = repo-roten
   database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
-  matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons()
+  matching.py        # cross-chain EAN-matchning: normalize_ean(), build_comparisons() (manual_groups)
+  brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
+  details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
   apilog.py          # instrumentering av utgående anrop (make_client + ring-buffer/statistik)
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
-  auth.py            # konton: bcrypt-hashning + current_user-dependency (session-cookie)
+  auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync(): kör butiks-adaptrar parallellt -> SQLite. STATE per kedja
   adapters/
     base.py          # make_store(), tags_from_services(), classify_service(), normalize_hours()
@@ -43,7 +51,7 @@ api/                 # Python-paketet (importeras som `api`)
     ica_offers.py axfood_offers.py coop_offers.py   # erbjudande-adaptrar
 web/                 # frontend (statisk, ingen build)
   index.html app.js style.css   # karta + sidopanel + erbjudande-/jämförelse-paneler
-  admin.html         # admin-dashboard (/admin): översikt, API-anrop, datakällor, taggar
+  admin.html         # API-konsol (/admin, egen admin-login): översikt+synk, API-anrop, datakällor, taggar, märkesvaror
 pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 ```
 
@@ -84,8 +92,41 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   har EAN inline; Willys/Hemköp resolvas bundet via `ean_cache` (code->EAN,
   persistent) + `axfood_offers.fetch_eans` (cap `EAN_RESOLVE_CAP`/anrop, warmar över tid).
   Grupper med identisk deal slås ihop (`_merge_same_deal`, `variant_count`).
+- **Märkesvaru-paring (`brands.py` + "Märkesvaror"-fliken):** egna märkesvaror (ICA,
+  Garant, Änglamark...) har kedjeinterna EAN och matchar aldrig automatiskt. Admin
+  parar ihop dem manuellt: redigerbar private-label-vokabulär per kedja (brand-rötter,
+  `private_brands`), lista över private-label-produkter ur offers, namn+förpacknings-
+  baserade förslag, produktbild + lazy rik detalj. **EAN-centrerat:** en produkt = en EAN;
+  samma EAN i flera kedjor (Willys+Hemköp delar Axfood-EAN) kollapsas till en post och
+  matchar redan automatiskt, så paring sker bara över olika private labels. Mappningen
+  (`product_matches`) skickas EAN-nycklad som `manual_groups` till `build_comparisons`.
+  Endast offers-data (v1): inte fulla sortiment.
+- **EAN-produktinfo som egen domän (`details.py` + `GET /v1/products/{ean}`):** rik
+  produktinfo (ingredienser/näring/ursprung) nyckad på EAN, **publik** (utanför admin-
+  routern) så både konsument-appen (erbjudande-info-modal) och konsolen delar den. EAN-
+  nyckad cache `product_info` (first-hit-vinner, `source` sparas). Källor: Axfood
+  `/p/{code}` (rikast, har näring; EAN->code via `ean_cache`) + Coops personalization-API
+  (POST EAN-array; nyckel skrapas via `keys.scrape_coop_perso_key`, scrape-on-401). Coop
+  är EAN-global -> fallback för branded varor i alla kedjor inkl. ICA (vars ehandel är
+  AWS-WAF-bot-skyddad). ICA:s egna märken (ICA-intern EAN) saknas dock.
 - **Normalisering:** öppettider -> `HH:MM` (`normalize_hours`), taggar som
   positiva påståenden (avsaknad = okänt), `0,0`-koordinater = saknad position.
+- **Två skilda auth-domäner.** App-konton (`users`, slutanvändare) och konsol-
+  admins (`admin_users`, drift) är helt separata: olika tabeller och olika
+  session-nycklar (`uid` resp. `admin_uid` i samma signerade cookie). En app-
+  användare har aldrig admin-behörighet; ett konsolkonto kan inte logga in i appen.
+  Session-secret löses vid import (env `SESSION_SECRET` annars DB-persisterad i
+  `settings`) -> sessioner överlever omstart. Logout poppar bara sin egen nyckel.
+- **App-auth:** e-post/lösenord (bcrypt). `/v1/auth/*` (register/login/logout/me/
+  password), `/v1/favorites` kräver inloggning. Favoriter är endast-inloggad även i
+  frontend (CSS `body:not(.logged-in)` döljer stjärnor/filter, ingen localStorage).
+- **API-konsol (`web/admin.html` på `/admin`):** drift/dataadministration, skild
+  från kartappen. Egen inloggningsruta på sidan (`/v1/console/auth/*`). `require_admin`
+  (-> `auth.current_admin`, 403 annars) gatar alla `/v1/admin/*`, `/v1/tags*` och
+  `/v1/sync*`. Synk-knapp + status bor i konsolens Översikt-flik (inte i appen).
+  Konsolkontot seedas vid uppstart (`ensure_admin` -> `admin_users`) från `ADMIN_EMAIL`
+  (generisk default `admin@example.com` i koden, sätts per instans via env/`.env`) +
+  `ADMIN_PASSWORD` (annars genererat + loggat en gång).
 
 ## Vanliga ändringar
 
@@ -94,8 +135,8 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **Ny erbjudande-adapter:** spegla `ica_offers.py`, koppla in i offers-routen i
   `main.py` (villkoret `if chain != "ica"`). Aktivera knappen i `web/app.js`
   (`s.chain === "ica"`).
-- **Verifiera efter ändring:** `uv run python -c "from api.main import app; print('OK')"`,
-  starta servern och kontrollera `dev.log`.
+- **Verifiera efter ändring:** `.venv/bin/python -c "from api.main import app; print('OK')"`,
+  starta sedan om dev-servern (se Körning ovan) och kontrollera `dev.log` för fel.
 
 ## Kända datakälle-fakta (dyrköpt research)
 

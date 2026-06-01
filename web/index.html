@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Matbutiker - butikskarta</title>
+  <title>Fyndkartan - butiker &amp; erbjudanden</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -13,11 +13,9 @@
 <body>
   <header class="app-header d-flex align-items-center px-3 gap-3">
     <button id="navToggle" class="nav-toggle" aria-label="Visa/dölj panel">&#9776;</button>
-    <div class="brand">mat<span>butiker</span></div>
-    <div class="header-sub d-none d-md-block">Unified store API &middot; butiker &amp; erbjudanden</div>
+    <div class="brand">fynd<span>kartan</span></div>
+    <div class="header-sub d-none d-md-block">Hitta butiker &amp; erbjudanden nära dig</div>
     <div class="ms-auto d-flex align-items-center gap-3">
-      <span id="syncBadge" class="sync-badge">&bull; laddar&hellip;</span>
-      <button id="syncBtn" class="btn btn-sm btn-outline-light">Synka om</button>
       <span id="authArea" class="d-flex align-items-center gap-2"></span>
     </div>
   </header>
@@ -33,10 +31,37 @@
       <input id="authPass" type="password" class="form-control form-control-sm mb-2" placeholder="Lösenord (minst 8 tecken)" autocomplete="current-password">
       <div id="authError" class="text-danger small mb-2 d-none"></div>
       <button id="authSubmit" class="btn btn-dark btn-sm w-100 mb-2">Logga in</button>
-      <div class="small text-muted text-center">
+      <div id="authToggleRow" class="small text-muted text-center">
         <span id="authToggleText">Inget konto?</span>
         <a href="#" id="authToggle">Registrera dig</a>
       </div>
+    </div>
+  </div>
+
+  <!-- Kontoinställningar -->
+  <div id="settingsModal" class="auth-modal d-none">
+    <div class="auth-card">
+      <div class="d-flex align-items-center mb-2">
+        <h6 class="mb-0">Kontoinställningar</h6>
+        <button id="setClose" class="btn-close ms-auto" aria-label="Stäng"></button>
+      </div>
+      <div class="small text-muted mb-3">Inloggad som <span id="setEmail" class="fw-semibold"></span></div>
+      <div class="text-uppercase text-muted fw-semibold mb-2" style="font-size:.72rem">Byt lösenord</div>
+      <input id="setCur" type="password" class="form-control form-control-sm mb-2" placeholder="Nuvarande lösenord" autocomplete="current-password">
+      <input id="setNew" type="password" class="form-control form-control-sm mb-2" placeholder="Nytt lösenord (minst 8 tecken)" autocomplete="new-password">
+      <div id="setMsg" class="small mb-2 d-none"></div>
+      <button id="setSave" class="btn btn-dark btn-sm w-100">Spara lösenord</button>
+    </div>
+  </div>
+
+  <!-- Produktinfo (ingredienser/näring per EAN) -->
+  <div id="productModal" class="auth-modal d-none">
+    <div class="auth-card" style="width:420px">
+      <div class="d-flex align-items-center mb-2">
+        <h6 id="productModalTitle" class="mb-0">Produktinfo</h6>
+        <button id="productClose" class="btn-close ms-auto" aria-label="Stäng"></button>
+      </div>
+      <div id="productModalBody"></div>
     </div>
   </div>
 
@@ -49,7 +74,7 @@
           <input class="form-check-input" type="checkbox" id="onlyOffers">
           <label class="form-check-label" for="onlyOffers">Bara butiker med erbjudanden</label>
         </div>
-        <div class="form-check form-switch small">
+        <div class="form-check form-switch small fav-only">
           <input class="form-check-input" type="checkbox" id="onlyFavorites">
           <label class="form-check-label" for="onlyFavorites">&#9733; Bara favoriter</label>
         </div>
@@ -62,7 +87,7 @@
             <option value="20">20 km</option>
           </select>
         </div>
-        <button id="compareFavBtn" class="btn btn-sm btn-outline-dark w-100 mt-2">&#9733; Jämför mina favoriter</button>
+        <button id="compareFavBtn" class="btn btn-sm btn-outline-dark w-100 mt-2 fav-only">&#9733; Jämför mina favoriter</button>
       </div>
 
       <div class="p-3 border-bottom">

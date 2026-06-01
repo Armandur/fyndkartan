@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fyndkartan - admin</title>
+  <title>API-konsol - Fyndkartan</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #f4f6f8; }
@@ -27,26 +27,86 @@
     .typechip.bi { background: #d6dbe0; color: #46505c; }
     .type-del { margin-left: 5px; cursor: pointer; opacity: .7; font-weight: 700; }
     .type-del:hover { opacity: 1; }
+    .overlay { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; }
+    #loginGate { background: #f4f6f8; }
+    #settingsModal { background: rgba(0,0,0,.4); }
+    .gate-card { width: 330px; max-width: 92vw; }
+    .acct { position: relative; }
+    .acct-btn { background: none; border: 1px solid rgba(255,255,255,.25); color: #f4f6f8;
+      font-size: .85rem; padding: .25rem .6rem; border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; gap: .35rem; }
+    .acct-caret { font-size: .7rem; opacity: .8; }
+    .acct-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+    .acct-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 190px; z-index: 1500;
+      background: #fff; border: 1px solid #e3e7ec; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.18);
+      padding: 4px; display: flex; flex-direction: column; }
+    .acct-item { background: none; border: none; text-align: left; font-size: .85rem; color: #1c2530;
+      padding: .45rem .6rem; border-radius: 6px; cursor: pointer; }
+    .acct-item:hover { background: #eef1f4; }
+    .marq-list { max-height: 62vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+    .marq-row { padding: .4rem .5rem; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+    .marq-row:hover { background: #eef1f4; }
+    .marq-row.sel { background: #e7f7ef; border-color: #19c37d; }
+    .mq-cand { padding: .3rem .4rem; border-radius: 6px; cursor: pointer; }
+    .mq-cand:hover { background: #f4f6f8; }
+    .mq-group { padding: .4rem 0; border-top: 1px solid #eef1f4; }
+    .mq-group:first-of-type { border-top: none; }
+    .mq-thumb { width: 34px; height: 34px; flex: 0 0 34px; object-fit: contain; background: #f2f5f7; border-radius: 5px; }
+    .mq-thumb-lg { width: 64px; height: 64px; flex: 0 0 64px; object-fit: contain; background: #f2f5f7; border-radius: 7px; }
   </style>
 </head>
 <body>
   <header class="app-header d-flex align-items-center px-3 py-2 gap-3">
-    <div class="brand fs-5">fynd<span>kartan</span> · admin</div>
-    <a href="/" class="ms-auto btn btn-sm btn-outline-light">&larr; Till kartan</a>
+    <div class="brand fs-5">API-<span>konsol</span></div>
+    <span class="small text-secondary d-none d-md-inline">Fyndkartan &middot; drift &amp; data</span>
+    <div class="ms-auto d-flex align-items-center gap-2">
+      <a href="/" class="btn btn-sm btn-outline-light">&#8599; Till kartan</a>
+      <span id="consoleAuth" class="d-flex align-items-center gap-2"></span>
+    </div>
   </header>
 
-  <div class="container-fluid p-3">
+  <!-- Inloggning (egen admin-auth, skild från app-konton) -->
+  <div id="loginGate" class="overlay d-none">
+    <div class="card p-4 gate-card">
+      <h5 class="mb-1">API-konsol</h5>
+      <p class="text-muted small mb-3">Logga in med ett admin-konto.</p>
+      <input id="cEmail" type="email" class="form-control form-control-sm mb-2" placeholder="E-post" autocomplete="username">
+      <input id="cPass" type="password" class="form-control form-control-sm mb-2" placeholder="Lösenord" autocomplete="current-password">
+      <div id="cErr" class="text-danger small mb-2 d-none"></div>
+      <button id="cLogin" class="btn btn-dark btn-sm w-100">Logga in</button>
+    </div>
+  </div>
+
+  <!-- Kontoinställningar -->
+  <div id="settingsModal" class="overlay d-none">
+    <div class="card p-4 gate-card">
+      <div class="d-flex align-items-center mb-2">
+        <h6 class="mb-0">Kontoinställningar</h6>
+        <button id="setClose" class="btn-close ms-auto" aria-label="Stäng"></button>
+      </div>
+      <div class="small text-muted mb-3">Inloggad som <span id="setEmail" class="fw-semibold"></span></div>
+      <div class="text-uppercase text-muted fw-semibold mb-2" style="font-size:.72rem">Byt lösenord</div>
+      <input id="setCur" type="password" class="form-control form-control-sm mb-2" placeholder="Nuvarande lösenord" autocomplete="current-password">
+      <input id="setNew" type="password" class="form-control form-control-sm mb-2" placeholder="Nytt lösenord (minst 8 tecken)" autocomplete="new-password">
+      <div id="setMsg" class="small mb-2 d-none"></div>
+      <button id="setSave" class="btn btn-dark btn-sm w-100">Spara lösenord</button>
+    </div>
+  </div>
+
+  <div id="console" class="container-fluid p-3 d-none">
     <ul class="nav nav-tabs mb-3" id="tabs">
       <li class="nav-item"><button class="nav-link active" data-tab="overview">Översikt</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="calls">API-anrop</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="sources">Datakällor</button></li>
       <li class="nav-item"><button class="nav-link" data-tab="tags">Taggar</button></li>
+      <li class="nav-item"><button class="nav-link" data-tab="marques">Märkesvaror</button></li>
     </ul>
 
     <section id="overview" class="tab"></section>
     <section id="calls" class="tab d-none"></section>
     <section id="sources" class="tab d-none"></section>
     <section id="tags" class="tab d-none"></section>
+    <section id="marques" class="tab d-none"></section>
   </div>
 
   <script>
@@ -56,16 +116,34 @@
     const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(c)}</span>`;
     const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
 
-    let active = "overview", callsTimer = null;
+    const gate = document.getElementById("loginGate");
+    const consoleEl = document.getElementById("console");
+    let active = "overview", callsTimer = null, syncTimer = null;
+
+    // Alla konsol-anrop går via api(): 403 => sessionen är borta, visa login.
+    async function api(url, opts) {
+      const r = await fetch(url, opts);
+      if (r.status === 403) { showGate(); throw new Error("403"); }
+      return r;
+    }
 
     async function loadOverview() {
-      const d = await (await fetch("/v1/admin/overview")).json();
+      const d = await (await api("/v1/admin/overview")).json();
       const rows = d.chains.map(c => `<tr>
         <td>${chip(c.chain)}</td><td>${c.store_count}</td>
         <td class="st-${c.status}">${esc(c.status)}</td>
         <td class="mono">${esc(c.last_sync || "-")}</td>
         <td class="text-danger small">${esc(c.error || "")}</td></tr>`).join("");
+      const done = d.chains.filter(c => c.status === "ok" || c.status === "error").length;
+      const syncState = d.syncing
+        ? `<span class="st-running">● synkar… (${done}/${d.chains.length} klara)</span>`
+        : `<span class="text-muted">senast: ${esc(d.chains.map(c=>c.last_sync).filter(Boolean).sort().pop() || "-")}</span>`;
       document.getElementById("overview").innerHTML = `
+        <div class="d-flex align-items-center mb-3">
+          <h5 class="mb-0">Översikt</h5>
+          <span class="ms-3 small">${syncState}</span>
+          <button id="syncNow" class="btn btn-sm btn-dark ms-auto" ${d.syncing ? "disabled" : ""}>Synka om</button>
+        </div>
         <div class="row g-3 mb-3">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">EAN i cache</div><div class="stat">${d.ean_cache}</div></div></div>
@@ -76,10 +154,19 @@
           <table class="table table-sm align-middle mb-0">
             <thead><tr><th>Kedja</th><th>Butiker</th><th>Synkstatus</th><th>Senast synk</th><th>Fel</th></tr></thead>
             <tbody>${rows}</tbody></table></div>`;
+      document.getElementById("syncNow").addEventListener("click", triggerSync);
+      // Polla vidare medan en synk pågår (oavsett vem som startade den).
+      clearTimeout(syncTimer);
+      if (d.syncing && active === "overview") syncTimer = setTimeout(loadOverview, 2500);
+    }
+
+    async function triggerSync() {
+      await api("/v1/sync", { method: "POST" });
+      loadOverview();
     }
 
     async function loadCalls() {
-      const d = await (await fetch("/v1/admin/calls")).json();
+      const d = await (await api("/v1/admin/calls")).json();
       const stats = d.stats.map(s => `<tr>
         <td>${chip(s.chain)}</td><td class="mono">${esc(s.host)}</td><td>${s.count}</td>
         <td class="${s.errors?'call-err':''}">${s.errors}</td><td>${s.avg_ms ?? "-"} ms</td></tr>`).join("");
@@ -102,7 +189,7 @@
     }
 
     async function loadSources() {
-      const d = await (await fetch("/v1/admin/sources")).json();
+      const d = await (await api("/v1/admin/sources")).json();
       const rows = d.sources.map(s => `<tr>
         <td>${chip(s.chain)}</td><td>${esc(s.what)}</td>
         <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td></tr>`).join("");
@@ -114,7 +201,7 @@
     }
 
     async function loadTypes() {
-      const d = await (await fetch("/v1/tags/types")).json();
+      const d = await (await api("/v1/tags/types")).json();
       const builtin = new Set(d.builtin);
       const chips = d.types.map(t => {
         const x = builtin.has(t) ? "" : `<span class="type-del" data-type="${t}" title="ta bort">&times;</span>`;
@@ -130,14 +217,14 @@
         </div>`;
       document.querySelectorAll(".type-del").forEach(x => x.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const r = await fetch("/v1/tags/types/" + encodeURIComponent(x.dataset.type), { method: "DELETE" });
+        const r = await api("/v1/tags/types/" + encodeURIComponent(x.dataset.type), { method: "DELETE" });
         if (!r.ok) alert((await r.json()).detail || "Kunde inte ta bort.");
         loadTags();
       }));
       document.getElementById("addType").addEventListener("click", async () => {
         const v = document.getElementById("newType").value.trim();
         if (!v) return;
-        await fetch("/v1/tags/types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: v }) });
+        await api("/v1/tags/types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: v }) });
         loadTags();
       });
     }
@@ -146,7 +233,7 @@
       document.getElementById("tags").innerHTML =
         `<div id="typesPanel" class="card p-3 mb-3"></div><div id="tagTable" class="card p-3"></div>`;
       await loadTypes();
-      const d = await (await fetch("/v1/tags")).json();
+      const d = await (await api("/v1/tags")).json();
       const rows = d.tags.map(t => {
         const attn = (!t.overridden && t.types.length === 1 && t.types[0] === "other") ? "attn" : "";
         const chains = t.chains.map(chip).join(" ");
@@ -174,27 +261,245 @@
           c.classList.toggle("on");
           const types = [...tr.querySelectorAll(".tchip.on")].map(x => x.dataset.type);
           if (!types.length) { c.classList.add("on"); return; }  // minst en typ
-          await fetch("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: tr.dataset.label, types }) });
+          await api("/v1/tags/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: tr.dataset.label, types }) });
           loadTags();
         });
       });
       document.querySelectorAll("#tags .auto-btn").forEach(b => {
         b.addEventListener("click", async () => {
-          await fetch("/v1/tags/map/" + encodeURIComponent(b.closest("tr").dataset.label), { method: "DELETE" });
+          await api("/v1/tags/map/" + encodeURIComponent(b.closest("tr").dataset.label), { method: "DELETE" });
           loadTags();
         });
       });
     }
 
-    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags };
+    // ---- Märkesvaror (cross-chain-paring av private label, EAN-centrerat) ----
+    const marq = { products: [], selected: null, picks: new Map() };
+    const mqUnit = (p) => p.comparison_value != null ? `${p.comparison_value} kr/${p.comparison_unit || "st"}` : "-";
+    const mqThumb = (p, cls = "mq-thumb") => p.image ? `<img class="${cls}" src="${esc(p.image)}" alt="" loading="lazy">` : `<span class="${cls}"></span>`;
+    const chains = (p) => (p.chains || []).map(chip).join("");
+    const detailChain = (p) => (p.chains || []).find(c => c === "willys" || c === "hemkop") || (p.chains || [])[0];
+    const findProduct = (ean) => marq.products.find(p => p.ean === ean);
+
+    async function loadMarques() {
+      const d = await (await api("/v1/admin/private-products")).json();
+      marq.products = d.products; marq.selected = null; marq.picks.clear();
+      const cs = [...new Set(marq.products.flatMap(p => p.chains))];
+      const opts = `<option value="">Alla kedjor</option>` + cs.map(c => `<option value="${c}">${c}</option>`).join("");
+      document.getElementById("marques").innerHTML = `
+        <div class="row g-3">
+          <div class="col-lg-6"><div class="card p-3">
+            <div class="d-flex gap-2 mb-2 align-items-center">
+              <select id="mqChain" class="form-select form-select-sm" style="width:auto">${opts}</select>
+              <input id="mqSearch" class="form-control form-control-sm" placeholder="Sök produkt…">
+              <div class="form-check form-switch small ms-auto" style="white-space:nowrap">
+                <input class="form-check-input" type="checkbox" id="mqUnmatched" checked>
+                <label class="form-check-label" for="mqUnmatched">Omappade</label></div>
+            </div>
+            <div id="mqCount" class="small text-muted mb-1"></div>
+            <div id="mqList" class="marq-list"></div>
+          </div></div>
+          <div class="col-lg-6">
+            <div id="mqPair" class="card p-3"><div class="text-muted small">Välj en produkt till vänster för att para ihop.</div></div>
+            <div id="mqGroups" class="card p-3 mt-3"></div>
+          </div>
+        </div>`;
+      document.getElementById("mqChain").addEventListener("change", renderMqList);
+      document.getElementById("mqSearch").addEventListener("input", renderMqList);
+      document.getElementById("mqUnmatched").addEventListener("change", renderMqList);
+      renderMqList();
+      loadMqGroups();
+    }
+
+    function renderMqList() {
+      const ch = document.getElementById("mqChain").value;
+      const q = document.getElementById("mqSearch").value.trim().toLowerCase();
+      const onlyUn = document.getElementById("mqUnmatched").checked;
+      const items = marq.products.filter(p =>
+        (!ch || p.chains.includes(ch)) && (!onlyUn || p.group_id == null) &&
+        (!q || (p.name || "").toLowerCase().includes(q)));
+      document.getElementById("mqCount").textContent = `${items.length} produkter`;
+      document.getElementById("mqList").innerHTML = items.map(p => `
+        <div class="marq-row${marq.selected && marq.selected.ean === p.ean ? " sel" : ""}" data-key="${esc(p.ean)}">
+          <div class="d-flex align-items-center gap-2">
+            ${mqThumb(p)}
+            <div style="min-width:0;flex:1">
+              <div class="mq-rowhead d-flex align-items-center gap-2">
+                ${chains(p)}<span class="fw-semibold small text-truncate">${esc(p.name || "")}</span>
+                ${p.group_id != null ? `<span class="badge bg-success ms-auto grp-badge">grupp ${p.group_id}</span>` : ""}
+              </div>
+              <div class="small text-muted text-truncate">${esc(p.brand || "")} · ${esc(p.package || "")} · ${mqUnit(p)}</div>
+            </div>
+          </div>
+        </div>`).join("") || '<div class="text-muted small">Inga produkter.</div>';
+      document.querySelectorAll("#mqList .marq-row").forEach(r => r.addEventListener("click", () => selectMq(r.dataset.key)));
+    }
+
+    async function selectMq(ean) {
+      marq.selected = findProduct(ean); marq.picks.clear();
+      renderMqList();
+      const d = await (await api(`/v1/admin/match/suggestions?ean=${encodeURIComponent(ean)}`)).json();
+      renderPair(d.suggestions || []);
+    }
+
+    function candRow(p) {
+      return `<div class="dt-wrap">
+        <div class="d-flex align-items-center gap-2">
+          <label class="mq-cand d-flex align-items-center gap-2 flex-grow-1 mb-0">
+            <input type="checkbox" class="mq-pick" data-key="${esc(p.ean)}" ${marq.picks.has(p.ean) ? "checked" : ""} ${p.group_id != null ? "disabled" : ""}>
+            ${mqThumb(p)}${chains(p)}<span class="small fw-semibold text-truncate">${esc(p.name || "")}</span>
+            <span class="small text-muted text-nowrap">${esc(p.package || "")} · ${mqUnit(p)}</span>
+            ${p.score != null ? `<span class="badge bg-light text-dark ms-auto">${p.score}</span>` : ""}
+            ${p.group_id != null ? `<span class="badge bg-secondary">grupp ${p.group_id}</span>` : ""}
+          </label>
+          <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${detailChain(p)}" data-ean="${esc(p.ean)}">info</button>
+        </div>
+        <div class="dt-box d-none small ps-4 pt-1"></div></div>`;
+    }
+
+    function renderPair(suggestions) {
+      const s = marq.selected;
+      const sug = suggestions.map(candRow).join("") || '<div class="text-muted small">Inga förslag. Sök manuellt nedan.</div>';
+      document.getElementById("mqPair").innerHTML = `
+        <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Para ihop</h6>
+          <button id="mqClear" class="btn btn-sm btn-link ms-auto p-0">Avbryt</button></div>
+        <div class="d-flex gap-2 mb-2">
+          ${mqThumb(s, "mq-thumb-lg")}
+          <div style="min-width:0">
+            <div>${chains(s)} <span class="fw-semibold">${esc(s.name || "")}</span></div>
+            <div class="small text-muted">${esc(s.brand || "")} · ${esc(s.package || "")} · ${mqUnit(s)}</div>
+            <div class="small text-muted mono">EAN ${esc(s.ean)}</div>
+          </div>
+        </div>
+        <div id="mqBaseDetail" class="small mb-2"></div>
+        <div class="small text-uppercase text-muted mb-1">Förslag (andra kedjor)</div>
+        <div id="mqSug">${sug}</div>
+        <input id="mqManual" class="form-control form-control-sm mt-2" placeholder="Sök manuellt i annan kedja…">
+        <div id="mqManualRes" class="mt-1"></div>
+        <button id="mqSave" class="btn btn-dark btn-sm w-100 mt-3">Para ihop valda</button>`;
+      document.getElementById("mqClear").onclick = clearPair;
+      bindPicks(document.getElementById("mqSug"));
+      let t; document.getElementById("mqManual").addEventListener("input", (e) => {
+        clearTimeout(t); t = setTimeout(() => manualSearch(e.target.value.trim()), 220);
+      });
+      document.getElementById("mqSave").onclick = saveMatch;
+      showDetail(detailChain(s), s.ean, document.getElementById("mqBaseDetail"));  // auto för basprodukten
+    }
+
+    function bindPicks(root) {
+      root.querySelectorAll(".mq-pick").forEach(cb => cb.addEventListener("change", () => {
+        const p = findProduct(cb.dataset.key);
+        if (cb.checked) marq.picks.set(cb.dataset.key, p); else marq.picks.delete(cb.dataset.key);
+      }));
+    }
+
+    function manualSearch(q) {
+      const box = document.getElementById("mqManualRes");
+      if (!q) { box.innerHTML = ""; return; }
+      const ql = q.toLowerCase(), selChains = new Set(marq.selected.chains);
+      const items = marq.products.filter(p => !p.chains.some(c => selChains.has(c)) && (p.name || "").toLowerCase().includes(ql)).slice(0, 10);
+      box.innerHTML = items.map(candRow).join("") || '<div class="text-muted small">Inga träffar.</div>';
+      bindPicks(box);
+    }
+
+    function clearPair() {
+      marq.selected = null; marq.picks.clear();
+      document.querySelectorAll("#mqList .marq-row.sel").forEach(r => r.classList.remove("sel"));
+      document.getElementById("mqPair").innerHTML = '<div class="text-muted small">Välj en produkt till vänster för att para ihop.</div>';
+    }
+
+    function markRowMatched(ean, gid) {
+      const p = findProduct(ean); if (p) p.group_id = gid;
+      const row = document.querySelector(`#mqList .marq-row[data-key="${ean}"]`);
+      if (row && !row.querySelector(".grp-badge")) {
+        const b = document.createElement("span");
+        b.className = "badge bg-success ms-auto grp-badge"; b.textContent = "grupp " + gid;
+        row.querySelector(".mq-rowhead").appendChild(b);
+      }
+    }
+
+    async function saveMatch() {
+      const s = marq.selected;
+      const pick = (p) => ({ chain: detailChain(p), ean: p.ean, name: p.name, brand: p.brand, package: p.package });
+      const members = [pick(s), ...[...marq.picks.values()].map(pick)];
+      if (members.length < 2) { alert("Välj minst en motsvarighet i en annan kedja."); return; }
+      const r = await api("/v1/admin/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ members }) });
+      if (!r.ok) { alert((await r.json()).detail || "Kunde inte para ihop."); return; }
+      const gid = (await r.json()).group_id;
+      members.forEach(m => markRowMatched(m.ean, gid));  // in-place, ingen omsortering
+      marq.selected = null; marq.picks.clear();
+      document.querySelectorAll("#mqList .marq-row.sel").forEach(rr => rr.classList.remove("sel"));
+      document.getElementById("mqPair").innerHTML = `<div class="text-success small mb-2">Parad till grupp ${gid}.</div>
+        <div class="text-muted small">Välj nästa produkt till vänster.</div>`;
+      loadMqGroups();
+    }
+
+    async function loadMqGroups() {
+      const d = await (await api("/v1/admin/matches")).json();
+      const groups = d.groups.map(g => `
+        <div class="mq-group">
+          <div class="d-flex align-items-center"><span class="small fw-semibold">Grupp ${g.group_id}</span>
+            <button class="btn btn-sm btn-link text-danger ms-auto p-0 grp-del" data-gid="${g.group_id}">Ta bort</button></div>
+          ${g.members.map(m => `<div class="dt-wrap">
+            <div class="small">${chip(m.chain)} ${esc(m.name || m.ean)}
+              <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${m.chain}" data-ean="${esc(m.ean)}">info</button></div>
+            <div class="dt-box d-none small ps-3"></div></div>`).join("")}
+        </div>`).join("") || '<div class="text-muted small">Inga paringar än.</div>';
+      document.getElementById("mqGroups").innerHTML = `<h6>Befintliga paringar (${d.count})</h6>${groups}`;
+      document.querySelectorAll(".grp-del").forEach(b => b.addEventListener("click", async () => {
+        if (!confirm("Ta bort paringen?")) return;
+        await api("/v1/admin/matches/" + b.dataset.gid, { method: "DELETE" });
+        marq.products.forEach(p => { if (String(p.group_id) === b.dataset.gid) p.group_id = null; });
+        renderMqList(); loadMqGroups();
+      }));
+    }
+
+    // ---- Produktdetalj (lazy, ingredienser/näring/ursprung) ----
+    function renderDetail(d, chain) {
+      if (!d.found || !d.info) return `<span class="text-muted">Detaljerad info inte tillgänglig än.</span>`;
+      const x = d.info, P = [];
+      if (x.description) P.push(`<div>${esc(x.description)}</div>`);
+      if (x.ingredients) P.push(`<div><span class="fw-semibold">Innehåll:</span> ${esc(x.ingredients)}</div>`);
+      const orig = [x.origin, x.province].filter(Boolean).join(" · ");
+      if (orig) P.push(`<div><span class="fw-semibold">Ursprung:</span> ${esc(orig)}</div>`);
+      if (x.storage) P.push(`<div><span class="fw-semibold">Förvaring:</span> ${esc(x.storage)}</div>`);
+      if (x.nutrition && x.nutrition.length) {
+        const b = x.nutrition_basis ? ` (per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")})` : "";
+        P.push(`<div><span class="fw-semibold">Näring${b}:</span> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</div>`);
+      }
+      if (x.labels && x.labels.length) P.push(`<div class="mt-1">${x.labels.map(l => `<span class="badge bg-light text-dark">${esc(l)}</span>`).join(" ")}</div>`);
+      if (x.source && x.source !== chain) P.push(`<div class="text-muted fst-italic mt-1">Metadata via ${esc(x.source)} (samma EAN)</div>`);
+      return P.join("") || `<span class="text-muted">Ingen detaljdata.</span>`;
+    }
+
+    async function showDetail(chain, ean, box) {
+      if (!box) return;
+      box.classList.remove("d-none");
+      if (box.dataset.loaded) return;
+      box.innerHTML = '<span class="text-muted">Laddar detaljer…</span>';
+      const d = await (await api(`/v1/products/${encodeURIComponent(ean)}?prefer_chain=${encodeURIComponent(chain)}`)).json();
+      box.dataset.loaded = "1";
+      box.innerHTML = renderDetail(d, chain);
+    }
+
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest(".dt-btn"); if (!btn) return;
+      e.preventDefault();
+      const box = btn.closest(".dt-wrap").querySelector(".dt-box");
+      if (box.dataset.loaded) box.classList.toggle("d-none");
+      else showDetail(btn.dataset.chain, btn.dataset.ean, box);
+    });
+
+    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, marques: loadMarques };
 
     function show(tab) {
       active = tab;
       if (location.hash.slice(1) !== tab) location.hash = tab;
       document.querySelectorAll("#tabs .nav-link").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
       document.querySelectorAll(".tab").forEach(s => s.classList.toggle("d-none", s.id !== tab));
-      LOADERS[tab]();
       clearInterval(callsTimer);
+      clearTimeout(syncTimer);
+      LOADERS[tab]().catch(() => {});
       if (tab === "calls") callsTimer = setInterval(loadCalls, 5000);
     }
 
@@ -203,13 +508,100 @@
       return LOADERS[t] ? t : "overview";
     };
 
+    // ---- Auth (konsol) ----
+    function showGate() {
+      clearInterval(callsTimer); clearTimeout(syncTimer);
+      consoleEl.classList.add("d-none");
+      document.getElementById("consoleAuth").innerHTML = "";
+      gate.classList.remove("d-none");
+      document.getElementById("cEmail").focus();
+    }
+
+    let currentAdmin = null;
+    function renderConsoleAuth(me) {
+      currentAdmin = me;
+      document.getElementById("consoleAuth").innerHTML = `
+        <div class="acct">
+          <button id="acctBtn" class="acct-btn"><span class="acct-email">${esc(me.email)}</span><span class="acct-caret">&#9662;</span></button>
+          <div id="acctMenu" class="acct-menu d-none">
+            <button id="acctSettings" class="acct-item">Kontoinställningar</button>
+            <button id="acctLogout" class="acct-item">Logga ut</button>
+          </div>
+        </div>`;
+      document.getElementById("acctBtn").onclick = (e) => { e.stopPropagation(); document.getElementById("acctMenu").classList.toggle("d-none"); };
+      document.getElementById("acctSettings").onclick = () => { closeAcctMenu(); openSettings(); };
+      document.getElementById("acctLogout").onclick = () => { closeAcctMenu(); doLogout(); };
+    }
+    function closeAcctMenu() { const m = document.getElementById("acctMenu"); if (m) m.classList.add("d-none"); }
+    document.addEventListener("click", closeAcctMenu);
+
+    function showConsole(me) {
+      gate.classList.add("d-none");
+      consoleEl.classList.remove("d-none");
+      renderConsoleAuth(me);
+      show(tabFromHash());
+    }
+
+    async function doLogin() {
+      const err = document.getElementById("cErr");
+      err.classList.add("d-none");
+      const r = await fetch("/v1/console/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: document.getElementById("cEmail").value.trim(), password: document.getElementById("cPass").value }),
+      });
+      if (!r.ok) { err.textContent = (await r.json()).detail || "Något gick fel."; err.classList.remove("d-none"); return; }
+      document.getElementById("cPass").value = "";
+      showConsole(await r.json());
+    }
+
+    async function doLogout() {
+      await fetch("/v1/console/auth/logout", { method: "POST" });
+      showGate();
+    }
+
+    // ---- Kontoinställningar (utbyggbar; rymmer just nu lösenordsbyte) ----
+    const settingsModal = document.getElementById("settingsModal");
+    function openSettings() {
+      document.getElementById("setEmail").textContent = currentAdmin ? currentAdmin.email : "";
+      document.getElementById("setCur").value = "";
+      document.getElementById("setNew").value = "";
+      document.getElementById("setMsg").classList.add("d-none");
+      settingsModal.classList.remove("d-none");
+      document.getElementById("setCur").focus();
+    }
+    async function saveSettingsPassword() {
+      const msg = document.getElementById("setMsg");
+      const show = (txt, ok) => { msg.textContent = txt; msg.className = "small mb-2 " + (ok ? "text-success" : "text-danger"); };
+      const r = await fetch("/v1/console/auth/password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: document.getElementById("setCur").value, new_password: document.getElementById("setNew").value }),
+      });
+      if (!r.ok) { show((await r.json()).detail || "Något gick fel.", false); return; }
+      document.getElementById("setCur").value = "";
+      document.getElementById("setNew").value = "";
+      show("Lösenordet är bytt.", true);
+    }
+
+    document.getElementById("cLogin").addEventListener("click", doLogin);
+    document.getElementById("cPass").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+    document.getElementById("setClose").addEventListener("click", () => settingsModal.classList.add("d-none"));
+    document.getElementById("settingsModal").addEventListener("click", (e) => { if (e.target.id === "settingsModal") settingsModal.classList.add("d-none"); });
+    document.getElementById("setSave").addEventListener("click", saveSettingsPassword);
+    document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key === "Enter") saveSettingsPassword(); });
+
     document.querySelectorAll("#tabs .nav-link").forEach(b =>
       b.addEventListener("click", () => show(b.dataset.tab)));
     window.addEventListener("hashchange", () => {
       const t = tabFromHash();
-      if (t !== active) show(t);
+      if (t !== active && !consoleEl.classList.contains("d-none")) show(t);
     });
-    show(tabFromHash());
+
+    (async function initConsole() {
+      try {
+        const me = await (await fetch("/v1/console/auth/me")).json();
+        if (me) showConsole(me); else showGate();
+      } catch (e) { showGate(); }
+    })();
   </script>
 </body>
 </html>
