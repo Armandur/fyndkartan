@@ -112,6 +112,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **Erbjudande-info-modal i konsument-appen BYGGT** ("Innehåll & näring" på
       erbjudandekort med EAN -> modal). OBS: bara där EAN finns klient-sida (ICA/Coop
       inline; Axfood-EAN resolvas lazy, saknas ofta på kortet).
+    - [ ] **Plocka ut allergener ur ingredienslistan.** Svenska ingredienslistor
+      versaliserar allergener (t.ex. "SMÖR (pastöriserad GRÄDDE...), ... MJÖLK"). Extrahera
+      VERSALA ord (>= 2 bokstäver, hantera "E"-nummer/förkortningar) -> strukturerad
+      allergenlista som kan visas/filtreras på.
     - [ ] **Normalisera/slå ihop produktinfo över källor.** Nu first-hit-vinner per EAN
       (Axfood = näring, Coop = ingredienser/ursprung). Olika källor kan ge olika/komplet-
       terande fält för samma EAN - bör slås ihop per fält eller väljas på rikedom.
@@ -145,6 +149,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     vid uppstart (`ensure_admin`) från `ADMIN_EMAIL` (generisk default i koden,
     sätts per instans via env/`.env`) + `ADMIN_PASSWORD` (annars genererat + loggat).
     - [ ] Persistent anropslogg (nu in-memory).
+    - [ ] **API-anrop-fliken: visa även våra egna inkommande anrop** (nu loggas bara
+      utgående httpx-anrop mot kedjorna via apilog). Lägg till middleware som loggar
+      inkommande requests mot vårt eget API, och **filtrera "senaste anrop" på källa**
+      (kedja/egen + status).
     - [ ] **API-testverktyg i konsolen (#sources-fliken):** sökfält/testexempel för att
       köra API:erna direkt (t.ex. EAN -> produktinfo, butik -> erbjudanden) och se svaret,
       så man kan utforska datakällorna interaktivt.

@@ -321,6 +321,51 @@ async def admin_sources(_=Depends(require_admin)):
     return {"sources": config.DATA_SOURCES}
 
 
+_PROXY_HOSTS = {
+    "apim-pub.gw.ica.se", "www.ica.se", "proxy.api.coop.se", "external.api.coop.se",
+    "www.willys.se", "www.hemkop.se", "live.api.schwarz",
+}
+_PROXY_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+             "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+
+
+async def _proxy_auth_headers(client, kind):
+    from .adapters import ica_token, keys
+    if kind == "ica":
+        return {"Authorization": f"Bearer {await ica_token.get_token(client)}"}
+    if kind == "coop_store":
+        return {"Ocp-Apim-Subscription-Key": config.COOP_KEY or await keys.scrape_coop_key(client)}
+    if kind == "coop_dke":
+        return {"Ocp-Apim-Subscription-Key": config.COOP_OFFERS_KEY or await keys.scrape_coop_offers_key(client)}
+    if kind == "coop_perso":
+        return {"Ocp-Apim-Subscription-Key": config.COOP_PERSO_KEY or await keys.scrape_coop_perso_key(client)}
+    if kind == "lidl":
+        return {"x-apikey": config.LIDL_KEY or await keys.scrape_lidl_key(client)}
+    return {}
+
+
+@app.get("/v1/admin/proxy")
+async def admin_proxy(url: str, auth_kind: str = "none", _=Depends(require_admin)):
+    """Testa kedjornas upstream-API:er från konsolen (rätt nyckel/token läggs på
+    server-side). Endast whitelistade kedje-hostar - ingen öppen proxy."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    if host not in _PROXY_HOSTS:
+        return JSONResponse({"detail": f"Host ej tillåten: {host or '(tom)'}"}, status_code=400)
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            headers = {"User-Agent": _PROXY_UA, "Accept": "application/json",
+                       **await _proxy_auth_headers(client, auth_kind)}
+            r = await client.get(url, headers=headers, timeout=25)
+        ct = r.headers.get("content-type", "")
+        body = r.json() if "application/json" in ct else r.text[:4000]
+        return {"status": r.status_code, "content_type": ct, "body": body}
+    except Exception as e:  # noqa: BLE001
+        log.warning("proxy %s misslyckades: %s", url, e)
+        return JSONResponse({"detail": str(e)}, status_code=502)
+
+
 @app.get("/v1/tags")
 async def list_tags(_=Depends(require_admin)):
     from .adapters.base import classify_provider

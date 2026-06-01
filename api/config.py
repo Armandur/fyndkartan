@@ -52,26 +52,27 @@ DEFAULT_PRIVATE_BRANDS = {
     "lidl": [],
 }
 
-# Statisk beskrivning av datakällorna (för admin-dashboarden).
+# Statisk beskrivning av datakällorna (för admin-dashboarden). `auth_kind` + `example`
+# låter konsolens API-testare köra dem via /v1/admin/proxy (rätt nyckel/token läggs
+# på server-side). Tomt `example` = ej direkt GET-testbar (POST/bot-skyddad/ej byggt).
 DATA_SOURCES = [
-    {"chain": "ica", "what": "butiker", "url": "apim-pub.gw.ica.se/.../mdsastoresearch/v1/storeslist", "auth": "Bearer (token från ica.se/e11/public-access-token)"},
-    {"chain": "ica", "what": "erbjudanden", "url": "ica.se/erbjudanden/{slug}-{id}/ (weeklyOffers, server-renderad)", "auth": "ingen"},
-    {"chain": "coop", "what": "butiker", "url": "proxy.api.coop.se/external/store/stores/map", "auth": "Ocp-Apim-Subscription-Key"},
-    {"chain": "coop", "what": "tjänster (detalj)", "url": "proxy.api.coop.se/external/store/stores/{ledger}", "auth": "Ocp-Apim-Subscription-Key"},
-    {"chain": "coop", "what": "erbjudanden", "url": "external.api.coop.se/dke/offers/{ledger}", "auth": "offers-nyckel (dkeKey)"},
-    {"chain": "willys", "what": "butiker", "url": "willys.se/axfood/rest/store", "auth": "ingen"},
-    {"chain": "willys", "what": "tjänster", "url": "willys.se/axfoodcommercewebservices/v2/.../cms/components", "auth": "ingen"},
-    {"chain": "willys", "what": "erbjudanden + EAN", "url": "willys.se/search/campaigns + /axfood/rest/p/{code}", "auth": "ingen"},
-    {"chain": "hemkop", "what": "butiker", "url": "hemkop.se/axfood/rest/store", "auth": "ingen"},
-    {"chain": "hemkop", "what": "tjänster", "url": "hemkop.se/axfoodcommercewebservices/v2/.../cms/components", "auth": "ingen"},
-    {"chain": "hemkop", "what": "erbjudanden + EAN", "url": "hemkop.se/search/campaigns + /axfood/rest/p/{code}", "auth": "ingen"},
-    {"chain": "lidl", "what": "butiker", "url": "live.api.schwarz/odj/stores-api/v2/.../stores (geo_box-svep)", "auth": "x-apikey"},
-    {"chain": "lidl", "what": "erbjudanden", "url": "regionalt (offerRegion) - ej byggt", "auth": "-"},
-    # Produktinfo (ingredienser/näring/ursprung) per EAN för märkesvaru-paringen.
-    {"chain": "willys", "what": "produktinfo (ingredienser/näring)", "url": "willys.se/axfood/rest/p/{code}", "auth": "ingen"},
-    {"chain": "hemkop", "what": "produktinfo (ingredienser/näring)", "url": "hemkop.se/axfood/rest/p/{code}", "auth": "ingen"},
-    {"chain": "coop", "what": "produktinfo per EAN (+ cross-chain-fallback)", "url": "external.api.coop.se/personalization/search/entities/by-id (POST, EAN-array)", "auth": "personalization-nyckel (skrapas)"},
-    {"chain": "ica", "what": "produktinfo", "url": "ehandel bot-skyddad (AWS WAF) - använder Coop-fallback på EAN för branded varor", "auth": "-"},
+    {"chain": "ica", "what": "butiker", "url": "apim-pub.gw.ica.se/.../mdsastoresearch/v1/storeslist", "auth": "Bearer (token från ica.se/e11/public-access-token)", "auth_kind": "ica", "example": "https://apim-pub.gw.ica.se/sverige/digx/mdsastoresearch/v1/storeslist?url=/&sort=FromStore&skip=0&take=5"},
+    {"chain": "ica", "what": "erbjudanden", "url": "ica.se/erbjudanden/{slug}-{id}/ (weeklyOffers, server-renderad)", "auth": "ingen", "auth_kind": "none", "example": "https://www.ica.se/erbjudanden/ica-nara-a-livs-1004177/"},
+    {"chain": "coop", "what": "butiker", "url": "proxy.api.coop.se/external/store/stores/map", "auth": "Ocp-Apim-Subscription-Key", "auth_kind": "coop_store", "example": "https://proxy.api.coop.se/external/store/stores/map?api-version=v2&conceptIds=12,6,95&invertFilter=true"},
+    {"chain": "coop", "what": "tjänster (detalj)", "url": "proxy.api.coop.se/external/store/stores/{ledger}", "auth": "Ocp-Apim-Subscription-Key", "auth_kind": "coop_store", "example": "https://proxy.api.coop.se/external/store/stores/196183?api-version=v5"},
+    {"chain": "coop", "what": "erbjudanden", "url": "external.api.coop.se/dke/offers/{ledger}", "auth": "offers-nyckel (dkeKey)", "auth_kind": "coop_dke", "example": "https://external.api.coop.se/dke/offers/196183?api-version=v2"},
+    {"chain": "willys", "what": "butiker", "url": "willys.se/axfood/rest/store", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/axfood/rest/store?online=false"},
+    {"chain": "willys", "what": "tjänster", "url": "willys.se/axfoodcommercewebservices/v2/.../cms/components", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/axfoodcommercewebservices/v2/willys/cms/components?componentIds=WillysDefaultRightColumnStoreInfoComponent&storeId=2102&pageSize=1"},
+    {"chain": "willys", "what": "erbjudanden", "url": "willys.se/search/campaigns", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/search/campaigns?storeId=2102&size=20"},
+    {"chain": "hemkop", "what": "butiker", "url": "hemkop.se/axfood/rest/store", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/axfood/rest/store?online=false"},
+    {"chain": "hemkop", "what": "tjänster", "url": "hemkop.se/axfoodcommercewebservices/v2/.../cms/components", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/axfoodcommercewebservices/v2/hemkop/cms/components?componentIds=HemkopDefaultRightColumnStoreInfoComponent&storeId=4102&pageSize=1"},
+    {"chain": "hemkop", "what": "erbjudanden", "url": "hemkop.se/search/campaigns", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/search/campaigns?storeId=4102&size=20"},
+    {"chain": "lidl", "what": "butiker", "url": "live.api.schwarz/odj/stores-api/v2/.../stores (geo_box-svep)", "auth": "x-apikey", "auth_kind": "lidl", "example": "https://live.api.schwarz/odj/stores-api/v2/myapi/stores-frontend/stores?country_code=SE&limit=5&offset=0&geo_box=59.0,17.8:60.0,18.5"},
+    {"chain": "lidl", "what": "erbjudanden", "url": "regionalt (offerRegion) - ej byggt", "auth": "-", "auth_kind": "none", "example": ""},
+    {"chain": "willys", "what": "produktinfo (ingredienser/näring)", "url": "willys.se/axfood/rest/p/{code}", "auth": "ingen", "auth_kind": "none", "example": "https://www.willys.se/axfood/rest/p/100053344_ST"},
+    {"chain": "hemkop", "what": "produktinfo (ingredienser/näring)", "url": "hemkop.se/axfood/rest/p/{code}", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/axfood/rest/p/100053344_ST"},
+    {"chain": "coop", "what": "produktinfo per EAN (POST, ej GET-testbar här)", "url": "external.api.coop.se/personalization/search/entities/by-id", "auth": "personalization-nyckel (skrapas)", "auth_kind": "coop_perso", "example": ""},
+    {"chain": "ica", "what": "produktinfo (bot-skyddad, Coop-fallback på EAN)", "url": "ehandel AWS-WAF-skyddad", "auth": "-", "auth_kind": "none", "example": ""},
 ]
 
 # Kanonisk vokabulär för butikstjänst-taggar. Editerbar i admin-UI (tag_types-tabell),

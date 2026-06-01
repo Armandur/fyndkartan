@@ -188,16 +188,77 @@
           <tbody>${recent}</tbody></table></div>`;
     }
 
+    const API_PRESETS = [
+      ["Produktinfo (EAN)", "/v1/products/7311870010970"],
+      ["Butikens erbjudanden", "/v1/stores/ica/2527/offers"],
+      ["Butiker nära", "/v1/stores/near?lat=59.33&lng=18.06&radius_km=5"],
+      ["Prisjämför nära", "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5"],
+      ["Märkesvaru-förslag", "/v1/admin/match/suggestions?ean=7340191177482"],
+      ["Privata produkter", "/v1/admin/private-products?q=mj%C3%B6lk"],
+    ];
+
+    async function runApiTest() {
+      const path = document.getElementById("apiPath").value.trim();
+      const out = document.getElementById("apiOut");
+      if (!path) return;
+      out.textContent = "Kör…";
+      try {
+        const t0 = performance.now();
+        const r = await fetch(path);
+        const ms = Math.round(performance.now() - t0);
+        const ct = r.headers.get("content-type") || "";
+        const body = ct.includes("application/json")
+          ? JSON.stringify(await r.json(), null, 2) : await r.text();
+        out.textContent = `${r.status} ${r.statusText}  ·  ${ms} ms\n\n${body}`;
+      } catch (e) { out.textContent = "Fel: " + e; }
+    }
+
+    async function runProxyTest(url, authKind) {
+      const out = document.getElementById("apiOut");
+      out.textContent = "Kör upstream…";
+      try {
+        const t0 = performance.now();
+        const r = await fetch(`/v1/admin/proxy?url=${encodeURIComponent(url)}&auth_kind=${encodeURIComponent(authKind || "none")}`);
+        const ms = Math.round(performance.now() - t0);
+        const d = await r.json();
+        const body = typeof d.body === "string" ? d.body : JSON.stringify(d.body ?? d, null, 2);
+        out.textContent = `${url}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms\n\n${body}`;
+      } catch (e) { out.textContent = "Fel: " + e; }
+    }
+
     async function loadSources() {
       const d = await (await api("/v1/admin/sources")).json();
       const rows = d.sources.map(s => `<tr>
         <td>${chip(s.chain)}</td><td>${esc(s.what)}</td>
-        <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td></tr>`).join("");
+        <td class="mono">${esc(s.url)}</td><td class="small">${esc(s.auth)}</td>
+        <td>${s.example ? `<button class="btn btn-sm btn-outline-dark src-test" data-url="${esc(s.example)}" data-auth="${esc(s.auth_kind || "none")}">Testa</button>` : '<span class="text-muted small">-</span>'}</td></tr>`).join("");
+      const presets = API_PRESETS.map(([label, path]) =>
+        `<button type="button" class="btn btn-sm btn-outline-dark api-preset" data-path="${esc(path)}">${esc(label)}</button>`).join(" ");
       document.getElementById("sources").innerHTML = `
+        <div class="card p-3 mb-3">
+          <h6>API-testare</h6>
+          <div class="small text-muted mb-2">Kör endpoints direkt (din konsol-session följer med). Välj exempel eller skriv egen sökväg.</div>
+          <div class="d-flex flex-wrap gap-1 mb-2">${presets}</div>
+          <div class="input-group input-group-sm mb-2">
+            <input id="apiPath" class="form-control mono" placeholder="/v1/products/{ean}" value="${esc(API_PRESETS[0][1])}">
+            <button id="apiRun" class="btn btn-dark">Kör</button>
+          </div>
+          <pre id="apiOut" class="mono p-2 mb-0" style="background:#0f1419;color:#d7dde3;border-radius:7px;max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word">Resultat visas här.</pre>
+        </div>
         <div class="card p-3"><h6>Datakällor per kedja</h6>
+        <div class="small text-muted mb-2">"Testa" kör kedjans upstream-API via vår proxy (nyckel/token läggs på server-side). Resultatet visas i API-testaren ovan.</div>
         <table class="table table-sm mb-0">
-          <thead><tr><th>Kedja</th><th>Vad</th><th>Endpoint</th><th>Auth</th></tr></thead>
+          <thead><tr><th>Kedja</th><th>Vad</th><th>Endpoint</th><th>Auth</th><th>Test</th></tr></thead>
           <tbody>${rows}</tbody></table></div>`;
+      document.getElementById("apiRun").addEventListener("click", runApiTest);
+      document.getElementById("apiPath").addEventListener("keydown", (e) => { if (e.key === "Enter") runApiTest(); });
+      document.querySelectorAll(".api-preset").forEach(b => b.addEventListener("click", () => {
+        document.getElementById("apiPath").value = b.dataset.path; runApiTest();
+      }));
+      document.querySelectorAll(".src-test").forEach(b => b.addEventListener("click", () => {
+        document.getElementById("apiOut").scrollIntoView({ block: "nearest" });
+        runProxyTest(b.dataset.url, b.dataset.auth);
+      }));
     }
 
     async function loadTypes() {
