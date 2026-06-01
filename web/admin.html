@@ -64,6 +64,14 @@
     #apiOut .j-num { color: #f0a868; }
     #apiOut .j-bool { color: #d2a8ff; }
     #apiOut .j-null { color: #8b949e; font-style: italic; }
+    #apiOut .j-punc { color: #8b949e; }
+    #apiOut .j-meta { display: block; margin-bottom: .4rem; }
+    #apiOut .jt { }
+    #apiOut .jt > summary { cursor: pointer; list-style: revert; white-space: nowrap; }
+    #apiOut .jt-kids { padding-left: 1.1em; border-left: 1px solid #2a3038; margin-left: .1em; }
+    #apiOut .jt-leaf { white-space: pre-wrap; }
+    #apiOut .jt-n { color: #6b7480; font-size: .85em; margin: 0 .4em; }
+    #apiOut .jt-text { white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -235,20 +243,35 @@
             || '<tr><td colspan="6" class="text-muted">Inga anrop.</td></tr>'}</tbody></table></div>`;
     }
 
-    function hlJson(text) {
-      const e = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return e.replace(/("(?:\\.|[^"\\])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g, (m) => {
-        let c = "j-num";
-        if (m[0] === '"') c = /:\s*$/.test(m) ? "j-key" : "j-str";
-        else if (m === "true" || m === "false") c = "j-bool";
-        else if (m === "null") c = "j-null";
-        return `<span class="${c}">${m}</span>`;
-      });
+    // Foldbar JSON-trädvy: objekt/arrayer blir <details> som kan fällas in/ut.
+    function jtVal(v, key) {
+      const k = key !== undefined ? `<span class="j-key">${esc(key)}</span><span class="j-punc">: </span>` : "";
+      if (v === null) return `<div class="jt-leaf">${k}<span class="j-null">null</span></div>`;
+      if (Array.isArray(v)) {
+        if (!v.length) return `<div class="jt-leaf">${k}<span class="j-punc">[ ]</span></div>`;
+        return `<details class="jt" open><summary>${k}<span class="j-punc">[</span><span class="jt-n">${v.length}</span><span class="j-punc">]</span></summary>`
+          + `<div class="jt-kids">${v.map(it => jtVal(it)).join("")}</div></details>`;
+      }
+      if (typeof v === "object") {
+        const ks = Object.keys(v);
+        if (!ks.length) return `<div class="jt-leaf">${k}<span class="j-punc">{ }</span></div>`;
+        return `<details class="jt" open><summary>${k}<span class="j-punc">{</span><span class="jt-n">${ks.length}</span><span class="j-punc">}</span></summary>`
+          + `<div class="jt-kids">${ks.map(kk => jtVal(v[kk], kk)).join("")}</div></details>`;
+      }
+      let c = "j-num", disp = String(v);
+      if (typeof v === "string") { c = "j-str"; disp = `"${v}"`; }
+      else if (typeof v === "boolean") c = "j-bool";
+      return `<div class="jt-leaf">${k}<span class="${c}">${esc(disp)}</span></div>`;
     }
 
-    function showResult(header, body, json) {
-      document.getElementById("apiOut").innerHTML =
-        `<span class="j-meta">${esc(header)}</span>\n\n` + (json ? hlJson(body) : esc(body));
+    function showResult(header, data, isJson) {
+      const out = document.getElementById("apiOut");
+      const meta = `<div class="j-meta">${esc(header)}</div>`;
+      if (isJson && data !== null && typeof data === "object") {
+        out.innerHTML = meta + `<div class="jt-root">${jtVal(data)}</div>`;
+      } else {
+        out.innerHTML = meta + `<div class="jt-text">${esc(typeof data === "string" ? data : JSON.stringify(data, null, 2))}</div>`;
+      }
     }
 
     async function runApiTest() {
@@ -267,8 +290,8 @@
           return;
         }
         const isJson = ct.includes("application/json");
-        const body = isJson ? JSON.stringify(await r.json(), null, 2) : await r.text();
-        showResult(`${r.status} ${r.statusText}  ·  ${ms} ms`, body, isJson);
+        const data = isJson ? await r.json() : await r.text();
+        showResult(`${r.status} ${r.statusText}  ·  ${ms} ms`, data, isJson);
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
@@ -283,11 +306,11 @@
         });
         const ms = Math.round(performance.now() - t0);
         const d = await r.json();
-        let body, json = true;
+        let data = d.body, isJson = true;
         if (typeof d.body === "string") {
-          try { body = JSON.stringify(JSON.parse(d.body), null, 2); } catch { body = d.body; json = false; }
-        } else { body = JSON.stringify(d.body ?? d, null, 2); }
-        showResult(`${method || "GET"} ${url}${reqBody ? "\nbody: " + reqBody : ""}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms`, body, json);
+          try { data = JSON.parse(d.body); } catch { data = d.body; isJson = false; }
+        } else if (d.body == null) { data = d; }
+        showResult(`${method || "GET"} ${url}${reqBody ? "\nbody: " + reqBody : ""}\n[auth: ${authKind || "none"}]  ·  upstream ${d.status ?? r.status}  ·  ${ms} ms`, data, isJson);
       } catch (e) { out.textContent = "Fel: " + e; }
     }
 
@@ -320,7 +343,7 @@
             <input id="apiPath" class="form-control mono" placeholder="/v1/products/{ean}" value="${esc((own[0] || {}).path || "/v1/chains")}">
             <button id="apiRun" class="btn btn-dark">Kör</button>
           </div>
-          <pre id="apiOut" class="mono p-2 mb-0" style="background:#0f1419;color:#d7dde3;border-radius:7px;max-height:46vh;overflow:auto;white-space:pre-wrap;word-break:break-word">Resultat visas här.</pre>
+          <div id="apiOut" class="mono p-2 mb-0" style="background:#0f1419;color:#d7dde3;border-radius:7px;max-height:46vh;overflow:auto;word-break:break-word">Resultat visas här.</div>
         </div>
         <div class="card p-3"><h6>Datakällor per kedja</h6>
         <div class="small text-muted mb-2">Kedjornas upstream-API:er som synken läser. "Testa" kör via vår proxy (nyckel/token läggs på server-side). Resultatet visas i rutan ovan.</div>
