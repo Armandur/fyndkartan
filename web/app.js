@@ -74,16 +74,15 @@ function weekHtml(oh) {
   const todayIdx = (new Date().getDay() + 6) % 7; // JS 0=sön -> 0=mån
   const rows = week.map((d) => {
     const hrs = d.closed ? "Stängt" : `${esc(d.opens || "")}-${esc(d.closes || "")}`;
-    return `<tr class="${d.day === todayIdx ? "wk-today" : ""}"><td>${DOW[d.day] || d.day}</td><td>${hrs}</td></tr>`;
+    return `<tr class="${d.day === todayIdx ? "wk-today" : ""}"><td>${DOW[d.day] || d.day}</td><td></td><td class="wk-hrs">${hrs}</td></tr>`;
   }).join("");
   const exc = (oh.exceptions || []).slice(0, 8).map((e) => {
     const hrs = e.closed ? "Stängt" : `${esc(e.opens || "")}-${esc(e.closes || "")}`;
-    const when = [e.date ? fmtDate(e.date) : "", e.label ? esc(e.label) : ""].filter(Boolean).join(" ");
-    return `<div class="wk-exc">${when || "?"}: ${hrs}</div>`;
+    return `<tr class="wk-exc"><td>${e.date ? esc(fmtDate(e.date)) : ""}</td><td>${e.label ? esc(e.label) : ""}</td><td class="wk-hrs">${hrs}</td></tr>`;
   }).join("");
+  const excBlock = exc ? `<tr class="wk-exc-h"><td colspan="3">Avvikande dagar</td></tr>${exc}` : "";
   return `<details class="pop-week"><summary>Veckans öppettider</summary>
-    <table class="wk-table"><tbody>${rows}</tbody></table>
-    ${exc ? `<div class="wk-excs"><div class="wk-exc-h">Avvikande dagar</div>${exc}</div>` : ""}
+    <table class="wk-table"><tbody>${rows}${excBlock}</tbody></table>
   </details>`;
 }
 
