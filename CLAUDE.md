@@ -79,9 +79,12 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   cache till utgång); Coop/Lidl använder ev. env-nyckel och skrapar ny vid 401.
   Willys/Hemköp kräver ingen nyckel.
 - **Erbjudanden är lazy + separat cache.** `GET /v1/stores/{chain}/{id}/offers`
-  hämtar live första gången (eller efter 6h TTL) och cachar i `offers`. Inte del
-  av butikssynken. Byggt för ICA, Willys, Hemköp, Coop (ej Lidl). Coop/Axfood
-  bär `member_price` (medlems-/Klubbpris).
+  hämtar live första gången och cachar i `offers`. Inte del av butikssynken (synken
+  rör aldrig erbjudanden). Färskhet (`_offers_fresh`): cache till 6h TTL, MEN hämtas
+  om tidigare om en cachad offer gått ut (`valid_to` < idag) - med ett 30-min golv
+  (`OFFERS_MIN_REFRESH`) så källans kvarliggande utgångna offers inte ger refetch-loop.
+  Compare/favoriter laddar via samma `_ensure_offers` (TTL-respekterande, ej tvingat).
+  Byggt för ICA, Willys, Hemköp, Coop (ej Lidl). Coop/Axfood bär `member_price`.
 - **Coop-berikning:** `coop.py` gör ett detalj-anrop per butik (bunden
   parallellism) för `services` -> tags och `concept` -> brand. Tyngre synk men
   ger samma metadata som ICA.

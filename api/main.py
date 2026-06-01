@@ -27,6 +27,7 @@ from .geo import haversine
 from .sync import STATE, run_scheduler, run_sync, sync_and_warm, warm_axfood_eans
 
 OFFERS_TTL = timedelta(hours=6)  # erbjudanden uppdateras veckovis; 6h cache räcker gott
+OFFERS_MIN_REFRESH = timedelta(minutes=30)  # golv för validitets-driven tidig refresh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("matbutiker")
@@ -581,6 +582,22 @@ async def get_store(chain: str, store_id: str, _auth=Depends(require_consumer)):
     return row_to_store(row)
 
 
+def _offers_expired(chain, store_id):
+    """True om någon cachad offer har valid_to i det förflutna -> set:et är inte längre
+    aktuellt. valid_to är ISO-datum (YYYY-MM-DD), så strängjämförelse räcker."""
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo(config.SYNC_TZ)).date().isoformat()
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT MIN(valid_to) AS m FROM offers WHERE chain=? AND store_id=? "
+        "AND valid_to IS NOT NULL AND valid_to != ''",
+        (chain, str(store_id)),
+    ).fetchone()
+    conn.close()
+    return bool(row and row["m"]) and row["m"] < today
+
+
 def _offers_fresh(chain, store_id):
     ts = offers_fetched_at(chain, store_id)
     if not ts:
@@ -589,7 +606,14 @@ def _offers_fresh(chain, store_id):
         fetched = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except ValueError:
         return False
-    return datetime.now(timezone.utc) - fetched < OFFERS_TTL
+    age = datetime.now(timezone.utc) - fetched
+    if age >= OFFERS_TTL:
+        return False
+    # Tidigare refresh än 6h om validitetstiden passerat - men inte oftare än golvet
+    # (annars loop om källan fortsatt listar en utgången offer).
+    if age >= OFFERS_MIN_REFRESH and _offers_expired(chain, store_id):
+        return False
+    return True
 
 
 SUPPORTED_OFFER_CHAINS = ("ica", "willys", "hemkop", "coop")
