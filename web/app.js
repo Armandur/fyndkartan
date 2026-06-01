@@ -638,13 +638,18 @@ function productCard(p) {
   const price = p.price_min != null
     ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
     : "";
-  return `<div class="offer-card${p.ean ? " prod-click" : ""}"${p.ean ? ` data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}"` : ""}>
+  const stores = p.offer_count ? `<span class="o-stores">${p.offer_count} butik${p.offer_count === 1 ? "" : "er"}</span>` : "";
+  const info = p.ean
+    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Innehåll &amp; näring</button>`
+    : "";
+  return `<div class="offer-card">
     ${img}
     <div class="o-body">
       <div class="o-name">${esc(p.name || "")}</div>
       <div class="o-meta">${meta}</div>
       <div class="o-price-row"><span class="o-price">${esc(price)}</span>${dealBadge(p)}</div>
-      <div class="o-foot">${catChip}${chains}</div>
+      <div class="o-foot">${catChip}${chains}${stores}</div>
+      ${info}
     </div>
   </div>`;
 }
@@ -711,8 +716,8 @@ document.getElementById("productsBack").addEventListener("click", () => {
   document.getElementById("productsPanel").classList.add("d-none");
 });
 document.getElementById("productsList").addEventListener("click", (e) => {
-  const card = e.target.closest(".prod-click");
-  if (card && card.dataset.ean) openProductModal(card.dataset.ean, "", card.dataset.name);
+  const b = e.target.closest(".o-info");
+  if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
 });
 
 // ---- Mobil: sidopanel som overlay ----

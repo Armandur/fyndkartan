@@ -256,8 +256,7 @@ body {
 }
 .o-valid { font-size: .68rem; color: #9aa4b2; }
 .o-chainchip { font-size: .6rem; font-weight: 700; color: #fff; padding: 1px 6px; border-radius: 10px; }
-.prod-click { cursor: pointer; }
-.prod-click:hover { background: #f6f8fa; }
+.o-stores { font-size: .64rem; color: #6b7480; }
 .o-store { color: #46505c; font-weight: 600; }
 .fav-sec {
   font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
