@@ -615,7 +615,7 @@ async def del_tag(label: str, _=Depends(require_admin)):
     return {"label": label, "removed": True, "types": tags.effective_types(label)}
 
 
-@app.get("/v1/stores")
+@app.get("/v1/stores", responses={200: {"model": schemas.StoresResponse}})
 async def list_stores(
     chain: str | None = None,
     city: str | None = None,
@@ -629,7 +629,7 @@ async def list_stores(
     return {"count": len(stores), "generated_at": _last_sync(), "stores": stores}
 
 
-@app.get("/v1/stores/near")
+@app.get("/v1/stores/near", responses={200: {"model": schemas.StoresNearResponse}})
 async def stores_near(
     lat: float = Query(...),
     lng: float = Query(...),
@@ -653,7 +653,7 @@ async def stores_near(
     return {"count": len(hits), "generated_at": _last_sync(), "stores": hits}
 
 
-@app.get("/v1/stores/{chain}/{store_id}")
+@app.get("/v1/stores/{chain}/{store_id}", responses={200: {"model": schemas.Store}})
 async def get_store(chain: str, store_id: str, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
@@ -728,7 +728,7 @@ async def _ensure_offers(client, chain, store_id, link_offers, native_json, refr
     return get_store_offers(chain, store_id)
 
 
-@app.get("/v1/stores/{chain}/{store_id}/offers")
+@app.get("/v1/stores/{chain}/{store_id}/offers", responses={200: {"model": schemas.StoreOffersResponse}})
 async def store_offers(chain: str, store_id: str, refresh: bool = False, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
@@ -874,7 +874,7 @@ async def favorites_offers(user=Depends(auth.current_user)):
     return {"stores": store_summ, "count": len(offers), "offers": offers, "compared": compared}
 
 
-@app.get("/v1/compare/near")
+@app.get("/v1/compare/near", responses={200: {"model": schemas.CompareResponse}})
 async def compare_near(
     lat: float = Query(...),
     lng: float = Query(...),
@@ -916,7 +916,7 @@ async def compare_near(
     }
 
 
-@app.get("/v1/compare/stores")
+@app.get("/v1/compare/stores", responses={200: {"model": schemas.CompareResponse}})
 async def compare_stores(stores: str = Query(...), min_chains: int = 2, _auth=Depends(require_consumer)):
     """Jämför erbjudanden bland specifika butiker (t.ex. favoriter).
 
@@ -977,7 +977,7 @@ async def products_by_category(
     return {"category": category, "count": len(products), "products": products}
 
 
-@app.get("/v1/products/{ean}")
+@app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})
 async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
     """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.
     Publik (konsument-appen + konsolen delar den). prefer_chain hintar rikare
@@ -1015,13 +1015,13 @@ async def product_image(ean: str, size: str = "default", _auth=Depends(require_c
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
 
 
-@app.get("/v1/categories")
+@app.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})
 async def categories_list(_auth=Depends(require_consumer)):
     """Kanonisk kategori-vokabulär (för filtrering i erbjudande-vyer)."""
     return {"categories": categories.CANONICAL}
 
 
-@app.get("/v1/chains")
+@app.get("/v1/chains", responses={200: {"model": schemas.ChainsResponse}})
 async def chains(_auth=Depends(require_consumer)):
     conn = get_conn()
     counts = {

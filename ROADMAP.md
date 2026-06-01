@@ -252,8 +252,12 @@ domäner:
 - [x] **OpenAPI-kurering (grupperat /docs) BYGGT.** Custom `app.openapi()` taggar varje
   endpoint per path-prefix (Butiker/Produkter/Jämförelse/Metadata/Favoriter/Auth & konto/
   Admin) utan att tagga varje route manuellt, + app-description. `/docs` är nu grupperat.
-  - [ ] Kvar: explicita Pydantic-responsmodeller för fält-typer i kontraktet (nu dokumenteras
-    fälten i konsolens OWN_APIS i stället; modeller vore en sanningskälla för båda).
+  - [x] **Pydantic-responsmodeller BYGGT** (`api/schemas.py`). Alla konsument-endpoints har
+    nu en modell, kopplad DOKUMENTERANDE (`responses={200: {"model": M}}`) - inte enforcing,
+    så svaren re-serialiseras inte (inga fält tappas). Modellerna är enda sanningskällan:
+    konsolens fält-doc (`OWN_APIS` returns) deriveras ur dem (`schemas.fields_doc`) och
+    /docs visar dem. Drift-test (`tests/test_schemas.py`) validerar verkliga Product/Store/
+    Offer-svar mot modellerna; övriga shapes HTTP-validerade. 28 schemas i kontraktet.
 - [x] **Produktsök-endpoint BYGGT** (`GET /v1/products/search?q=&limit=&chain=`).
   `database.search_products` söker namn ur offers-cachen (Unicode-skiftlägesokänsligt),
   grupperar distinkta produkter på EAN (cross-chain) annars (kedja, namn), och returnerar

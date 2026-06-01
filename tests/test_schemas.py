@@ -35,6 +35,50 @@ def test_product_matches_model():
     return n, sorted(seen_chains), sorted(seen_deals)
 
 
+def _validate_all(items, model):
+    """Validera varje post mot modellen + säkerställ att inget modellfält är ett
+    fantomfält (måste synas i minst en verklig post). Returnerar antal validerade."""
+    seen, n = set(), 0
+    for it in items:
+        model.model_validate(it)
+        seen |= set(it.keys())
+        n += 1
+    phantom = set(model.model_fields) - seen
+    assert not phantom, f"{model.__name__}: modellfält som aldrig syns i data: {sorted(phantom)}"
+    return n
+
+
+def test_store_matches_model():
+    """Butiks-svar (row_to_store) ska validera mot Store, sett över alla kedjor."""
+    conn = database.get_conn()
+    rows = []
+    for ch in ("ica", "coop", "willys", "hemkop", "lidl"):
+        rows += conn.execute("SELECT * FROM stores WHERE chain=? LIMIT 40", (ch,)).fetchall()
+    conn.close()
+    stores = [database.row_to_store(r) for r in rows]
+    n = _validate_all(stores, schemas.Store)
+    assert n > 0, "Inga butiker - är stores.db populerad?"
+    return n
+
+
+def test_offer_matches_model():
+    """Erbjudande-svar (get_store_offers) ska validera mot Offer, sett över kedjor."""
+    conn = database.get_conn()
+    pairs = conn.execute(
+        "SELECT chain, store_id, COUNT(*) c FROM offers GROUP BY chain, store_id "
+        "ORDER BY c DESC LIMIT 8"
+    ).fetchall()
+    conn.close()
+    offers = []
+    for p in pairs:
+        offers += database.get_store_offers(p["chain"], p["store_id"])
+    n = _validate_all(offers, schemas.Offer)
+    assert n > 0, "Inga erbjudanden i cachen att validera."
+    return n
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
+    print(f"OK: {test_store_matches_model()} butiker validerade mot Store")
+    print(f"OK: {test_offer_matches_model()} erbjudanden validerade mot Offer")

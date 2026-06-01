@@ -183,39 +183,13 @@ ORIGIN_COUNTRIES = _origin_countries()
 from . import schemas
 
 _RET_PRODUCT = schemas.fields_doc(schemas.Product)
-_RET_STORE = [
-    {"field": "chain, store_id, name, brand", "desc": "Identitet + kedjeprofil"},
-    {"field": "address, location", "desc": "Adress + lat/lng (null om position saknas)"},
-    {"field": "contact", "desc": "Telefon (normaliserat) + e-post"},
-    {"field": "opening_hours", "desc": "today, open_now, week[], exceptions[], raw"},
-    {"field": "tags", "desc": "Normaliserade tjänste-taggar"},
-    {"field": "links", "desc": "Butikssida, erbjudanden, e-handel"},
-]
-_RET_OFFER = [
-    {"field": "name, brand, package", "desc": "Produktidentitet"},
-    {"field": "price, price_text", "desc": "Pris + visningssträng ('2 för 39 kr')"},
-    {"field": "comparison_price, comparison_value, comparison_unit", "desc": "Jämförpris (enhetspris)"},
-    {"field": "category", "desc": "Kanonisk kategori (berikad)"},
-    {"field": "deal_type, multibuy_qty", "desc": "Normaliserad deal-typ"},
-    {"field": "package_size, package_value, package_unit", "desc": "Normaliserad förpackning"},
-    {"field": "eans, image, valid_to, member_price, savings", "desc": "EAN, bild, giltig t.o.m., medlemspris, besparing"},
-]
-_RET_PRODUCT_INFO = [
-    {"field": "ean, found", "desc": "EAN + om info hittades"},
-    {"field": "info.description, info.ingredients", "desc": "Beskrivning + ingredienslista"},
-    {"field": "info.nutrition, info.nutrition_basis", "desc": "Näringsvärden + bas (per 100 g/ml)"},
-    {"field": "info.allergens", "desc": "Allergener (ur VERSALA ord i ingredienserna)"},
-    {"field": "info.origin, info.storage, info.labels", "desc": "Ursprung, förvaring, märkningar"},
-    {"field": "info.sources", "desc": "Bidragande källor (axfood/coop ...)"},
-]
-_RET_COMPARE = [
-    {"field": "ean, name, brand, image, category", "desc": "Produktidentitet (kanonisk kategori)"},
-    {"field": "compare_by, unit", "desc": "unit_price | price + enhet (kr/kg|l|st)"},
-    {"field": "min, max, spread", "desc": "Lägsta/högsta + prisskillnad"},
-    {"field": "chains, stores", "desc": "Antal kedjor resp. butiker i gruppen"},
-    {"field": "offers[]", "desc": "Per butik: chain, store_id, price, comparison_value, deal_type, member_price ..."},
-    {"field": "variant_count, variants", "desc": "Hopslagna varianter (samma kampanj, flera EAN)"},
-]
+_RET_STORE = schemas.fields_doc(schemas.Store)
+_RET_STORE_NEAR = schemas.fields_doc(schemas.StoreNear)
+_RET_OFFER = schemas.fields_doc(schemas.Offer)
+_RET_PRODUCT_INFO = schemas.fields_doc(schemas.ProductInfoResponse)
+_RET_COMPARE = schemas.fields_doc(schemas.CompareGroup)
+_RET_CHAIN = schemas.fields_doc(schemas.Chain)
+_RET_CATEGORY = schemas.fields_doc(schemas.Category)
 
 # Egna /v1-endpoints som konsolen katalogiserar: beskrivning + parametrar + returnerade
 # fält (per-endpoint-utfällning). Speglar DATA_SOURCES. `path` är ett körbart exempel.
@@ -226,7 +200,7 @@ OWN_APIS = [
      "desc": "Butiker inom radie (km) runt en punkt, sorterade på avstånd.",
      "params": [{"name": "lat, lng", "desc": "Mittpunkt (obligatoriskt)"},
                 {"name": "radius_km", "desc": "Radie i km"}, _P_CHAIN],
-     "returns": _RET_STORE + [{"field": "distance_km", "desc": "Avstånd till punkten"}]},
+     "returns": _RET_STORE_NEAR},
     {"group": "Butiker", "method": "GET", "path": "/v1/stores?chain=lidl",
      "desc": "Hela butiksbeståndet, filtrerbart på chain och city.",
      "params": [_P_CHAIN, {"name": "city", "desc": "Filtrera på ort"}], "returns": _RET_STORE},
@@ -266,10 +240,10 @@ OWN_APIS = [
      "returns": _RET_COMPARE},
     {"group": "Metadata", "method": "GET", "path": "/v1/chains",
      "desc": "Kedjor med metadata + antal butiker.",
-     "params": [], "returns": [{"field": "chains[]", "desc": "chain, label, color, auth, offers_supported, store_count, synced_at"}]},
+     "params": [], "returns": _RET_CHAIN},
     {"group": "Metadata", "method": "GET", "path": "/v1/categories",
      "desc": "Kanonisk produktkategori-vokabulär (för filtrering i erbjudande-vyer).",
-     "params": [], "returns": [{"field": "categories[]", "desc": "key + label per kanonisk kategori"}]},
+     "params": [], "returns": _RET_CATEGORY},
     {"group": "Märkesvaror", "method": "GET", "path": "/v1/admin/match/suggestions?ean=7340191177482",
      "desc": "Paringsförslag för en privat märkesvara (namn-/förpackningsbaserat).",
      "params": [{"name": "ean", "desc": "EAN för den privata varan"}],
