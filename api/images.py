@@ -36,8 +36,8 @@ _CHAIN_IMG_PREF = {"coop": 0, "willys": 1, "hemkop": 1, "lidl": 3}
 
 def _resolve_url(ean):
     """Bästa bild-URL:en för EAN:en: en resizebar cloudinary-bild ur cachade offers
-    (föredras, Coop före Axfood), annars ICA:s EAN-CDN (400px, bättre än ICA:s 200px
-    offer-bild)."""
+    (föredras, Coop före Axfood), annars ICA-detaljens bild ur product_info (resizebar,
+    täcker ICA:s egna märken utan offer-bild), annars ICA:s EAN-CDN (400px)."""
     conn = db.get_conn()
     rows = conn.execute(
         "SELECT chain, image FROM offers WHERE image IS NOT NULL AND image!='' AND eans LIKE ?",
@@ -48,11 +48,16 @@ def _resolve_url(ean):
         "WHERE e.ean=? AND o.image IS NOT NULL AND o.image!=''",
         (ean,),
     ).fetchall()
+    pi = conn.execute(
+        "SELECT json_extract(data,'$.image') AS img FROM product_info WHERE ean=?", (ean,)
+    ).fetchone()
     conn.close()
     resizable = [r for r in rows if "/image/upload/" in (r["image"] or "")]
     if resizable:
         resizable.sort(key=lambda r: _CHAIN_IMG_PREF.get(r["chain"], 5))
         return resizable[0]["image"]
+    if pi and pi["img"] and "/image/upload/" in pi["img"]:
+        return pi["img"]
     return _ICA_CDN.format(ean=ean)
 
 

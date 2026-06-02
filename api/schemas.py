@@ -252,6 +252,7 @@ class ProductInfoData(BaseModel):
     sources: list[str] | None = Field(None, description="Bidragande källor")
     category_raw: str | None = Field(None, description="Råkategori (intern berikning)")
     category_source: str | None = Field(None, description="Kategori-källa (intern berikning)")
+    image: str | None = Field(None, description="Produktbild-URL (ICA-detalj, resizebar)")
 
 
 class ProductInfoResponse(BaseModel):

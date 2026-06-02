@@ -314,16 +314,32 @@ def _ica_nutrition(h):
     return out, None
 
 
+# Inline ursprungsmarkörer i ingredienslistan (egna märken saknar Ursprungsland-sektionen):
+# "*Ursprung Sverige", "*Ursprung: Sverige" (kolon), "*Odlade i Italien", "Producerad i ...".
+# Markörordet skiftlägesokänsligt (?i:...); landet måste börja versalt (fångar ett ord).
+_ICA_ORIGIN_RX = re.compile(
+    r"\*?\s*\b(?i:ursprungsland|ursprung|"
+    r"(?:odla|producera|tillverka|framställ|fånga|fiska|skörda)\w*\s+i\b)"
+    r"\s*:?\s*([A-ZÅÄÖ][\wåäöÅÄÖ-]+(?:\s*/\s*[A-ZÅÄÖ][\wåäöÅÄÖ-]+)*)"  # tål "Polen/Litauen"
+)
+
+
 def _ica_origin(h, ingredients):
     """Ursprungsland-sektionen; för egna märken ligger ursprunget inline i ingredienserna."""
     o = _ica_section(h, "Ursprungsland")
     if o:
         return o
     if ingredients:
-        m = re.search(r"\*\s*(?:Ursprung|Odlade i|Producerad i|Tillverkad i)\s+([A-ZÅÄÖ][\wåäöÅÄÖ]+)", ingredients)
+        m = _ICA_ORIGIN_RX.search(ingredients)
         if m:
             return m.group(1)
     return None
+
+
+def _ica_image(h):
+    """Produktbildens URL (og:image) - en resizebar cloudinary `/image/upload/`-URL."""
+    m = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', h)
+    return _html.unescape(m.group(1)) if m else None
 
 
 def _parse_ica_detail(h):
@@ -354,6 +370,7 @@ def _parse_ica_detail(h):
         "labels": [],
         "source": "ica",
         "category_raw": cats[0] if cats else None,
+        "image": _ica_image(h),
     }
 
 
@@ -409,6 +426,13 @@ async def _fetch_ica(client, ean):
     return _parse_ica_detail(r.text) if r.status_code == 200 else None
 
 
+async def fetch_ica_only(client, ean):
+    """Bara ICA-källan, normaliserad - för förvärmning av ICA:s egna märken (Coop/Axfood
+    saknar dem ändå, så fetch_for_ean:s Coop-anrop vore bortkastat). None om inget."""
+    ic = await _fetch_ica(client, ean)
+    return _merge([ic]) if ic and (ic.get("ingredients") or ic.get("description")) else None
+
+
 def _merge(parts):
     """Slå ihop produktinfo från flera källor per fält (näring från Axfood +
     ingredienser/ursprung från Coop osv). Textfält: längsta icke-tomma. `sources`
@@ -427,6 +451,8 @@ def _merge(parts):
                 labels.append(lbl)
     merged["labels"] = labels
     merged["allergens"] = extract_allergens(merged.get("ingredients"))
+    imgs = [p.get("image") for p in parts if p.get("image")]
+    merged["image"] = imgs[0] if imgs else None  # ICA-detaljbild (resizebar) -> bild-resolvern
     # Kategori: föredra Axfood (pipe-path resolvas via befintlig mappning), annars Coop.
     catpart = (next((p for p in parts if p.get("source") in _AXFOOD and p.get("category_raw")), None)
                or next((p for p in parts if p.get("category_raw")), None))

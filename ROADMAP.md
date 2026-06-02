@@ -175,16 +175,19 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       Finare ICA-kategori via breadcrumb-topp (`category_from_detail` source "ica" + `ica_nav`-
       mappning i `DEFAULT_CATEGORY_MAP`). Stänger luckan för 234 ICA-egna-märkes-EAN i offers-
       cachen (av 2185 utan product_info). Verifierat e2e: egna märken + branded utan regression.
-    - [ ] **ICA-bilder ur söket i bild-resolvern (uppskjutet).** ICA-söket/detaljen ger en
-      resizebar cloudinary-bild (`/image/upload/`); `images.py` skulle kunna föredra den för
-      ICA-egna-märkes-EAN som inte finns i någon offers-cache (idag bara ICA:s EAN-CDN-gissning).
-      Litet, ej en lucka - egen punkt.
-    - [ ] **ICA-ursprung ur inline-markörer (uppskjutet, delvis gjort).** För egna märken saknas
-      `Ursprungsland`-fältet; ursprunget ligger inline i ingredienserna (`*Ursprung X`/`*Odlade i X`).
-      `_ica_origin` fångar de vanligaste markörerna nu; fler varianter kan tillkomma vid behov.
-    - [ ] **ICA-kategori-förvärmning (uppskjutet).** Som `warm_coop_categories`: förvärma
-      `product_info`-kategori per ICA-EAN globalt (gynnar offer-kategori utan att öppna modalen).
-      Hör ihop med produktsöket - tas där.
+    - [x] **ICA-bilder i bild-resolvern BYGGT.** `_parse_ica_detail` plockar `og:image` (resizebar
+      cloudinary `/image/upload/`) -> `image` i product_info; `images._resolve_url` föredrar den
+      för ICA-egna-märkes-EAN utan offer-bild, före ICA:s EAN-CDN. Kedjad cloudinary-transform
+      verifierad (200 image/jpeg, mindre fil än originalet). `image` exponerat i `ProductInfoData`.
+    - [x] **ICA-ursprung ur inline-markörer BYGGT.** `_ICA_ORIGIN_RX` täcker nu `*Ursprung X`,
+      `*Ursprung: X` (kolon), `*Odlade/Producerad/Tillverkad/Framställd/Fångad/Fiskad/Skördad i X`;
+      markörordet skiftlägesokänsligt, landet ett versalt ord. Ursprungsland-sektionen föredras.
+    - [x] **ICA-kategori-förvärmning BYGGT.** `sync.warm_ica_categories` (cap 40/synk, concurrency 2):
+      ICA-offer-EAN utan mappbar kategori, egna märken (731869) först (via `fetch_ica_only` - hoppar
+      bortkastat Coop-anrop), branded via `fetch_for_ean`. Skip-filtret använder RÅ `product_info`-
+      membership (`product_info_eans`) så utgångna negativa inte re-warmas och äter capen; lazy
+      route:n sköter säsongs-retry via TTL. Körs i `sync_and_warm` + vid uppstart. Inkrementell
+      fyllning över många synkar (~2000 EAN / 40), inte ett momentant kategorilyft.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
       compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
       det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
@@ -207,8 +210,9 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     (City Gross `Loop54/search/quick?SearchQuery=`, Axfood-sök, ev. ICA/Coop) som täcker
     hela sortimentet - bygg ett unified sök ovanpå dem (live eller cachat). Närbesläktat
     med Fulla sortiment men lättare (sök on-demand, ingen full spegling).
-  - [ ] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
-    EAN/pris/jämförpris-tillgång (för unified-söket). Kartlagt hittills:
+  - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
+    EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
+    ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):
     - **City Gross** (Loop54): `GET .../Loop54/search/quick?SearchQuery=` (+ `products/{id}`,
       `category/{id}/products`). EAN (`gtin`) + pris + jämförpris inline.
     - **Coop** (personalization): `POST external.api.coop.se/personalization/search/global`

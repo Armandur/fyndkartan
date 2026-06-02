@@ -45,7 +45,7 @@ api/                 # Python-paketet (importeras som `api`)
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
   categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
-  sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories() (kategori-förvärmning). STATE per kedja
+  sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories()/warm_ica_categories() (kategori-förvärmning; ICA capad+inkrementell). STATE per kedja
   adapters/
     base.py          # make_store(), tags_from_services(), normalize_hours() + week/exceptions (expand_sv_label, enrich_exceptions via holidays), _norm_phone (phonenumbers)
     ica.py coop.py willys.py hemkop.py lidl.py citygross.py   # butiks-adaptrar, fetch_all() -> UnifiedStore[]
@@ -104,9 +104,10 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   föredras** i `get_store_offers` när den finns (`product_info.category_raw/source` ->
   `category_from_detail`). Förvärmas globalt per EAN: Axfood via `ean_cache.category`
   (`warm_axfood_eans`, samma `/p/{code}` som EAN-warmingen), Coop via `product_info`
-  (`warm_coop_categories`, batchat personalization-API). Coops offer-nivå
-  (Färsk/Kolonial/Nonfood) är opålitlig -> coop_nav (navCategories-topp) overridar.
-  Viktvaror (slump-EAN) saknar produktdetalj -> faller till `ovrigt`.
+  (`warm_coop_categories`, batchat personalization-API), ICA via `product_info`
+  (`warm_ica_categories`, breadcrumb-topp -> `ica_nav`; capad+inkrementell då ICA-detalj saknar
+  batch, egna märken först). Coops offer-nivå (Färsk/Kolonial/Nonfood) är opålitlig -> coop_nav
+  (navCategories-topp) overridar. Viktvaror (slump-EAN) saknar produktdetalj -> faller till `ovrigt`.
 - **Matchning (`matching.py` + `/v1/compare/near`):** grupperar närliggande
   butikers erbjudanden per EAN (>= 2 olika kedjor). Strikt `normalize_ean`
   (rejekta 2-prefix/ogiltig längd). Jämför på **enhetspris** (jämförpris) när alla
@@ -144,10 +145,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   direkt utan re-hämtning) 14 dygn (så säsongsvaror kan dyka upp igen). Vid hämtningsfel cachas
   inget (kan vara transient). Kategori påverkas ej (deriveras vid läsning ur `category_map`).
 - **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
-  ur cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (källorna
-  är cloudinary; `c_limit,w_400` -> små filer i stället för full-res), cachar bytes lokalt
-  i `image_cache/` (metadata i `product_images`). Gör oss CDN-oberoende. Frontend-kort
-  använder den med `onerror`-fallback till original-CDN-URL.
+  ur cachade offers, annars ICA-detaljens `og:image` ur `product_info` (täcker ICA:s egna
+  märken utan offer-bild), annars ICA:s EAN-CDN. **Resizar via Cloudinary-transform** (källorna
+  är cloudinary; `c_limit,w_400` -> små filer, kedjas på ICA:s redan namngivna transform), cachar
+  bytes lokalt i `image_cache/` (metadata i `product_images`). Gör oss CDN-oberoende. Frontend-
+  kort använder den med `onerror`-fallback till original-CDN-URL.
 - **Normalisering:** öppettider -> `HH:MM` (`normalize_hours`), taggar som
   positiva påståenden (avsaknad = okänt), `0,0`-koordinater = saknad position.
 - **Veckoöppettider (`opening_hours.week`/`exceptions`):** varje adapter parsar sitt

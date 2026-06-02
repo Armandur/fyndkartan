@@ -494,6 +494,30 @@ def coop_offer_eans():
     return [e for e in out if e]
 
 
+def ica_offer_eans():
+    """Distinkta 13-siffriga EAN ur ICA-erbjudanden (för ICA-kategori-förvärmning)."""
+    conn = get_conn()
+    rows = conn.execute("SELECT DISTINCT eans FROM offers WHERE chain='ica' AND eans NOT IN ('','[]')").fetchall()
+    conn.close()
+    out = set()
+    for r in rows:
+        try:
+            out.update(json.loads(r["eans"]))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return [e for e in out if e and len(str(e)) == 13]
+
+
+def product_info_eans():
+    """RÅ mängd EAN i product_info (positiva som negativa rader, oavsett TTL). Används som
+    'redan försökt'-filter i förvärmning - utgångna negativa ska INTE re-warmas (TTL-vägen
+    är den lazy route:n), annars äter döda EAN upp förvärmnings-capen i all evighet."""
+    conn = get_conn()
+    rows = conn.execute("SELECT ean FROM product_info").fetchall()
+    conn.close()
+    return {r["ean"] for r in rows}
+
+
 _OFFER_COLS = (
     "chain,store_id,offer_id,name,brand,package,price,price_text,comparison_price,"
     "comparison_value,comparison_unit,category_raw,category_id,mechanic_type,valid_to,"

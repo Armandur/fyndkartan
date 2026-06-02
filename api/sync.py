@@ -12,6 +12,8 @@ from .database import (
     coop_offer_eans,
     get_conn,
     get_product_categories,
+    ica_offer_eans,
+    product_info_eans,
     replace_chain,
     save_ean_meta,
     save_product_info,
@@ -158,6 +160,52 @@ async def warm_coop_categories():
     log.info("Coop-kategoriförvärmning klar: %d EAN att hämta, %d cachade", len(todo), saved)
 
 
+# ICA-detalj saknar batch-API (sök + sida per EAN) -> capa per synk, warma inkrementellt.
+# Låg parallellism (handla.ica.se throttlar burst; en throttle blir tyst negativ-cachad).
+ICA_WARM_CAP = 40
+ICA_WARM_CONCURRENCY = 2
+
+
+async def warm_ica_categories(cap=ICA_WARM_CAP):
+    """Förvärm product_info för ICA-offer-EAN som saknar mappbar kategori (ICA:s offer-nivå
+    är grov). Capad + egna märken (731869) först (de har bara ICA som källa); inkrementell
+    över flera synkar. Hoppar EAN som redan finns i product_info (RÅ membership - utgångna
+    negativa ska inte re-warmas, lazy route:n sköter retry via TTL). Egna märken hämtas via
+    ICA-bara (Coop/Axfood saknar dem); branded via fulla fetch_for_ean."""
+    eans = ica_offer_eans()
+    if not eans:
+        return
+    have = get_product_categories(eans)          # redan mappbar kategori
+    tried = product_info_eans()                  # redan hämtat (positivt el. negativt)
+    todo = [e for e in eans if e not in have and e not in tried]
+    if not todo:
+        log.info("ICA-kategoriförvärmning: inget att göra (%d EAN)", len(eans))
+        return
+    todo.sort(key=lambda e: 0 if str(e).lstrip("0").startswith("731869") else 1)
+    todo = todo[:cap]
+    sem = asyncio.Semaphore(ICA_WARM_CONCURRENCY)
+    saved = 0
+
+    async def warm(ean, client):
+        nonlocal saved
+        async with sem:
+            try:
+                if str(ean).lstrip("0").startswith("731869"):
+                    info = await details.fetch_ica_only(client, ean)
+                else:
+                    info = await details.fetch_for_ean(client, ean)
+            except Exception as e:  # noqa: BLE001
+                log.warning("ICA-kategoriförvärmning %s misslyckades: %s", ean, e)
+                return
+            save_product_info(ean, info)  # även None -> negativ cache (undviker re-warm)
+            if info:
+                saved += 1
+
+    async with apilog.make_client(follow_redirects=True) as client:
+        await asyncio.gather(*(warm(e, client) for e in todo))
+    log.info("ICA-kategoriförvärmning klar: %d EAN hämtade, %d med info", len(todo), saved)
+
+
 async def sync_and_warm():
     """Butikssynk följt av EAN-förvärmning (används av schemaläggare + uppstart)."""
     await run_sync()
@@ -169,6 +217,10 @@ async def sync_and_warm():
         await warm_coop_categories()
     except Exception:  # noqa: BLE001
         log.exception("Coop-kategoriförvärmning misslyckades")
+    try:
+        await warm_ica_categories()
+    except Exception:  # noqa: BLE001
+        log.exception("ICA-kategoriförvärmning misslyckades")
 
 
 async def run_scheduler(cron_expr, tz_name="Europe/Stockholm"):
