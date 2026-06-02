@@ -219,6 +219,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       artikelkod, EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,
       `priceValue`, `comparePrice`+`comparePriceUnit` (jämförpris), `googleAnalyticsCategory`,
       `image` (axfood cloudinary). EAN EJ inline (enda kedjan som kräver resolve i sök).
+    - **Lidl**: sök-API hittat (`GET lidl.se/q/api/search?q=&fetchsize=`) men **auth-gatat**
+      (401 även med sidans cookies; token-källan ej i sidan/sök-widgeten). Kräver obscura för
+      att fånga det riktiga anropets auth-header. Lidl förblir svårast (även offers regionala/PDF).
+    - **ICA produktdetalj** (ingredienser/näring): `handla.ica.se/produkt/{consumerItemId}` är
+      butiks-gatat + WAF; gateway-path ej hittad via gissning. ICA-SÖKET ger dock gtin/namn/
+      kategori/bild (basfält) - full detalj för ICA:s egna märken förblir luckan (Coop-fallback
+      täcker branded). Se "Utvärdera vad ICA:s katalog-sök kan förbättra" ovan.
     - **Slutsats:** ALLA kedjor har sökbara katalog-API:er med pris. EAN inline för City Gross
       (`gtin`), Coop (`ean`), ICA (`gtin`); Axfood kräver code->EAN-resolve. Jämförpris: alla
       utom ICA. Unified produktsök är klart genomförbart för hela sortimentet.
