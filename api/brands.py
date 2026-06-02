@@ -10,13 +10,14 @@ automatiskt och behöver aldrig paras. Paring sker bara över olika private labe
 Endast offers-data (v1): listan = private-label-produkter som synts i erbjudanden.
 """
 
+import asyncio
 import json
 import re
 
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
-from . import auth, config, database as db, embeddings
+from . import apilog, auth, catalog, config, database as db, embeddings
 from .matching import _norm_unit, normalize_ean
 
 router = APIRouter(prefix="/v1/admin", dependencies=[Depends(auth.require_admin)])
@@ -148,6 +149,20 @@ def rank_for_group(members, cands):
 def _is_private(brand, roots):
     b = (brand or "").lower()
     return bool(b) and any(b.startswith(r) for r in roots)
+
+
+def _is_private_catalog(brand, name, roots):
+    """Private-label-detektion för katalogträffar: brand-rot ELLER rot som helt ord/fras i
+    namnet. ICA-söket saknar brand-fält -> namnet bär 'ICA'; ordmatch (inte delsträng) undviker
+    falskpositiv som 'Tropicana'. Fler-ords-rötter ('rätt sortiment') matchas som fras."""
+    if _is_private(brand, roots):
+        return True
+    nl = (name or "").lower()
+    words = set(re.findall(r"[a-zåäö]+", nl))
+    for r in roots:
+        if (r in nl) if " " in r else (r in words):
+            return True
+    return False
 
 
 def _products(conn, brands, chain=None, q=None):
@@ -294,14 +309,55 @@ async def add_to_group(group_id: int, payload: dict = Body(...)):
 
 @router.get("/matches")
 async def list_matches():
+    """Paringar. `active` = någon medlem har ett aktuellt erbjudande (syns i compare);
+    inaktiva är förhandsmatchade som väntar på erbjudande."""
+    conn = db.get_conn()
+    try:
+        active_gids = {p["group_id"] for p in _products(conn, db.load_private_brands())
+                       if p.get("group_id") is not None}
+    finally:
+        conn.close()
     groups = {}
     for m in db.load_match_members():
         groups.setdefault(m["group_id"], []).append(m)
     out = [
-        {"group_id": gid, "members": sorted(ms, key=lambda x: x["chain"])}
+        {"group_id": gid, "active": gid in active_gids, "members": sorted(ms, key=lambda x: x["chain"])}
         for gid, ms in sorted(groups.items())
     ]
     return {"count": len(out), "groups": out}
+
+
+@router.get("/catalog-private")
+async def catalog_private(q: str = Query(..., min_length=2), exclude: str | None = None, per_chain: int = 20):
+    """Live katalog-sök efter PRIVATE-LABEL-produkter (för förhandsmatchning innan ett
+    erbjudande finns). Per kedja, filtrerat till egna märken, EAN-kanoniserat (samma form som
+    offers), berikat med group_id. `exclude` = hoppa över en kedja (källans, då paring är
+    cross-chain). Lidl saknas (ingen EAN)."""
+    voc = db.load_private_brands()
+    members = {m["ean"]: m["group_id"] for m in db.load_match_members()}
+    searchers = {ch: fn for ch, fn in catalog._SEARCHERS.items() if ch != exclude}
+    async with apilog.make_client(follow_redirects=True) as client:
+        results = await asyncio.gather(*(
+            catalog._safe(ch, fn(client, q, per_chain)) for ch, fn in searchers.items()
+        ))
+    out, seen = [], set()
+    for ch, items in results:
+        roots = [r.lower() for r in voc.get(ch, [])]
+        if not roots:
+            continue
+        for it in items:
+            ean = it.get("ean")
+            if not ean or ean in seen or not _is_private_catalog(it.get("brand"), it.get("name"), roots):
+                continue
+            seen.add(ean)
+            out.append({
+                "ean": ean, "chains": [it["chain"]], "name": it.get("name"), "brand": it.get("brand"),
+                "package": it.get("package_size"), "image": it.get("image"),
+                "comparison_value": it.get("comparison_value"), "comparison_unit": it.get("comparison_unit"),
+                "group_id": members.get(ean),
+            })
+    out.sort(key=lambda p: (p["group_id"] is not None, p["chains"][0], (p["name"] or "").lower()))
+    return {"query": q, "count": len(out), "products": out}
 
 
 @router.post("/matches")

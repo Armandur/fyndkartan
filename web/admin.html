@@ -528,7 +528,7 @@
     }
 
     // ---- Märkesvaror (cross-chain-paring av private label, EAN-centrerat) ----
-    const marq = { products: [], selected: null, picks: new Map() };
+    const marq = { products: [], catalog: [], selected: null, picks: new Map() };
     const mqUnit = (p) => p.comparison_value != null ? `${p.comparison_derived ? "≈ " : ""}${p.comparison_value} kr/${p.comparison_unit || "st"}` : "-";
     const mqThumb = (p, cls = "mq-thumb") => {
       const full = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=full` : (p.image || "");
@@ -537,7 +537,7 @@
     };
     const chains = (p) => (p.chains || []).map(chip).join("");
     const detailChain = (p) => (p.chains || []).find(c => c === "willys" || c === "hemkop") || (p.chains || [])[0];
-    const findProduct = (ean) => marq.products.find(p => p.ean === ean);
+    const findProduct = (ean) => marq.products.find(p => p.ean === ean) || marq.catalog.find(p => p.ean === ean);
 
     async function loadMarques() {
       const d = await (await api("/v1/admin/private-products")).json();
@@ -564,6 +564,10 @@
               valda produkt i den befintliga gruppen i stället för att skapa en ny.</li>
             <li>Under <em>Befintliga paringar</em> kan du söka, lägga till fler produkter (+ Lägg
               till) och ta bort enskilda medlemmar (✕). En grupp med &lt; 2 medlemmar upplöses.</li>
+            <li>När du söker tas även varor ur kedjornas <strong>fulla katalog</strong> med (utöver
+              de med erbjudande) - de får chippet <em>inget erbjudande</em>. Du kan förhandsmatcha
+              dem; paringen hamnar under <em>Väntar på erbjudande</em> och tänds automatiskt när ett
+              erbjudande dyker upp.</li>
           </ul>
         </details>
         <div class="row g-3">
@@ -584,20 +588,38 @@
           </div>
         </div>`;
       document.getElementById("mqChain").addEventListener("change", renderMqList);
-      document.getElementById("mqSearch").addEventListener("input", renderMqList);
       document.getElementById("mqUnmatched").addEventListener("change", renderMqList);
+      let mqt; document.getElementById("mqSearch").addEventListener("input", (e) => {
+        renderMqList();  // direkt lokal filtrering
+        clearTimeout(mqt); mqt = setTimeout(() => mqCatalogSearch(e.target.value.trim()), 350);  // + katalog
+      });
       renderMqList();
       loadMqGroups();
+    }
+
+    // Sök även i kedjornas katalog (private-label-varor utan aktuellt erbjudande) och merga in
+    // dem i listan, flaggade catalogOnly. Förhandsmatchade par tänds när ett erbjudande dyker upp.
+    async function mqCatalogSearch(q) {
+      if (q.length < 2) { if (marq.catalog.length) { marq.catalog = []; renderMqList(); } return; }
+      const offEans = new Set(marq.products.map(p => p.ean));
+      const groupOf = (e) => (findProduct(e) || {}).group_id;
+      try {
+        const d = await (await api(`/v1/admin/catalog-private?q=${encodeURIComponent(q)}`)).json();
+        marq.catalog = (d.products || []).filter(p => !offEans.has(p.ean))
+          .map(p => ({ ...p, catalogOnly: true, group_id: p.group_id ?? groupOf(p.ean) ?? null }));
+      } catch (e) { marq.catalog = []; }
+      renderMqList();
     }
 
     function renderMqList() {
       const ch = document.getElementById("mqChain").value;
       const q = document.getElementById("mqSearch").value.trim().toLowerCase();
       const onlyUn = document.getElementById("mqUnmatched").checked;
-      const items = marq.products.filter(p =>
+      const items = [...marq.products, ...marq.catalog].filter(p =>
         (!ch || p.chains.includes(ch)) && (!onlyUn || p.group_id == null) &&
         (!q || (p.name || "").toLowerCase().includes(q)));
-      document.getElementById("mqCount").textContent = `${items.length} produkter`;
+      const nCat = items.filter(p => p.catalogOnly).length;
+      document.getElementById("mqCount").textContent = `${items.length} produkter` + (nCat ? ` (${nCat} ur katalogen)` : "");
       document.getElementById("mqList").innerHTML = items.map(p => `
         <div class="marq-row${marq.selected && marq.selected.ean === p.ean ? " sel" : ""}" data-key="${esc(p.ean)}">
           <div class="d-flex align-items-center gap-2">
@@ -605,7 +627,10 @@
             <div style="min-width:0;flex:1">
               <div class="mq-rowhead d-flex align-items-center gap-2">
                 ${chains(p)}<span class="fw-semibold small text-truncate">${esc(p.name || "")}</span>
-                ${p.group_id != null ? `<span class="badge bg-success ms-auto grp-badge">grupp ${p.group_id}</span>` : ""}
+                <span class="ms-auto d-flex gap-1">
+                  ${p.catalogOnly ? `<span class="badge bg-light text-muted border" title="Finns i sortimentet men inget aktuellt erbjudande">inget erbjudande</span>` : ""}
+                  ${p.group_id != null ? `<span class="badge bg-success grp-badge">grupp ${p.group_id}</span>` : ""}
+                </span>
               </div>
               <div class="small text-muted text-truncate">${esc(p.brand || "")} · ${esc(p.package || "")} · ${mqUnit(p)}</div>
             </div>
@@ -615,10 +640,16 @@
     }
 
     async function selectMq(ean) {
-      marq.selected = findProduct(ean); marq.picks.clear();
+      const s = marq.selected = findProduct(ean); marq.picks.clear();
       renderMqList();
-      const d = await (await api(`/v1/admin/match/suggestions?ean=${encodeURIComponent(ean)}`)).json();
-      renderPair(d.suggestions || []);
+      let suggestions = [];
+      if (!s.catalogOnly) {  // semantiska förslag (offers); källan måste finnas i offers-cachen
+        try { suggestions = (await (await api(`/v1/admin/match/suggestions?ean=${encodeURIComponent(ean)}`)).json()).suggestions || []; } catch (e) {}
+      }
+      // Merga in katalog-only-kandidater ur aktuella sökningen (andra kedjor, ej redan med).
+      const seen = new Set([s.ean, ...suggestions.map(p => p.ean)]);
+      const catCands = marq.catalog.filter(p => !seen.has(p.ean) && !p.chains.includes(s.chains[0]));
+      renderPair([...suggestions, ...catCands]);
     }
 
     function candRow(p) {
@@ -629,6 +660,7 @@
             ${mqThumb(p)}${chains(p)}<span class="small fw-semibold text-truncate">${esc(p.name || "")}</span>
             <span class="small text-muted text-nowrap">${esc(p.package || "")} · ${mqUnit(p)}</span>
             ${p.score != null ? `<span class="badge bg-light text-dark ms-auto">${p.score}</span>` : ""}
+            ${p.catalogOnly ? `<span class="badge bg-light text-muted border${p.score == null ? " ms-auto" : ""}" title="Inget aktuellt erbjudande">inget erbj.</span>` : ""}
           </label>
           ${p.group_id != null ? `<button class="btn btn-sm btn-link p-0 text-nowrap mq-addsrc" data-gid="${p.group_id}" title="Lägg källan i denna paring">→ grupp ${p.group_id}</button>` : ""}
           <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${detailChain(p)}" data-ean="${esc(p.ean)}">info</button>
@@ -691,7 +723,7 @@
       const box = document.getElementById("mqManualRes");
       if (!q) { box.innerHTML = ""; return; }
       const ql = q.toLowerCase(), selChains = new Set(marq.selected.chains);
-      const items = marq.products.filter(p => !p.chains.some(c => selChains.has(c)) && (p.name || "").toLowerCase().includes(ql)).slice(0, 10);
+      const items = [...marq.products, ...marq.catalog].filter(p => !p.chains.some(c => selChains.has(c)) && (p.name || "").toLowerCase().includes(ql)).slice(0, 12);
       box.innerHTML = items.map(candRow).join("") || '<div class="text-muted small">Inga träffar.</div>';
       bindPicks(box);
     }
@@ -743,16 +775,11 @@
       renderMqGroups();
     }
 
-    function renderMqGroups() {
-      const q = marq.groupQ || "", all = marq.groups || [];
-      const groups = q
-        ? all.filter(g => String(g.group_id) === q ||
-            g.members.some(m => `${m.name || ""} ${m.brand || ""}`.toLowerCase().includes(q)))
-        : all;
-      document.getElementById("mqGroupCount").textContent = q ? `${groups.length}/${all.length}` : all.length;
-      document.getElementById("mqGroupsList").innerHTML = groups.map(g => `
+    function groupCardHtml(g) {
+      return `
         <div class="mq-group" data-gid="${g.group_id}">
           <div class="d-flex align-items-center"><span class="small fw-semibold">Grupp ${g.group_id}</span>
+            ${g.active ? "" : `<span class="badge bg-warning text-dark ms-2" title="Ingen medlem har ett aktuellt erbjudande än">väntar</span>`}
             <button class="btn btn-sm btn-link p-0 ms-auto grp-add" data-gid="${g.group_id}">+ Lägg till</button>
             <button class="btn btn-sm btn-link text-danger p-0 ms-2 grp-del" data-gid="${g.group_id}">Ta bort</button></div>
           ${g.members.map(m => { const fp = findProduct(m.ean) || {}; return `<div class="dt-wrap">
@@ -766,7 +793,24 @@
               <button class="btn btn-sm btn-link text-danger p-0 grp-memdel" data-chain="${m.chain}" data-ean="${esc(m.ean)}" title="Ta bort ur paring">✕</button></div>
             <div class="dt-box d-none small ps-3"></div></div>`; }).join("")}
           <div class="grp-addbox d-none mt-1" data-gid="${g.group_id}"></div>
-        </div>`).join("") || `<div class="text-muted small">${q ? "Inga paringar matchar." : "Inga paringar än."}</div>`;
+        </div>`;
+    }
+
+    function renderMqGroups() {
+      const q = marq.groupQ || "", all = marq.groups || [];
+      const groups = q
+        ? all.filter(g => String(g.group_id) === q ||
+            g.members.some(m => `${m.name || ""} ${m.brand || ""}`.toLowerCase().includes(q)))
+        : all;
+      document.getElementById("mqGroupCount").textContent = q ? `${groups.length}/${all.length}` : all.length;
+      const active = groups.filter(g => g.active), waiting = groups.filter(g => !g.active);
+      const hdr = (t, n) => `<div class="small text-uppercase text-muted mt-2 mb-1" style="font-size:.7rem">${t} (${n})</div>`;
+      let html;
+      if (!groups.length) html = `<div class="text-muted small">${q ? "Inga paringar matchar." : "Inga paringar än."}</div>`;
+      else if (!waiting.length) html = active.map(groupCardHtml).join("");
+      else html = (active.length ? hdr("Aktiva", active.length) + active.map(groupCardHtml).join("") : "")
+                + hdr("Väntar på erbjudande", waiting.length) + waiting.map(groupCardHtml).join("");
+      document.getElementById("mqGroupsList").innerHTML = html;
       document.querySelectorAll("#mqGroupsList .grp-del").forEach(b => b.addEventListener("click", async () => {
         if (!confirm("Ta bort paringen?")) return;
         await api("/v1/admin/matches/" + b.dataset.gid, { method: "DELETE" });
