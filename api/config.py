@@ -203,11 +203,12 @@ DEFAULT_CATEGORY_MAP = {
 # "ICA. Ursprung Sverige", "ICA Selection" osv. Dessa matchar aldrig cross-chain
 # via EAN (kedjeinterna), så de paras ihop manuellt i "Märkesvaror"-fliken.
 DEFAULT_PRIVATE_BRANDS = {
-    "ica": ["ICA", "Eldorado", "Skona", "Rätt Sortiment"],
+    "ica": ["ICA", "Skona"],  # Eldorado är Axfood; Rätt Sortiment/igenkänns ej -> bort
     "coop": ["Coop", "Änglamark", "Xtra", "X-tra"],
-    "willys": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
-    "hemkop": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
-    "citygross": ["City Gross"],
+    "willys": ["Garant", "Eldorado", "Såklart", "Premiär", "Fixa"],  # Falkenberg/Aleko ej private label
+    "hemkop": ["Garant", "Eldorado", "Såklart", "Premiär", "Fixa"],
+    # City Gross ingår i Axfood-koncernen (sedan 2024) -> delar Axfoods private labels.
+    "citygross": ["City Gross", "Garant", "Eldorado", "Såklart", "Premiär", "Fixa"],
     "lidl": [],
 }
 
