@@ -29,6 +29,7 @@ _SOURCE_HOSTS = [
     ("hemkop.se", "hemkop"),
     ("schwarz", "lidl"),
     ("lidl.se", "lidl"),
+    ("citygross.se", "citygross"),
 ]
 
 

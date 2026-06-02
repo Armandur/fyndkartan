@@ -135,8 +135,8 @@
   <script>
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", egen:"#3b4a5a", other:"#777" };
-    const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl", egen:"Egen", other:"Övrigt" };
+    const CHAIN_COLOR = { ica:"#e3000b", coop:"#00a651", willys:"#b71c1c", hemkop:"#f57c00", lidl:"#0050aa", citygross:"#6a3d9a", egen:"#3b4a5a", other:"#777" };
+    const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl", citygross:"City Gross", egen:"Egen", other:"Övrigt" };
     const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(CHAIN_LABELS[c]||c)}</span>`;
     const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
 
@@ -191,7 +191,7 @@
     }
 
     async function loadCalls() {
-      const opts = ["", "egen", "ica", "coop", "willys", "hemkop", "lidl", "other"]
+      const opts = ["", "egen", "ica", "coop", "willys", "hemkop", "lidl", "citygross", "other"]
         .map(c => `<option value="${c}">${c ? (CHAIN_LABELS[c] || c) : "Alla källor"}</option>`).join("");
       document.getElementById("calls").innerHTML = `
         <div class="d-flex align-items-center gap-2 mb-2">

@@ -125,6 +125,24 @@ DEFAULT_CATEGORY_MAP = {
     ("coop_nav", "Hushåll"): "hem_hushall",
     ("coop_nav", "Hem & inredning"): "hem_hushall",
     ("coop_nav", "Fritid"): "hem_hushall",
+    # City Gross superCategory (offers) -> kanonisk.
+    ("citygross", "Bröd & bageri"): "brod_bageri",
+    ("citygross", "Frukt & grönt"): "frukt_gront",
+    ("citygross", "Mejeri, ost & ägg"): "mejeri_agg",
+    ("citygross", "Snacks"): "godis_snacks",
+    ("citygross", "Godis"): "godis_snacks",
+    ("citygross", "Kött & fågel"): "kott_chark",
+    ("citygross", "Chark & pålägg"): "kott_chark",
+    ("citygross", "Chark"): "kott_chark",
+    ("citygross", "Manuell delikatess"): "farskvaror",
+    ("citygross", "Fryst"): "fryst",
+    ("citygross", "Fisk & skaldjur"): "fisk_skaldjur",
+    ("citygross", "Kyld färdigmat"): "fardigmat",
+    ("citygross", "Vegetariskt"): "vegetariskt",
+    ("citygross", "Skönhet & hygien"): "halsa_skonhet",
+    ("citygross", "Hem & fritid"): "hem_hushall",
+    ("citygross", "Köket"): "hem_hushall",
+    ("citygross", "Blommor"): "hem_hushall",
 }
 
 # Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI
@@ -163,7 +181,7 @@ DATA_SOURCES = [
     {"chain": "coop", "what": "produktinfo per EAN (POST)", "url": "external.api.coop.se/personalization/search/entities/by-id", "auth": "personalization-nyckel (skrapas)", "auth_kind": "coop_perso", "method": "POST", "body": "[\"7311870010970\"]", "example": "https://external.api.coop.se/personalization/search/entities/by-id?api-version=v1&store=251300&groups=CUSTOMER_PRIVATE&direct=false"},
     {"chain": "ica", "what": "produktinfo (bot-skyddad, Coop-fallback på EAN)", "url": "ehandel AWS-WAF-skyddad", "auth": "-", "auth_kind": "none", "example": ""},
     {"chain": "citygross", "what": "butiker", "url": "citygross.se/api/v1/PageData/stores", "auth": "ingen", "auth_kind": "none", "example": "https://www.citygross.se/api/v1/PageData/stores"},
-    {"chain": "citygross", "what": "erbjudanden (ej byggt)", "url": "citygross.se/api/v1/offers?currentweekoffer=true (Cookie store=, Axfood-backat)", "auth": "-", "auth_kind": "none", "example": ""},
+    {"chain": "citygross", "what": "erbjudanden", "url": "citygross.se/api/v1/Loop54/category/2930/products (veckans erbjudanden, EAN+jämförpris inline)", "auth": "ingen", "auth_kind": "none", "example": "https://www.citygross.se/api/v1/Loop54/category/2930/products?currentWeekDiscountOnly=true&skip=0&take=5"},
 ]
 
 # Svenska landnamn för att skilja ursprung från varumärke i offers.brand (ICA skriver
@@ -282,7 +300,7 @@ CHAIN_META = {
     "willys": {"label": "Willys", "color": "#b71c1c", "auth": "none",             "offers": True},
     "hemkop": {"label": "Hemköp", "color": "#f57c00", "auth": "none",             "offers": True},
     "lidl":   {"label": "Lidl",   "color": "#0050aa", "auth": "apikey",           "offers": False},
-    "citygross": {"label": "City Gross", "color": "#6a3d9a", "auth": "none",      "offers": False},
+    "citygross": {"label": "City Gross", "color": "#6a3d9a", "auth": "none",      "offers": True},
 }
 
 # Lidl geo-svep: API:t ger bara butiker inom en geo_box, så vi sveper ett rutnät.

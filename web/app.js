@@ -18,7 +18,7 @@ const state = {
   user: null,
 };
 
-const COMPARE_CHAINS = ["ica", "coop", "willys", "hemkop"];
+const COMPARE_CHAINS = ["ica", "coop", "willys", "hemkop", "citygross"];
 
 function favKey(s) { return `${s.chain}:${s.store_id}`; }
 function isFav(s) { return state.favorites.has(favKey(s)); }
@@ -100,7 +100,7 @@ function popupHtml(s) {
   if (links.offers) linkHtml += `<a class="btn-offers" target="_blank" href="${esc(links.offers)}">Erbjudanden</a>`;
   if (links.store_page) linkHtml += `<a class="btn-store" target="_blank" href="${esc(links.store_page)}">Butikssida</a>`;
   // Inläsbara erbjudanden stöds för ICA + Axfood (Willys/Hemköp) + Coop.
-  const offersBtn = ["ica", "willys", "hemkop", "coop"].includes(s.chain)
+  const offersBtn = ["ica", "willys", "hemkop", "coop", "citygross"].includes(s.chain)
     ? `<button class="pop-offers-btn" data-chain="${esc(s.chain)}" data-id="${esc(s.store_id)}" data-name="${esc(s.name)}">Visa veckans erbjudanden</button>`
     : "";
   return `<div class="store-pop">

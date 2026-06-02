@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apilog, auth, brands, categories, config, database, details, images, matching, schemas, tags
-from .adapters import axfood_offers, coop_offers, ica_offers
+from .adapters import axfood_offers, citygross_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
     get_conn,
@@ -745,8 +745,8 @@ def _offers_fresh(chain, store_id):
     return True
 
 
-SUPPORTED_OFFER_CHAINS = ("ica", "willys", "hemkop", "coop")
-COMPARE_CHAINS = ("ica", "coop", "willys", "hemkop")
+SUPPORTED_OFFER_CHAINS = ("ica", "willys", "hemkop", "coop", "citygross")
+COMPARE_CHAINS = ("ica", "coop", "willys", "hemkop", "citygross")
 COMPARE_MAX_STORES = 12
 # Tak på antal nya Axfood code->EAN-uppslag per compare-anrop (cachen warmar över tid).
 EAN_RESOLVE_CAP = 150
@@ -760,6 +760,8 @@ async def _fetch_offers_for(client, chain, store_id, link_offers, native_json):
         return await coop_offers.fetch_offers(
             client, store_id, native.get("ledgerAccountNumber"), config.COOP_OFFERS_KEY
         )
+    if chain == "citygross":
+        return await citygross_offers.fetch_offers(client, store_id)
     return await axfood_offers.fetch_offers(client, chain, store_id)  # willys / hemkop
 
 

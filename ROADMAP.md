@@ -32,8 +32,15 @@ Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla ked
 | Lidl | 212 | Schwarz geo_box-svep (`x-apikey`) |
 
 **Att göra (nya kedjor):**
-- [~] **City Gross som 6:e kedja** (Bergendahls). **BUTIKER BYGGT** (39 butiker via
-  `adapters/citygross.py`), erbjudanden kvar:
+- [x] **City Gross som 6:e kedja BYGGT** (Bergendahls) - butiker + erbjudanden + compare.
+  - **Erbjudanden: BYGGT** (`adapters/citygross_offers.py`). `GET /api/v1/Loop54/category/
+    2930/products?currentWeekDiscountOnly=true` (nationella veckoerbjudanden, ingen butiks-
+    cookie - `store_id` ignoreras). **EAN inline** (`gtin`) + jämförpris -> rakt in i compare
+    (citygross i `SUPPORTED_OFFER_CHAINS` + `COMPARE_CHAINS`). Ordinarie pris i `currentPrice`,
+    erbjudandet i `promotions[].priceDetails` (kampanj-/medlemspris); savings = ordinarie-
+    erbjudande. superCategory -> kanonisk (citygross-mappning i DEFAULT_CATEGORY_MAP). 263
+    offers verifierade. **Bonus upptäckt:** Loop54 har även fullkatalog-sök (`search/quick`)
+    + produktdetalj (`products/{id}`, strukturerad näring/allergener) - se unified-sök-todo.
   - **Butiker: BYGGT.** `GET https://www.citygross.se/api/v1/PageData/stores`
     (JSON, ~39 butiker, ingen auth). Per butik: `storeName`, `address` (streetAddress/
     zipCode/city), `storeLocation.coordinates` ("lat,lng"-sträng), `openingHours`
@@ -176,6 +183,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
           första träffen (LIMIT 1). Bildcachen rensad så det slår igenom.
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
+  - [ ] **Unified produktsök mot kedjornas NATIVA katalog-API:er.** Nuvarande
+    `/v1/products/search` söker bara offers-cachen. Kedjorna har riktiga katalog-sök-API:er
+    (City Gross `Loop54/search/quick?SearchQuery=`, Axfood-sök, ev. ICA/Coop) som täcker
+    hela sortimentet - bygg ett unified sök ovanpå dem (live eller cachat). Närbesläktat
+    med Fulla sortiment men lättare (sök on-demand, ingen full spegling).
+  - [ ] **Dokumentera alla kedjors produktsök-/katalog-API:er** (om ej redan gjort för alla)
+    - endpoint, params, EAN/pris/jämförpris-tillgång - i `UNIFIED-API.md`/`CLAUDE.md` så
+    unified-söket kan byggas. City Gross Loop54 kartlagt (search/quick + products/{id} +
+    category/{id}/products); Axfood `/search` + `/p/{code}` känt; ICA/Coop behöver kollas.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
     ev. LLM/embeddings som domare).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
@@ -365,6 +381,11 @@ domäner:
     `category_map` in-place, omappade sorteras först/markeras). Avslöjade att
     produktdetaljens `googleAnalyticsCategory` använder andra segment-namn än kampanjen
     (t.ex. `kott-chark-och-fagel` vs `kott-fagel-och-chark`) - varianterna seedade.
+    - [ ] **Kategori-flikens (#cats) tabell: bättre kedje-chips + filter/sortering.**
+      `chain_key`-kolumnen visar råa nycklar (`axfood`/`coop_nav`/`citygross`...) utan
+      kedje-chip/färg - ge dem rätt chips (axfood -> Willys/Hemköp, coop_nav -> Coop osv).
+      Gör dessutom alla kolumner (kedja, råkategori, antal, kanonisk) filtrerbara/sorterbara
+      (idag bara fritext-sök). Spegla ev. taggfliken.
   - [x] **Coop-kategoriförvärmning BYGGT** (`warm_coop_categories`). Coops offer-nivå
     (Färsk/Kolonial/Nonfood) är för grov och delvis felklassad (Nonfood innehöll
     grönsaker+kaffe). Förvärmar nu `product_info` per Coop-EAN via personalization-API:t
