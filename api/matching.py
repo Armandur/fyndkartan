@@ -31,14 +31,19 @@ _OFFER_KEYS = (
 
 
 def normalize_ean(raw):
-    """Giltig, globalt unik GTIN-sträng, annars None.
+    """Giltig, globalt unik GTIN-sträng (kanonisk 13-siffrig form), annars None.
 
     - bara siffror, längd 8/12/13/14
+    - GTIN-14 med ledande noll-indikator = samma vara som GTIN-13 -> kanonisera till 13
+      (kedjorna lagrar 13; ICA:s katalog-/sök-gtin är 14-nollpaddad). Äkta GTIN-14
+      (indikator 1-9, t.ex. multipack) behålls.
     - GS1 '2'-prefix = butiksintern/rörlig vikt, ej globalt unik -> None
     """
     if raw is None:
         return None
     s = "".join(ch for ch in str(raw) if ch.isdigit())
+    if len(s) == 14 and s[0] == "0":
+        s = s[1:]
     if len(s) not in (8, 12, 13, 14):
         return None
     if s[0] == "2":
