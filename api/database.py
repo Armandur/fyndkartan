@@ -6,7 +6,7 @@ from .config import (
     BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_PROVIDERS,
     DEFAULT_TAG_TYPES, ORIGIN_COUNTRIES,
 )
-from .categories import category_for, category_from_detail, raw_key
+from .categories import category_for, category_from_detail, category_from_name, raw_key
 from .tags import build_tag
 
 
@@ -793,6 +793,8 @@ def get_store_offers(chain, store_id):
     for o in out:
         if o.get("_ean") and pc.get(o["_ean"]):
             o["category"] = pc[o["_ean"]]
+        if o.get("category") == "ovrigt":
+            o["category"] = category_from_name(o.get("name")) or "ovrigt"
         o.pop("_ean", None)
     return out
 
@@ -841,6 +843,8 @@ def list_products(q=None, category=None, chain=None, limit=40):
             cat = category_for(ch, axc[rep["offer_id"]])
         if g["ean"] and pc.get(g["ean"]):
             cat = pc[g["ean"]]
+        if cat == "ovrigt":
+            cat = category_from_name(rep.get("name")) or "ovrigt"
         brand, origin = _split_brand_origin(ch, rep.get("brand"))
         psize, pval, punit, _ = _clean_package(rep.get("package"))
         dt, mb = _deal_type(rep.get("price_text"))

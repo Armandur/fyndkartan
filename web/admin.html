@@ -980,12 +980,16 @@
 
     // ---- Kategori-mappning ----
     let catData = { items: [], canonical: [] };
+    const catState = { sort: { col: "chain_key", dir: 1 } };
+    // chain_key (axfood/coop_nav/ica_nav...) -> baskedja för färg.
+    const CAT_BASE = { axfood: "willys", coop: "coop", coop_nav: "coop", ica: "ica", ica_nav: "ica", citygross: "citygross" };
+    const catChip = (ck) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[CAT_BASE[ck] || ck] || '#777'}">${esc(ck)}</span>`;
 
     function catRow(it) {
       const opts = catData.canonical.map(c =>
         `<option value="${c.key}" ${it.canonical === c.key ? "selected" : ""}>${esc(c.label)}</option>`).join("");
       return `<tr class="${it.canonical == null ? "attn" : ""}" data-ck="${esc(it.chain_key)}" data-rk="${esc(it.raw_key)}">
-        <td>${esc(it.chain_key)}</td><td class="mono">${esc(it.raw_key)}</td><td>${it.count}</td>
+        <td>${catChip(it.chain_key)}</td><td class="mono">${esc(it.raw_key)}</td><td>${it.count}</td>
         <td><select class="form-select form-select-sm cat-sel" style="max-width:210px">
           <option value="" ${it.canonical == null ? "selected" : ""}>— omappad (övrigt) —</option>${opts}</select></td></tr>`;
     }
@@ -1004,25 +1008,58 @@
 
     function renderCatRows() {
       const q = (document.getElementById("catSearch").value || "").trim().toLowerCase();
-      const rows = catData.items.filter(it => !q || (it.raw_key || "").toLowerCase().includes(q) || it.chain_key.includes(q));
+      const cf = document.getElementById("catChainFilter").value;
+      const un = document.getElementById("catUnmapped").checked;
+      let rows = catData.items.filter(it =>
+        (!q || (it.raw_key || "").toLowerCase().includes(q)) &&
+        (!cf || it.chain_key === cf) && (!un || it.canonical == null));
+      const { col, dir } = catState.sort;
+      rows.sort((a, b) => {
+        if (col === "count") return ((a.count || 0) - (b.count || 0)) * dir;
+        const va = (a[col] || "").toString().toLowerCase(), vb = (b[col] || "").toString().toLowerCase();
+        return va < vb ? -dir : va > vb ? dir : 0;
+      });
       document.getElementById("catBody").innerHTML = rows.map(catRow).join("")
         || '<tr><td colspan="4" class="text-muted small">Inga kategorier.</td></tr>';
+      document.getElementById("catCount").textContent = `${rows.length} av ${catData.items.length}`;
       bindCatRows();
     }
 
     async function loadCategoriesTab() {
       catData = await (await api("/v1/admin/categories")).json();
+      const keys = [...new Set(catData.items.map(it => it.chain_key))].sort();
+      const sortArrow = (c) => catState.sort.col === c ? (catState.sort.dir > 0 ? " ▲" : " ▼") : "";
       document.getElementById("cats").innerHTML = `
         <div class="card p-3">
-          <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Kategori-mappning</h6>
-            <input id="catSearch" class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Sök råkategori…"></div>
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap"><h6 class="mb-0 me-auto">Kategori-mappning</h6>
+            <select id="catChainFilter" class="form-select form-select-sm" style="width:auto">
+              <option value="">Alla nycklar</option>${keys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("")}</select>
+            <div class="form-check form-switch small" style="white-space:nowrap"><input class="form-check-input" type="checkbox" id="catUnmapped">
+              <label class="form-check-label" for="catUnmapped">Bara omappade</label></div>
+            <input id="catSearch" class="form-control form-control-sm" style="max-width:200px" placeholder="Sök råkategori…"></div>
           <div class="small text-muted mb-2">Råkategori per kedja → kanonisk. Axfood = pipe-pathens första segment
             ("axfood"-nyckel), ICA/Coop = hela råsträngen, Coop navCategories-toppar under "coop_nav".
-            Gulmarkerade är omappade (→ övrigt). Ändring slår igenom direkt utan omladdning.</div>
+            Gulmarkerade är omappade (→ övrigt). Klicka kolumnrubrik för att sortera. Ändring slår igenom direkt.</div>
           <table class="table table-sm align-middle mb-0">
-            <thead><tr><th>Kedja</th><th>Råkategori</th><th>Antal</th><th>Kanonisk</th></tr></thead>
-            <tbody id="catBody"></tbody></table></div>`;
+            <thead><tr>
+              <th class="cat-sort" data-col="chain_key" role="button" style="cursor:pointer">Kedja${sortArrow("chain_key")}</th>
+              <th class="cat-sort" data-col="raw_key" role="button" style="cursor:pointer">Råkategori${sortArrow("raw_key")}</th>
+              <th class="cat-sort" data-col="count" role="button" style="cursor:pointer">Antal${sortArrow("count")}</th>
+              <th class="cat-sort" data-col="canonical" role="button" style="cursor:pointer">Kanonisk${sortArrow("canonical")}</th>
+            </tr></thead>
+            <tbody id="catBody"></tbody></table>
+          <div id="catCount" class="small text-muted mt-1"></div></div>`;
       document.getElementById("catSearch").addEventListener("input", renderCatRows);
+      document.getElementById("catChainFilter").addEventListener("change", renderCatRows);
+      document.getElementById("catUnmapped").addEventListener("change", renderCatRows);
+      const HDR = { chain_key: "Kedja", raw_key: "Råkategori", count: "Antal", canonical: "Kanonisk" };
+      document.querySelectorAll("#cats .cat-sort").forEach(th => th.addEventListener("click", () => {
+        const c = th.dataset.col;
+        catState.sort = { col: c, dir: catState.sort.col === c ? -catState.sort.dir : 1 };
+        document.querySelectorAll("#cats .cat-sort").forEach(t =>
+          t.textContent = HDR[t.dataset.col] + (catState.sort.col === t.dataset.col ? (catState.sort.dir > 0 ? " ▲" : " ▼") : ""));
+        renderCatRows();  // behåller filter (rebygger inte kontrollerna)
+      }));
       renderCatRows();
     }
 

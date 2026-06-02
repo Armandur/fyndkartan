@@ -8,6 +8,8 @@ Nyckel: Axfood (willys+hemkop) delar taxonomi -> chain_key "axfood", raw_key =
 första pipe-segmentet. ICA/Coop: chain_key = kedjan, raw_key = hela råsträngen.
 """
 
+import re
+
 from .config import CANONICAL_CATEGORIES, DEFAULT_CATEGORY_MAP
 
 CATEGORY_MAP = dict(DEFAULT_CATEGORY_MAP)  # (chain_key, raw_key) -> kanonisk nyckel
@@ -49,6 +51,28 @@ def category_from_detail(source, raw):
     if source == "ica":
         return CATEGORY_MAP.get(("ica_nav", raw))
     return None
+
+
+# Färsk frukt/grönt-viktvaror (slump-EAN) saknar produktdetalj och faller till `ovrigt`. Namn-
+# fallback: tydliga färskvaru-termer som HELORD -> frukt_gront. Körs BARA när kategorin annars
+# blir ovrigt (se database), så "Tomatketchup"/"Krossade tomater" (som har kategori) inte träffas.
+_PRODUCE_WORDS = frozenset((
+    "banan", "bananer", "äpple", "äpplen", "päron", "apelsin", "apelsiner", "citron", "citroner",
+    "lime", "gurka", "gurkor", "paprika", "purjolök", "salladslök", "rödlök", "gullök", "vitlök",
+    "potatis", "morot", "morötter", "broccoli", "blomkål", "sallad", "isbergssallad", "avokado",
+    "mango", "ananas", "kiwi", "melon", "vattenmelon", "vindruvor", "druvor", "jordgubbar",
+    "blåbär", "hallon", "björnbär", "spenat", "zucchini", "aubergine", "rädisor", "rödbetor",
+    "fänkål", "champinjoner", "champinjon", "ingefära", "clementin", "clementiner", "mandarin",
+    "nektarin", "nektariner", "persika", "persikor", "plommon", "körsbär", "granatäpple",
+    "grapefrukt", "persilja", "dill", "basilika", "mynta", "koriander", "vitkål", "rödkål", "lök",
+))
+_WORD_RX = re.compile(r"[a-zåäö]+")
+
+
+def category_from_name(name):
+    """Sista-utvägs namn-fallback för viktvaror utan produktdetalj: tydliga frukt/grönt-termer
+    (helord) -> 'frukt_gront', annars None."""
+    return "frukt_gront" if set(_WORD_RX.findall((name or "").lower())) & _PRODUCE_WORDS else None
 
 
 def label(key):
