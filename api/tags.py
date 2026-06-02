@@ -17,9 +17,37 @@ TAG_MAP = {}
 # Aktuell kanonisk vokabulär (editerbar i admin-UI). Laddas från DB vid uppstart.
 CANONICAL = []
 
+# Speditör-vokabulär + override-mappning (label -> speditör). Laddas vid uppstart.
+PROVIDERS = []
+PROVIDER_MAP = {}
+
 
 def set_types(types):
     CANONICAL[:] = list(types)
+
+
+def set_providers(providers):
+    PROVIDERS[:] = list(providers)
+
+
+def set_provider_map(mapping):
+    PROVIDER_MAP.clear()
+    PROVIDER_MAP.update(mapping or {})
+
+
+def effective_provider(label):
+    """Speditör för en etikett: override (provider_map) annars regelbaserad
+    classify_provider. Filtreras mot vokabulären - borttagen speditör -> None."""
+    p = PROVIDER_MAP.get(label) or classify_provider(label)
+    return p if p in PROVIDERS else None
+
+
+def put_provider(label, provider):
+    PROVIDER_MAP[label] = provider
+
+
+def remove_provider(label):
+    PROVIDER_MAP.pop(label, None)
 
 
 def valid_type(t):
@@ -38,7 +66,7 @@ def effective_types(label):
 
 def build_tag(label):
     tag = {"types": effective_types(label), "label": label}
-    provider = classify_provider(label)
+    provider = effective_provider(label)
     if provider:
         tag["provider"] = provider
     return tag

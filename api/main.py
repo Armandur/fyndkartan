@@ -62,6 +62,8 @@ async def lifespan(app: FastAPI):
     ensure_admin()
     tags.set_map(database.load_tag_map())
     tags.set_types(database.load_tag_types())
+    tags.set_providers(database.load_providers())
+    tags.set_provider_map(database.load_provider_map())
     categories.set_map(database.load_category_map())
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
@@ -544,25 +546,23 @@ async def admin_proxy(payload: dict = Body(...), _=Depends(require_admin)):
 
 @app.get("/v1/tags")
 async def list_tags(_=Depends(require_admin)):
-    from .adapters.base import classify_provider
-
     items = []
     for label, info in database.tag_label_counts().items():
         types = tags.effective_types(label)
-        overridden = label in tags.TAG_MAP
         items.append(
             {
                 "label": label,
                 "count": info["count"],
                 "chains": sorted(info["chains"]),
                 "types": types,
-                "provider": classify_provider(label),
-                "overridden": overridden,
+                "provider": tags.effective_provider(label),
+                "provider_overridden": label in tags.PROVIDER_MAP,
+                "overridden": label in tags.TAG_MAP,
             }
         )
     # Behöver-uppmärksamhet (ej override och bara "other") först, sedan på antal.
     items.sort(key=lambda x: (x["overridden"] or x["types"] != ["other"], -x["count"]))
-    return {"types": tags.CANONICAL, "tags": items}
+    return {"types": tags.CANONICAL, "providers": tags.PROVIDERS, "tags": items}
 
 
 @app.post("/v1/tags/map")
@@ -615,6 +615,50 @@ async def del_tag(label: str, _=Depends(require_admin)):
     tags.remove(label)
     # Returnera auto-typerna så klienten kan uppdatera raden in-place (ingen omladdning).
     return {"label": label, "removed": True, "types": tags.effective_types(label)}
+
+
+# ---- Speditörer (vokabulär + label-override) ----
+@app.get("/v1/providers")
+async def list_providers(_=Depends(require_admin)):
+    return {"providers": tags.PROVIDERS}
+
+
+@app.post("/v1/providers")
+async def add_provider(payload: dict = Body(...), _=Depends(require_admin)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"detail": "Ogiltigt namn."}, status_code=400)
+    if name not in tags.PROVIDERS:
+        database.add_provider(name)
+        tags.set_providers(database.load_providers())
+    return {"name": name, "providers": tags.PROVIDERS}
+
+
+@app.delete("/v1/providers/{name}")
+async def remove_provider(name: str, _=Depends(require_admin)):
+    if database.provider_in_use(name):
+        return JSONResponse({"detail": "Speditören används i en mappning."}, status_code=400)
+    database.remove_provider(name)
+    tags.set_providers(database.load_providers())
+    return {"name": name, "removed": True, "providers": tags.PROVIDERS}
+
+
+@app.post("/v1/tags/provider")
+async def set_tag_provider(payload: dict = Body(...), _=Depends(require_admin)):
+    label = (payload.get("label") or "").strip()
+    provider = (payload.get("provider") or "").strip()
+    if not label or provider not in tags.PROVIDERS:
+        return JSONResponse({"detail": "Ogiltig label eller speditör."}, status_code=400)
+    database.set_provider_map(label, provider)
+    tags.put_provider(label, provider)
+    return {"label": label, "provider": provider}
+
+
+@app.delete("/v1/tags/provider/{label:path}")
+async def del_tag_provider(label: str, _=Depends(require_admin)):
+    database.delete_provider_map(label)
+    tags.remove_provider(label)
+    return {"label": label, "removed": True, "provider": tags.effective_provider(label)}
 
 
 @app.get("/v1/stores", responses={200: {"model": schemas.StoresResponse}})

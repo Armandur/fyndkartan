@@ -372,13 +372,23 @@
         const x = `<span class="type-del" data-type="${t}" title="${title}">&times;</span>`;
         return `<span class="typechip${builtin.has(t) ? " bi" : ""}">${esc(t)}${x}</span>`;
       }).join(" ");
+      const provs = await (await api("/v1/providers")).json();
+      const provChips = (provs.providers || []).map(p =>
+        `<span class="typechip">${esc(p)}<span class="prov-vdel" data-name="${p}" title="ta bort">&times;</span></span>`).join(" ");
       document.getElementById("typesPanel").innerHTML = `
         <div class="d-flex align-items-center mb-1"><h6 class="mb-0">Kanoniska typer</h6>
           <span class="ms-2 small text-muted">inbyggda (grå) kan tas bort - en seedad typ utan vokabulär-post faller till 'other'</span></div>
         <div class="mb-2">${chips}</div>
-        <div class="input-group input-group-sm" style="max-width:320px">
+        <div class="input-group input-group-sm mb-3" style="max-width:320px">
           <input id="newType" class="form-control" placeholder="ny typ (a-z, _)">
           <button id="addType" class="btn btn-dark">Lägg till</button>
+        </div>
+        <div class="d-flex align-items-center mb-1"><h6 class="mb-0">Speditörer</h6>
+          <span class="ms-2 small text-muted">för paket-/post-taggar - sätt per råetikett i tabellen nedan (kolumnen "Kanoniska typer")</span></div>
+        <div class="mb-2">${provChips || '<span class="text-muted small">Inga speditörer.</span>'}</div>
+        <div class="input-group input-group-sm" style="max-width:320px">
+          <input id="newProv" class="form-control" placeholder="ny speditör (t.ex. Airmee)">
+          <button id="addProv" class="btn btn-dark">Lägg till</button>
         </div>`;
       document.querySelectorAll(".type-del").forEach(x => x.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -392,14 +402,35 @@
         await api("/v1/tags/types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: v }) });
         loadTags();
       });
+      document.querySelectorAll(".prov-vdel").forEach(x => x.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const r = await api("/v1/providers/" + encodeURIComponent(x.dataset.name), { method: "DELETE" });
+        if (!r.ok) alert((await r.json()).detail || "Kunde inte ta bort.");
+        loadTags();
+      }));
+      document.getElementById("addProv").addEventListener("click", async () => {
+        const v = document.getElementById("newProv").value.trim();
+        if (!v) return;
+        await api("/v1/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: v }) });
+        loadTags();
+      });
     }
 
-    let tagState = { tags: [], types: [] };
+    let tagState = { tags: [], types: [], providers: [] };
+
+    function provControl(t) {
+      const shipping = t.types.some(x => x === "parcel" || x === "postal") || t.provider;
+      if (!shipping) return "";
+      const autoTxt = (t.provider && !t.provider_overridden) ? `(auto: ${esc(t.provider)})` : "(auto)";
+      const opts = `<option value="">${autoTxt}</option>` + tagState.providers.map(p =>
+        `<option value="${esc(p)}"${t.provider_overridden && t.provider === p ? " selected" : ""}>${esc(p)}</option>`).join("");
+      return `<select class="form-select form-select-sm prov-sel mt-1" style="width:auto;display:inline-block" title="Speditör">${opts}</select>`;
+    }
 
     function tagRow(t) {
       const attn = (!t.overridden && t.types.length === 1 && t.types[0] === "other") ? "attn" : "";
       const chainsHtml = t.chains.map(chip).join(" ");
-      const prov = t.provider ? `<span class="badge bg-secondary ms-1">${esc(t.provider)}</span>` : "";
+      const prov = t.provider ? `<span class="badge bg-secondary ms-1 prov-badge">${esc(t.provider)}</span>` : "";
       const chips = tagState.types.map(ty =>
         `<span class="tchip${t.types.includes(ty) ? " on" : ""}" data-type="${ty}">${ty}</span>`).join("");
       return `<tr class="${attn}" data-label="${esc(t.label)}">
@@ -408,7 +439,8 @@
         <td>${t.count}</td>
         <td><div class="toggles">${chips}</div>
           <button class="btn btn-sm btn-link p-0 auto-btn">↺ auto</button>
-          <span class="small text-muted ms-2 tag-mode">${t.overridden ? "manuell" : "auto"}</span></td></tr>`;
+          <span class="small text-muted ms-2 tag-mode">${t.overridden ? "manuell" : "auto"}</span>
+          ${provControl(t)}</td></tr>`;
     }
 
     function refreshTagRow(tr, t) {  // uppdatera rad in-place utan omsortering
@@ -440,6 +472,24 @@
           if (t) { t.types = d.types || []; t.overridden = false; refreshTagRow(tr, t); }
         });
       });
+      document.querySelectorAll("#tagBody .prov-sel").forEach(s => {
+        s.addEventListener("change", async () => {
+          const tr = s.closest("tr"), label = tr.dataset.label, val = s.value;
+          const r = val
+            ? await api("/v1/tags/provider", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label, provider: val }) })
+            : await api("/v1/tags/provider/" + encodeURIComponent(label), { method: "DELETE" });
+          const d = await r.json();
+          const t = tagState.tags.find(x => x.label === label);
+          if (t) {
+            t.provider = d.provider || null; t.provider_overridden = !!val;
+            let badge = tr.querySelector(".prov-badge");
+            if (t.provider) {
+              if (badge) badge.textContent = t.provider;
+              else tr.querySelector("td:first-child").insertAdjacentHTML("beforeend", `<span class="badge bg-secondary ms-1 prov-badge">${esc(t.provider)}</span>`);
+            } else if (badge) badge.remove();
+          }
+        });
+      });
     }
 
     function renderTagRows() {
@@ -459,6 +509,7 @@
       const d = await (await api("/v1/tags")).json();
       tagState.tags = d.tags;
       tagState.types = d.types;
+      tagState.providers = d.providers || [];
       document.getElementById("tagTable").innerHTML = `
         <div class="d-flex align-items-center mb-2"><h6 class="mb-0">Tagg-normalisering</h6>
           <input id="tagSearch" class="form-control form-control-sm ms-auto" style="max-width:240px" placeholder="Sök råetikett…"></div>

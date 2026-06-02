@@ -295,11 +295,12 @@ domäner:
       seedad typ utan vokabulär-post faller till `other`. Tombstone-tabell
       (`tag_types_removed`) hindrar att init_db återskapar borttagna inbyggda vid omstart;
       återskapande (POST) un-tombstonar. Manuella mappningar (tag_map) skyddas fortfarande.
-    - [ ] **Administrera speditörslistan (`provider`) + knyt till taggar.** `classify_provider`
-      (adapters/base.py) sätter speditör (DHL/PostNord/...) på paket-/post-taggar via hårdkodad
-      regelmatchning. Vill kunna redigera listan av speditörer och mappa råetiketter -> rätt
-      speditör i admin-UI:t (spegla tagg-typ-/kategori-mönstret: editerbar vokabulär +
-      derive-at-read-override, ev. `provider_map`-tabell).
+    - [x] **Administrera speditörslistan (`provider`) + knyt till taggar BYGGT.** Speglar
+      tagg-typ/tag_map-mönstret: editerbar `providers`-vokabulär (seedas) + `provider_map`-
+      override per råetikett. `tags.effective_provider` = override annars `classify_provider`,
+      filtrerad mot vokabulären (borttagen speditör -> None). Routes `/v1/providers`
+      (GET/POST/DELETE) + `/v1/tags/provider` (POST/DELETE), in-use-guard. Admin Taggar-flik:
+      speditör-vokabulärsektion + provider-dropdown per frakt-/post-rad (auto/override).
 - **Favoritbutiker: BYGGD (endast inloggad).** Stjärn-toggle i butikslistan kräver
   inloggning (öppnar login-modal annars); "Bara favoriter"-filter + "Jämför mina
   favoriter" -> `GET /v1/compare/stores?stores=chain:id,...` döljs helt utloggad

@@ -3,8 +3,8 @@ import re
 import sqlite3
 
 from .config import (
-    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_TAG_TYPES,
-    ORIGIN_COUNTRIES,
+    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_PROVIDERS,
+    DEFAULT_TAG_TYPES, ORIGIN_COUNTRIES,
 )
 from .categories import category_for, category_from_detail, raw_key
 from .tags import build_tag
@@ -111,6 +111,11 @@ def init_db():
         "INSERT OR IGNORE INTO tag_types (type) VALUES (?)",
         [(t,) for t in BUILTIN_TAG_TYPES if t not in _removed],
     )
+    # Editerbar speditör-vokabulär (seedas en gång) + override-mappning label -> speditör.
+    conn.execute("CREATE TABLE IF NOT EXISTS providers (name TEXT PRIMARY KEY)")
+    if not conn.execute("SELECT 1 FROM providers LIMIT 1").fetchone():
+        conn.executemany("INSERT INTO providers (name) VALUES (?)", [(p,) for p in DEFAULT_PROVIDERS])
+    conn.execute("CREATE TABLE IF NOT EXISTS provider_map (label TEXT PRIMARY KEY, provider TEXT)")
     # Konton + favoriter + nyckel/värde-settings.
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     conn.execute(
@@ -317,6 +322,57 @@ def tag_type_in_use(type_):
     rows = conn.execute("SELECT types FROM tag_map").fetchall()
     conn.close()
     return any(type_ in json.loads(r["types"]) for r in rows)
+
+
+# ---- Speditörer (vokabulär + label-override), speglar tagg-typer/tag_map ----
+def load_providers():
+    conn = get_conn()
+    rows = conn.execute("SELECT name FROM providers ORDER BY rowid").fetchall()
+    conn.close()
+    return [r["name"] for r in rows]
+
+
+def add_provider(name):
+    conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO providers (name) VALUES (?)", (name,))
+    conn.commit()
+    conn.close()
+
+
+def remove_provider(name):
+    conn = get_conn()
+    conn.execute("DELETE FROM providers WHERE name=?", (name,))
+    conn.commit()
+    conn.close()
+
+
+def provider_in_use(name):
+    """True om någon provider_map-rad pekar på speditören."""
+    conn = get_conn()
+    row = conn.execute("SELECT 1 FROM provider_map WHERE provider=? LIMIT 1", (name,)).fetchone()
+    conn.close()
+    return bool(row)
+
+
+def load_provider_map():
+    conn = get_conn()
+    rows = conn.execute("SELECT label, provider FROM provider_map").fetchall()
+    conn.close()
+    return {r["label"]: r["provider"] for r in rows}
+
+
+def set_provider_map(label, provider):
+    conn = get_conn()
+    conn.execute("INSERT OR REPLACE INTO provider_map (label, provider) VALUES (?,?)", (label, provider))
+    conn.commit()
+    conn.close()
+
+
+def delete_provider_map(label):
+    conn = get_conn()
+    conn.execute("DELETE FROM provider_map WHERE label=?", (label,))
+    conn.commit()
+    conn.close()
 
 
 def tag_label_counts():

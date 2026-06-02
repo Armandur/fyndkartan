@@ -268,6 +268,11 @@ BUILTIN_TAG_TYPES = {
     "self_scan", "cash", "click_collect", "e_charging", "togo", "other",
 }
 
+# Speditörer/aktörer för paket-/post-taggar (editerbar vokabulär, seedas en gång).
+# classify_provider (regelbaserad seed) kan producera dessa; admin kan lägga till/ta bort
+# och mappa råetiketter -> rätt speditör (provider_map-override, derive-at-read).
+DEFAULT_PROVIDERS = ["PostNord", "DHL", "Schenker", "DSV", "Instabox", "Budbee", "Bring"]
+
 # label = visningsnamn, color = markörfärg (kedjans profil), offers = stöder erbjudande-länk
 CHAIN_META = {
     "ica":    {"label": "ICA",    "color": "#e3000b", "auth": "bearer",           "offers": True},
