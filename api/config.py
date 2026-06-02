@@ -42,7 +42,7 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
-CHAINS = ["ica", "coop", "willys", "hemkop", "lidl"]
+CHAINS = ["ica", "coop", "willys", "hemkop", "lidl", "citygross"]
 
 # Kanonisk kategori-vokabulär (platt) för att normalisera kedjornas olika taxonomier.
 # Platt och grov (~ICA-nivå) - taket datan tillåter (Coop har bara 3 kategorier,
@@ -162,6 +162,8 @@ DATA_SOURCES = [
     {"chain": "hemkop", "what": "produktinfo (ingredienser/näring)", "url": "hemkop.se/axfood/rest/p/{code}", "auth": "ingen", "auth_kind": "none", "example": "https://www.hemkop.se/axfood/rest/p/100053344_ST"},
     {"chain": "coop", "what": "produktinfo per EAN (POST)", "url": "external.api.coop.se/personalization/search/entities/by-id", "auth": "personalization-nyckel (skrapas)", "auth_kind": "coop_perso", "method": "POST", "body": "[\"7311870010970\"]", "example": "https://external.api.coop.se/personalization/search/entities/by-id?api-version=v1&store=251300&groups=CUSTOMER_PRIVATE&direct=false"},
     {"chain": "ica", "what": "produktinfo (bot-skyddad, Coop-fallback på EAN)", "url": "ehandel AWS-WAF-skyddad", "auth": "-", "auth_kind": "none", "example": ""},
+    {"chain": "citygross", "what": "butiker", "url": "citygross.se/api/v1/PageData/stores", "auth": "ingen", "auth_kind": "none", "example": "https://www.citygross.se/api/v1/PageData/stores"},
+    {"chain": "citygross", "what": "erbjudanden (ej byggt)", "url": "citygross.se/api/v1/offers?currentweekoffer=true (Cookie store=, Axfood-backat)", "auth": "-", "auth_kind": "none", "example": ""},
 ]
 
 # Svenska landnamn för att skilja ursprung från varumärke i offers.brand (ICA skriver
@@ -280,6 +282,7 @@ CHAIN_META = {
     "willys": {"label": "Willys", "color": "#b71c1c", "auth": "none",             "offers": True},
     "hemkop": {"label": "Hemköp", "color": "#f57c00", "auth": "none",             "offers": True},
     "lidl":   {"label": "Lidl",   "color": "#0050aa", "auth": "apikey",           "offers": False},
+    "citygross": {"label": "City Gross", "color": "#6a3d9a", "auth": "none",      "offers": False},
 }
 
 # Lidl geo-svep: API:t ger bara butiker inom en geo_box, så vi sveper ett rutnät.

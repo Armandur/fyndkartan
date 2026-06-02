@@ -32,9 +32,9 @@ Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla ked
 | Lidl | 212 | Schwarz geo_box-svep (`x-apikey`) |
 
 **Att göra (nya kedjor):**
-- [ ] **City Gross som 6:e kedja** (Bergendahls). REKON KLAR - genomförbart, börja med
-  butiks-adaptern:
-  - **Butiker: KLART att bygga.** `GET https://www.citygross.se/api/v1/PageData/stores`
+- [~] **City Gross som 6:e kedja** (Bergendahls). **BUTIKER BYGGT** (39 butiker via
+  `adapters/citygross.py`), erbjudanden kvar:
+  - **Butiker: BYGGT.** `GET https://www.citygross.se/api/v1/PageData/stores`
     (JSON, ~39 butiker, ingen auth). Per butik: `storeName`, `address` (streetAddress/
     zipCode/city), `storeLocation.coordinates` ("lat,lng"-sträng), `openingHours`
     (mon-sun + holidays, opens/closes ISO -> vår week-normalisering), `services`

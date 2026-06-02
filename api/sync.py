@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 
 from . import apilog, config, details
-from .adapters import axfood_offers, coop, hemkop, ica, lidl, willys
+from .adapters import axfood_offers, citygross, coop, hemkop, ica, lidl, willys
 from .database import (
     codes_missing_category,
     coop_offer_eans,
@@ -68,6 +68,7 @@ async def run_sync():
                     "lidl",
                     lidl.fetch_all(client, config.LIDL_KEY, boxes, config.LIDL_SLEEP),
                 ),
+                _run_one("citygross", citygross.fetch_all(client)),
             )
     finally:
         STATE["running"] = False
