@@ -16,7 +16,7 @@ import re
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
-from . import auth, config, database as db
+from . import auth, config, database as db, embeddings
 from .matching import normalize_ean
 
 router = APIRouter(prefix="/v1/admin", dependencies=[Depends(auth.require_admin)])
@@ -53,21 +53,70 @@ def name_tokens(name):
     return {w for w in t.split() if len(w) > 2 and w not in _STOP}
 
 
+def _package_bonus(a, b):
+    """Bonus för matchande förpacknings-storlek: +0.3 exakt, +0.15 inom 10%, annars 0."""
+    qa = parse_qty(a.get("package")) or parse_qty(a.get("name"))
+    qb = parse_qty(b.get("package")) or parse_qty(b.get("name"))
+    if qa and qb and qa[1] == qb[1]:
+        if abs(qa[0] - qb[0]) < 1e-6:
+            return 0.3
+        if abs(qa[0] - qb[0]) / max(qa[0], qb[0]) < 0.1:
+            return 0.15
+    return 0.0
+
+
 def score(a, b):
-    """Likhet mellan två produkter: namn-tokenöverlapp + förpacknings-bonus."""
+    """Lexikal likhet (fallback när embeddings saknas): namn-tokenöverlapp + förpacknings-bonus."""
     ta, tb = name_tokens(a["name"]), name_tokens(b["name"])
     if not ta or not tb:
         return 0.0
     jac = len(ta & tb) / len(ta | tb)
-    qa = parse_qty(a.get("package")) or parse_qty(a.get("name"))
-    qb = parse_qty(b.get("package")) or parse_qty(b.get("name"))
-    bonus = 0.0
-    if qa and qb and qa[1] == qb[1]:
-        if abs(qa[0] - qb[0]) < 1e-6:
-            bonus = 0.3
-        elif abs(qa[0] - qb[0]) / max(qa[0], qb[0]) < 0.1:
-            bonus = 0.15
-    return round(jac + bonus, 3)
+    return round(jac + _package_bonus(a, b), 3)
+
+
+# Minsta cosine för att en kandidat ska tas med (semantisk grind; förpacknings-bonus
+# adderas bara för rankning, inte för att passera grinden). Verifierat: samma-vara ~0.66-0.73,
+# orelaterat ~0.1-0.27 -> 0.45 separerar väl.
+_SEM_FLOOR = 0.45
+
+
+# Cert-/kvalitetsmarkörer som inte är produktidentitet - droppas före embedding så de inte
+# dominerar korta namn (annars matchar "Bryggkaffe Eko" mot "Pommes Frites Eko"). Smakord
+# (Naturell/Vanilj/Jordgubb...) BEHÅLLS - de är identitet för paring.
+_EMBED_DROP = {"eko", "ekologisk", "ekologiskt", "ekologiska", "krav", "fairtrade", "organic"}
+
+
+def _clean_for_embed(name, brand=None):
+    """Produktbeskrivande kärna för embedding: bort med procent, storlek, cert-markörer och
+    märkesord; behåll resten (inkl. smak)."""
+    t = re.sub(r"\d+[.,]?\d*\s*%", " ", (name or "").lower())
+    t = re.sub(r"\b\d+[.,]?\d*\s*(g|kg|ml|cl|l|st|p|pack|x)\b", " ", t)
+    t = re.sub(r"[^a-zåäö ]", " ", t)
+    drop = set(_EMBED_DROP)
+    if brand:
+        drop |= {w for w in re.sub(r"[^a-zåäö ]", " ", brand.lower()).split() if len(w) > 1}
+    toks = [w for w in t.split() if len(w) > 1 and w not in drop]
+    return " ".join(toks) or (name or "").lower().strip()
+
+
+def rank_candidates(src, cands):
+    """Ranka paringskandidater. Semantisk namn-likhet (rensade namn-embeddings) + förpacknings-
+    bonus; faller tillbaka på lexikal `score` om embeddings ej tillgängliga. Returnerar
+    (rankad_lista, metod)."""
+    sims = embeddings.name_cosines(
+        _clean_for_embed(src.get("name"), src.get("brand")),
+        [_clean_for_embed(c.get("name"), c.get("brand")) for c in cands],
+    )
+    if sims is None:  # embeddings ej tillgängliga -> lexikalt
+        ranked = sorted(({**c, "score": score(src, c)} for c in cands),
+                        key=lambda p: p["score"], reverse=True)
+        return [p for p in ranked if p["score"] > 0], "lexical"
+    scored = []
+    for c, sem in zip(cands, sims):
+        if sem >= _SEM_FLOOR:
+            scored.append({**c, "score": round(sem + _package_bonus(src, c), 3)})
+    scored.sort(key=lambda p: p["score"], reverse=True)
+    return scored, "embeddings"
 
 
 # ---- Hämta private-label-produkter ur offers (kollapsade per EAN) ----
@@ -179,11 +228,8 @@ async def suggestions(ean: str = Query(...), limit: int = 8):
         cand = [p for p in _products(conn, brands) if not (set(p["chains"]) & srcchains)]
     finally:
         conn.close()
-    ranked = sorted(
-        ({**p, "score": score(src, p)} for p in cand), key=lambda p: p["score"], reverse=True
-    )
-    ranked = [p for p in ranked if p["score"] > 0][:limit]
-    return {"source": src, "suggestions": ranked}
+    ranked, method = rank_candidates(src, cand)
+    return {"source": src, "suggestions": ranked[:limit], "method": method}
 
 
 @router.get("/matches")

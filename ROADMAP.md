@@ -266,8 +266,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       (`ean`), ICA (`gtin`); Axfood kräver code->EAN-resolve; **Lidl saknar EAN helt** (SSR-skrap,
       bara internt artikelnr). Jämförpris: alla utom ICA. Unified produktsök är genomförbart för
       hela sortimentet - de fem EAN-bärande kedjorna fullt ut, Lidl som EAN-lös listning.
-  - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
-    ev. LLM/embeddings som domare).
+  - [x] **Smart auto-förslag: semantiska embeddings BYGGT.** Märkesvaru-paringsförslagen
+    (`brands.rank_candidates`) rankar nu på semantisk namn-likhet via static-embeddings
+    (`embeddings.py`, model2vec multilingual, CPU/numpy - ingen torch, lazy-laddad, degraderar
+    tyst till lexikal `score` om modellen ej kan laddas). Namnen rensas före embedding (bort med
+    cert-/eko-markörer, storlek, %, märke; smak behålls) så delade modifierare inte dominerar
+    korta namn. Cosine-grind `_SEM_FLOOR` + förpacknings-bonus. Fångar synonymer/omkastningar som
+    token-överlapp missar ("Krossade Tomater" ~ "Tomatkross") och slipper eko-falskmatchningar.
+    - [ ] (framtid) **LLM som domare** ovanpå embeddings-kandidaterna - låt en LLM avgöra de
+      osäkra paren (embeddings rankar/grovsållar, LLM bekräftar). Ej byggt.
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
   + editerbar `tag_map` (label -> typ). Typen härleds vid läsning (`tags.effective_type`):
   override från tag_map annars `classify_service`-seed, så admin-ändringar slår igenom

@@ -38,7 +38,8 @@ api/                 # Python-paketet (importeras som `api`)
   database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict, list_products() (produktsök/kategori)
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), _norm_unit() (kanonisk jämförenhet), build_comparisons()
-  brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
+  brands.py          # märkesvaru-paring: private-label-detektion + förslag (semantisk via embeddings, lexikal fallback) + APIRouter (/v1/admin/...)
+  embeddings.py      # lättviktiga static-embeddings (model2vec, CPU/numpy) för semantisk produktnamn-likhet; lazy, degraderar till lexikal
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API + ICA SSR-detalj (handla.ica.se, cid via globalsearch)
   catalog.py         # unified katalog-sök (live fan-out mot kedjornas sök-API:er, hela sortimentet/hyllpris, EAN-grupperat) -> GET /v1/products/catalog
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
@@ -62,7 +63,8 @@ pyproject.toml .env stores.db   # i repo-roten (BASE_DIR)
 
 **Beroenden utöver basstacken:** `babel` (CLDR-landnamn för brand/origin-split),
 `phonenumbers` (telefon-normalisering), `holidays` (svensk helgdagskalender för
-öppettidsavvikelser). Se `pyproject.toml`.
+öppettidsavvikelser), `model2vec` (static-embeddings, CPU/numpy - ingen torch - för
+semantiska märkesvaru-förslag). Se `pyproject.toml`.
 
 ## Datamodell
 
@@ -120,8 +122,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **Märkesvaru-paring (`brands.py` + "Märkesvaror"-fliken):** egna märkesvaror (ICA,
   Garant, Änglamark...) har kedjeinterna EAN och matchar aldrig automatiskt. Admin
   parar ihop dem manuellt: redigerbar private-label-vokabulär per kedja (brand-rötter,
-  `private_brands`), lista över private-label-produkter ur offers, namn+förpacknings-
-  baserade förslag, produktbild + lazy rik detalj. **EAN-centrerat:** en produkt = en EAN;
+  `private_brands`), lista över private-label-produkter ur offers, **paringsförslag rankade på
+  semantisk namn-likhet** (`rank_candidates`: rensade namn-embeddings via `embeddings.py` +
+  förpacknings-bonus, cosine-grind; lexikal `score` som fallback - fångar synonymer som
+  token-överlapp missar, "Krossade Tomater"~"Tomatkross"), produktbild + lazy rik detalj.
+  **EAN-centrerat:** en produkt = en EAN;
   samma EAN i flera kedjor (Willys+Hemköp delar Axfood-EAN) kollapsas till en post och
   matchar redan automatiskt, så paring sker bara över olika private labels. Mappningen
   (`product_matches`) skickas EAN-nycklad som `manual_groups` till `build_comparisons`.
@@ -198,8 +203,9 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (offers-cachen = butikslokala deals, appens kärna). Per kedja `_search_<chain>` -> gemensam
   normaliserad form, grupperat på EAN cross-chain (`CatalogProduct` med per-kedje-`prices`).
   Kedjor: City Gross (Loop54 search/quick), Coop (perso-search, `_parse_coop_item`), ICA
-  (globalsearch + flaggskepps-accountNumber + token), Willys/Hemköp (`/search`, EAN via `ean_cache`
-  -> okända katalog-koder blir fristående poster). Lidl saknas (ingen EAN i deras sök). Per-kedja
+  (globalsearch + flaggskepps-accountNumber + token), Willys/Hemköp (`/search`, EAN+kategori+
+  ursprung via `/p/{code}`-resolve capat + persisterat i `ean_cache` -> okända katalog-koder blir
+  fristående poster; ursprung översätts EN->SV via babel). Lidl saknas (ingen EAN i deras sök). Per-kedja
   timeout -> delresultat. Honest schema: INGA deal_type/offer_count (hyllpris ≠ deal). Katalog-
   specifika kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i `category_map`.
   Bara API (ingen frontend än). Auth via `require_consumer` som övriga `/v1`.

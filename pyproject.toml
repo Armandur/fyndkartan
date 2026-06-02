@@ -15,4 +15,5 @@ dependencies = [
     "babel>=2.14",
     "phonenumbers>=8.13",
     "holidays>=0.50",
+    "model2vec>=0.3",
 ]

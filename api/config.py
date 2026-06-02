@@ -20,6 +20,10 @@ LIDL_KEY = os.getenv("LIDL_KEY", "")
 COOP_PERSO_KEY = os.getenv("COOP_PERSO_KEY", "")
 COOP_DETAIL_STORE = os.getenv("COOP_DETAIL_STORE", "251300")
 
+# Static-embeddings-modell (model2vec, CPU/numpy) för semantiska märkesvaru-paringsförslag.
+# Lazy-laddad; degraderar tyst till lexikal matchning om den ej kan laddas (offline/saknas).
+EMBED_MODEL = os.getenv("EMBED_MODEL", "minishlab/potion-multilingual-128M")
+
 # Schemalagd butikssynk via cron-uttryck (både intervall och bestämd tid).
 # Default: dagligen 04:00 svensk tid. Exempel: "0 */6 * * *" = var 6:e timme.
 # Tomt / "off" = avstängd. Erbjudanden sköts av sin egen 6h lazy-cache.
@@ -203,6 +207,7 @@ DEFAULT_PRIVATE_BRANDS = {
     "coop": ["Coop", "Änglamark", "Xtra", "X-tra"],
     "willys": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
     "hemkop": ["Garant", "Eldorado", "Såklart", "Falkenberg", "Premiär", "Fixa", "Aleko"],
+    "citygross": ["City Gross"],
     "lidl": [],
 }
 
