@@ -167,6 +167,28 @@
       const syncState = d.syncing
         ? `<span class="st-running">● synkar… (${done}/${d.chains.length} klara)</span>`
         : `<span class="text-muted">senast: ${esc(d.chains.map(c=>c.last_sync).filter(Boolean).sort().pop() || "-")}</span>`;
+      const sw = d.offers_sweep || { chains: {}, running: false };
+      const swCov = sw.coverage || {}, swStores = sw.store_counts || {};
+      const swList = sw.supported_chains || Object.keys(sw.chains || {});
+      const swRows = swList.map((c) => {
+        const s = (sw.chains || {})[c] || { fetched: 0, skipped: 0, errors: 0, status: "idle" };
+        const cov = swCov[c] || { stores_with_offers: 0, offers: 0 };
+        const tot = swStores[c] || 0;
+        const pct = tot ? Math.round((cov.stores_with_offers / tot) * 100) : 0;
+        return `<tr>
+          <td>${chip(c)}</td><td>${tot}</td>
+          <td>${cov.stores_with_offers} <span class="text-muted">(${pct}%)</span></td>
+          <td>${cov.offers}</td>
+          <td>${s.fetched}</td><td>${s.skipped}</td>
+          <td class="${s.errors ? "text-danger" : ""}">${s.errors}</td>
+          <td class="st-${s.status === "tripped" ? "error" : s.status}">${esc(s.status)}</td></tr>`;
+      }).join("");
+      const swTotals = Object.values(sw.chains || {}).reduce((a, s) => ({
+        fetched: a.fetched + s.fetched, skipped: a.skipped + s.skipped, errors: a.errors + s.errors,
+      }), { fetched: 0, skipped: 0, errors: 0 });
+      const swState = sw.running
+        ? `<span class="st-running">● hämtar erbjudanden… (${swTotals.fetched} hämtade, ${swTotals.skipped} hoppade${swTotals.errors ? `, ${swTotals.errors} fel` : ""})</span>`
+        : `<span class="text-muted">senast: ${esc(sw.finished_at || "-")}</span>`;
       document.getElementById("overview").innerHTML = `
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Översikt</h5>
@@ -179,19 +201,38 @@
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Synk pågår</div><div class="stat">${d.syncing ? "Ja" : "Nej"}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa erbjudande-sweep</div><div class="fw-bold mt-1">${esc(sw.next_run || "-")}</div><div class="small mono text-muted">${esc(sw.cron || "")}</div></div></div>
         </div>
-        <div class="card p-3"><h6>Kedjor</h6>
+        <div class="card p-3 mb-3"><h6>Kedjor</h6>
           <table class="table table-sm align-middle mb-0">
             <thead><tr><th>Kedja</th><th>Butiker</th><th>Synkstatus</th><th>Senast synk</th><th>Fel</th></tr></thead>
-            <tbody>${rows}</tbody></table></div>`;
+            <tbody>${rows}</tbody></table></div>
+        <div class="card p-3">
+          <div class="d-flex align-items-center mb-2">
+            <h6 class="mb-0">Erbjudande-sweep</h6>
+            <span class="ms-3 small">${swState}</span>
+            <div class="form-check form-check-inline ms-auto mb-0"><input class="form-check-input" type="checkbox" id="sweepForce"><label class="form-check-label small" for="sweepForce">Tvinga om allt</label></div>
+            <button id="sweepNow" class="btn btn-sm btn-dark" ${sw.running ? "disabled" : ""}>Hämta alla erbjudanden</button>
+          </div>
+          <div class="text-muted small mb-2">Förhämtar erbjudanden för alla butiker (hoppar färska om inte "tvinga"). Rate-limitat - första körningen tar några minuter. "Med erbjudanden" = nuvarande täckning i cachen; resten är senaste sweep-körningen.</div>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Kedja</th><th>Butiker</th><th>Med erbjudanden</th><th>Erbjudanden</th><th>Hämtade</th><th>Hoppade</th><th>Fel</th><th>Status</th></tr></thead>
+            <tbody>${swRows}</tbody></table></div>`;
       document.getElementById("syncNow").addEventListener("click", triggerSync);
-      // Polla vidare medan en synk pågår (oavsett vem som startade den).
+      document.getElementById("sweepNow").addEventListener("click", triggerSweep);
+      // Polla vidare medan en synk ELLER sweep pågår (oavsett vem som startade den).
       clearTimeout(syncTimer);
-      if (d.syncing && active === "overview") syncTimer = setTimeout(loadOverview, 2500);
+      if ((d.syncing || sw.running) && active === "overview") syncTimer = setTimeout(loadOverview, 2500);
     }
 
     async function triggerSync() {
       await api("/v1/sync", { method: "POST" });
+      loadOverview();
+    }
+
+    async function triggerSweep() {
+      const force = document.getElementById("sweepForce").checked;
+      await api(`/v1/offers/sweep?force=${force}`, { method: "POST" });
       loadOverview();
     }
 

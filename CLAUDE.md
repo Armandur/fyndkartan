@@ -98,6 +98,15 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (`OFFERS_MIN_REFRESH`) så källans kvarliggande utgångna offers inte ger refetch-loop.
   Compare/favoriter laddar via samma `_ensure_offers` (TTL-respekterande, ej tvingat).
   Byggt för ICA, Willys, Hemköp, Coop (ej Lidl). Coop/Axfood bär `member_price`.
+- **Bulk-förhämtning av erbjudanden (`sweep_offers` + `POST /v1/offers/sweep`):** proaktiv motsats
+  till lazy-hämtningen. Sveper alla offer-stödda butiker (`database.offer_stores`) och hämtar de som
+  inte är färska (`_offers_fresh` - redan valid_to-medveten, så efter en kall fyllning refetchas bara
+  utgångna). Per kedja: bunden parallellism + paus + exponentiell back-off/retry per butik + circuit
+  breaker (fel i rad -> pausa kedjan). Egen cadence `OFFERS_SWEEP_CRON` (default varje timme); INGEN
+  kall sweep vid uppstart. Schemaläggaren är generisk: `run_scheduler(cron, tz, job, label)` kör både
+  butikssynk och sweep. `SWEEP_STATE` (per-kedje-räknare) + `database.offers_coverage` (nuvarande
+  cachade erbjudanden per kedja) visas i konsolens Översikt. Arkiverar prishistorik via samma
+  `replace_store_offers`.
 - **Prishistorik (steg 4, `offer_observations` + `GET /v1/products/{ean}/history`):** offers
   churnar vid synk (`replace_store_offers` = DELETE+insert), så historiken skrivs append-only.
   `archive_offers` (kallas före replace) skriver en observation per offer NÄR (pris/jämförvärde/

@@ -30,6 +30,16 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "minishlab/potion-multilingual-128M")
 SYNC_CRON = os.getenv("SYNC_CRON", "0 4 * * *")
 SYNC_TZ = os.getenv("SYNC_TZ", "Europe/Stockholm")
 
+# Bulk-förhämtning av erbjudanden (sweep): går igenom alla offer-stödda butiker och hämtar
+# de som inte är färska (_offers_fresh). Egen cadence - tätare än butikssynken, men billig
+# eftersom färska butiker hoppas och offers refetchas vid utgång (valid_to). Tomt/"off" = av.
+OFFERS_SWEEP_CRON = os.getenv("OFFERS_SWEEP_CRON", "0 * * * *")  # varje hel timme
+OFFERS_SWEEP_CONCURRENCY = int(os.getenv("OFFERS_SWEEP_CONCURRENCY", "4"))  # samtidiga butiker/kedja
+OFFERS_SWEEP_PACE = float(os.getenv("OFFERS_SWEEP_PACE", "0.25"))  # paus mellan hämtningar (s)
+OFFERS_SWEEP_RETRIES = int(os.getenv("OFFERS_SWEEP_RETRIES", "3"))  # försök per butik vid fel
+OFFERS_SWEEP_BACKOFF = float(os.getenv("OFFERS_SWEEP_BACKOFF", "1.5"))  # bas-back-off (s, exponentiell)
+OFFERS_SWEEP_CIRCUIT = int(os.getenv("OFFERS_SWEEP_CIRCUIT", "12"))  # fel i rad/kedja -> pausa kedjan
+
 # Session-cookie. SESSION_SECRET löses i main vid import (env eller DB-persisterad).
 # https_only måste vara av i normalfallet (lokal Unraid över http).
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")

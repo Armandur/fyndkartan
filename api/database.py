@@ -928,6 +928,35 @@ def offers_fetched_at(chain, store_id):
     return row["t"] if row else None
 
 
+def offers_coverage():
+    """Per kedja: antal butiker med cachade erbjudanden + totalt antal cachade erbjudanden.
+    Visar hur komplett offers-cachen är per kedja (det bulk-sweepen fyller)."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, COUNT(DISTINCT store_id) AS stores, COUNT(*) AS offers "
+        "FROM offers GROUP BY chain"
+    ).fetchall()
+    conn.close()
+    return {r["chain"]: {"stores_with_offers": r["stores"], "offers": r["offers"]} for r in rows}
+
+
+def offer_stores(chains):
+    """Butiker (chain, store_id, link_offers, native) för givna kedjor - för bulk-sweep av
+    erbjudanden. Returnerar en dict {chain: [rader]} så sweepen kan köra kedjor parallellt."""
+    qs = ",".join("?" for _ in chains)
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT chain, store_id, link_offers, native FROM stores WHERE chain IN ({qs}) "
+        "ORDER BY chain, store_id",
+        tuple(chains),
+    ).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r["chain"], []).append(dict(r))
+    return out
+
+
 def _to_row(s):
     loc = s.get("location") or {}
     addr = s.get("address") or {}

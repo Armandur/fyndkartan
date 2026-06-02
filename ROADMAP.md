@@ -101,6 +101,18 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
 - [x] (step 1) Fyll Coops `tags` + `brand` från butiksdetaljens `services`/`concept`
       (722 detalj-anrop, bunden parallellism i `coop.py`).
 - [x] **code -> EAN-cache** för Axfood (byggd i steg 3, se `ean_cache` nedan).
+- [x] **Bulk-förhämtning av erbjudanden BYGGT (`sweep_offers` + `POST /v1/offers/sweep`).**
+      Proaktiv motsats till lazy-hämtningen: sveper alla offer-stödda butiker och hämtar de som
+      inte är färska (`_offers_fresh`, redan valid_to-medveten -> efter kall fyllning refetchas
+      bara utgångna). Per kedja bunden parallellism (`OFFERS_SWEEP_CONCURRENCY`) + paus
+      (`OFFERS_SWEEP_PACE`) + exponentiell back-off/retry per butik + circuit breaker
+      (`OFFERS_SWEEP_CIRCUIT` fel i rad -> pausa kedjan). Egen cadence `OFFERS_SWEEP_CRON`
+      (default varje timme, billig då färska hoppas); INGEN kall sweep vid uppstart (skonar
+      kedjorna vid omstart). Schemaläggaren generaliserad (`run_scheduler(cron, tz, job, label)`).
+      Arkiverar prishistorik via `replace_store_offers`. Konsolens Översikt: "Hämta alla
+      erbjudanden"-knapp (+tvinga) + per-kedje-tabell med nuvarande täckning (butiker med cachade
+      erbjudanden) och senaste sweep-räknare (`offers_coverage` + `SWEEP_STATE`). Låser upp
+      kartfilter på produkt + full produktsök (lazy-cachen täckte bara öppnade butiker).
 - [ ] Rekognoscera Lidl erbjudande-källa + EAN (regionalt via `offerRegion`).
       Lidl verkar bara ha PDF-reklamblad -> kräver fångst av nätverksanrop / OCR.
 - [x] **ICA To Go** - hanterad: `togo`-typen finns i vokabulären och `seed_types`
@@ -453,6 +465,8 @@ domäner:
     - [x] **Visa ALLA favoriters erbjudanden BYGGT.** `GET /v1/favorites/offers` +
       "Mina favoriters erbjudanden"-vyn: hela listan + `compared`-sektion (produkter
       hos >= 2 favoriter, samma EAN, billigast först). (Sortering kvar, se ovan.)
+- [x] **Schemalagt bulk-förhämtningsjobb BYGGT** (se `sweep_offers` under Steg 2) - sveper alla
+  offer-stödda butiker rate-limitat, fyller offers-cachen proaktivt i stället för bara lazy.
 - **Närliggande erbjudanden:** geosök (finns) + erbjudande-lagret. `compare/near`
   laddar offers lazy för de ~12 närmaste butikerna; för ett tätt flöde kan ett
   schemalagt bulk-/radie-förhämtningsjobb behövas.

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import random
 import re
 import secrets
 import time
@@ -84,9 +85,15 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(warm_axfood_eans())
         asyncio.create_task(warm_coop_categories())
         asyncio.create_task(warm_ica_categories())
-    scheduler = asyncio.create_task(run_scheduler(config.SYNC_CRON, config.SYNC_TZ))
+    scheduler = asyncio.create_task(
+        run_scheduler(config.SYNC_CRON, config.SYNC_TZ, sync_and_warm, "butikssynk"))
+    # Erbjudande-sweepen har egen (tätare) cadence. Ingen kall sweep vid uppstart -
+    # den första fyllningen triggas manuellt från konsolen (skonar kedjornas API:er).
+    offers_scheduler = asyncio.create_task(
+        run_scheduler(config.OFFERS_SWEEP_CRON, config.SYNC_TZ, sweep_offers, "erbjudande-sweep"))
     yield
     scheduler.cancel()
+    offers_scheduler.cancel()
 
 
 app = FastAPI(
@@ -107,7 +114,8 @@ app = FastAPI(
 def _openapi_tag(path):
     if path.startswith(("/v1/auth", "/v1/console/auth")):
         return "Auth & konto"
-    if path.startswith("/v1/admin") or path.startswith("/v1/sync") or path.startswith("/v1/tags"):
+    if (path.startswith("/v1/admin") or path.startswith("/v1/sync")
+            or path.startswith("/v1/tags") or path.startswith("/v1/offers/sweep")):
         return "Admin / konsol"
     if path.startswith("/v1/products"):
         return "Produkter"
@@ -424,16 +432,19 @@ async def admin_overview(_=Depends(require_admin)):
     ean_n = conn.execute("SELECT COUNT(*) c FROM ean_cache WHERE ean!=''").fetchone()["c"]
     conn.close()
 
-    next_run = None
-    try:
-        from croniter import croniter
-        from zoneinfo import ZoneInfo
+    def _next_cron(expr):
+        try:
+            from croniter import croniter
+            from zoneinfo import ZoneInfo
 
-        if config.SYNC_CRON.strip():
-            now = datetime.now(ZoneInfo(config.SYNC_TZ))
-            next_run = croniter(config.SYNC_CRON, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
-    except Exception:  # noqa: BLE001
-        pass
+            if expr and expr.strip():
+                now = datetime.now(ZoneInfo(config.SYNC_TZ))
+                return croniter(expr, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    next_run = _next_cron(config.SYNC_CRON)
 
     return {
         "chains": [
@@ -451,6 +462,14 @@ async def admin_overview(_=Depends(require_admin)):
         "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
         "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
+        "offers_sweep": {
+            **SWEEP_STATE,
+            "cron": config.OFFERS_SWEEP_CRON,
+            "next_run": _next_cron(config.OFFERS_SWEEP_CRON),
+            "supported_chains": list(SUPPORTED_OFFER_CHAINS),
+            "coverage": database.offers_coverage(),  # nuvarande cachade erbjudanden per kedja
+            "store_counts": {c: store_counts.get(c, 0) for c in SUPPORTED_OFFER_CHAINS},
+        },
     }
 
 
@@ -784,6 +803,93 @@ async def _ensure_offers(client, chain, store_id, link_offers, native_json, refr
     offers = await _fetch_offers_for(client, chain, store_id, link_offers, native_json)
     replace_store_offers(chain, store_id, offers)
     return get_store_offers(chain, store_id)
+
+
+# ---- Bulk-förhämtning av erbjudanden (sweep) ----
+# Proaktiv motsats till lazy-hämtningen: går igenom ALLA offer-stödda butiker och hämtar de
+# som inte är färska (_offers_fresh, som redan är valid_to-medveten). Efter en kall fyllning
+# refetchas alltså bara butiker vars offers gått ut. Rate-limitad per kedja (semafor + paus),
+# back-off med retry per butik, och en circuit breaker som pausar en kedja vars API:t spottar fel.
+SWEEP_STATE = {
+    "running": False, "started_at": None, "finished_at": None, "force": False,
+    "chains": {c: {"status": "idle", "total": 0, "fetched": 0, "skipped": 0, "errors": 0}
+               for c in SUPPORTED_OFFER_CHAINS},
+}
+
+
+async def _sweep_one_store(client, chain, store, force):
+    """Hämta en butiks erbjudanden om de inte är färska (om inte force). Retry + exponentiell
+    back-off vid fel. Returnerar 'fetched' | 'skipped' | 'error'."""
+    sid = str(store["store_id"])
+    if not force and _offers_fresh(chain, sid):
+        return "skipped"
+    for attempt in range(config.OFFERS_SWEEP_RETRIES):
+        try:
+            offers = await _fetch_offers_for(client, chain, sid, store["link_offers"], store["native"])
+            replace_store_offers(chain, sid, offers)
+            return "fetched"
+        except Exception as e:  # noqa: BLE001
+            if attempt + 1 >= config.OFFERS_SWEEP_RETRIES:
+                log.warning("sweep %s/%s misslyckades slutgiltigt: %s", chain, sid, e)
+                return "error"
+            await asyncio.sleep(config.OFFERS_SWEEP_BACKOFF * (3 ** attempt) + random.uniform(0, 0.5))
+    return "error"
+
+
+async def _sweep_chain(client, chain, stores, force):
+    st = SWEEP_STATE["chains"][chain]
+    st.update(status="running", total=len(stores), fetched=0, skipped=0, errors=0)
+    sem = asyncio.Semaphore(config.OFFERS_SWEEP_CONCURRENCY)
+    streak = 0       # fel i rad -> circuit breaker
+    tripped = False
+
+    async def worker(store):
+        nonlocal streak, tripped
+        async with sem:
+            if tripped:
+                return
+            res = await _sweep_one_store(client, chain, store, force)
+            if res == "fetched":
+                st["fetched"] += 1
+                streak = 0
+                await asyncio.sleep(config.OFFERS_SWEEP_PACE)  # håller sem -> sprider lasten
+            elif res == "skipped":
+                st["skipped"] += 1
+            else:
+                st["errors"] += 1
+                streak += 1
+                if streak >= config.OFFERS_SWEEP_CIRCUIT:
+                    tripped = True
+                    log.error("sweep %s: %d fel i rad - circuit breaker, pausar kedjan", chain, streak)
+
+    await asyncio.gather(*(worker(s) for s in stores))
+    st["status"] = "tripped" if tripped else "ok"
+
+
+async def sweep_offers(force=False):
+    """Bulk-förhämta erbjudanden för alla offer-stödda butiker. Hoppar färska (om inte force);
+    arkiverar prishistorik via replace_store_offers. Kedjorna sveps parallellt, butiker inom en
+    kedja rate-limitat. Idempotent och säker att köra ofta - de flesta butiker hoppas."""
+    if SWEEP_STATE["running"]:
+        return SWEEP_STATE
+    SWEEP_STATE.update(running=True, force=force,
+                       started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                       finished_at=None)
+    by_chain = database.offer_stores(SUPPORTED_OFFER_CHAINS)
+    for c in SUPPORTED_OFFER_CHAINS:
+        SWEEP_STATE["chains"][c].update(status="idle", total=len(by_chain.get(c, [])),
+                                        fetched=0, skipped=0, errors=0)
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            await asyncio.gather(*(_sweep_chain(client, c, by_chain.get(c, []), force)
+                                   for c in SUPPORTED_OFFER_CHAINS))
+    finally:
+        SWEEP_STATE.update(running=False,
+                           finished_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    log.info("Erbjudande-sweep klar (force=%s): %s", force,
+             {c: {k: SWEEP_STATE["chains"][c][k] for k in ("fetched", "skipped", "errors")}
+              for c in SUPPORTED_OFFER_CHAINS})
+    return SWEEP_STATE
 
 
 @app.get("/v1/stores/{chain}/{store_id}/offers", responses={200: {"model": schemas.StoreOffersResponse}})
@@ -1151,3 +1257,18 @@ async def trigger_sync(_=Depends(require_admin)):
 @app.get("/v1/sync/status")
 async def sync_status(_=Depends(require_admin)):
     return STATE
+
+
+@app.post("/v1/offers/sweep")
+async def trigger_offers_sweep(force: bool = False, _=Depends(require_admin)):
+    """Starta en bulk-förhämtning av erbjudanden för alla offer-stödda butiker (bakgrund).
+    `force=true` ignorerar färskhets-cachen och hämtar om allt (annars hoppas färska butiker)."""
+    if SWEEP_STATE["running"]:
+        return {"status": "running", "detail": "En sweep pågår redan."}
+    asyncio.create_task(sweep_offers(force=force))
+    return {"status": "started", "force": force}
+
+
+@app.get("/v1/offers/sweep/status")
+async def offers_sweep_status(_=Depends(require_admin)):
+    return SWEEP_STATE
