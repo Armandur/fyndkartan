@@ -15,4 +15,5 @@ ica-anrop-curl.md
 __pycache__/
 *.pyc
 tmp/gemini/
+tmp/obscura/
 dev.log

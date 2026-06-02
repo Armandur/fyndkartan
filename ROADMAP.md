@@ -164,14 +164,27 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         `/v1/products/{ean}` på både cachad och färsk data (täcker de 507 cachade direkt),
         idempotent. Övervarnar hellre än missar (växtdrycker med "mjölk" i namnet). Kvar:
         ev. finputs av vokabulären (plant-milk-falskpositiv).
-    - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
-      täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
-    - [ ] **Utvärdera vad ICA:s upptäckta katalog-sök kan förbättra i befintligt** (söket är
-      nåbart server-side, till skillnad från detaljen). Kandidater: (a) **ICA finare kategorier**
-      via sökets `mainCategoryName`/`categoryName` (löser ev. caveaten om bara 9 `articleGroupId`);
-      (b) **ICA produktinfo/bild för egna märken** som Coop-fallbacken missar (söket har gtin->
-      namn/kategori/bild, dock ej ingredienser/näring); (c) ICA-bilder ur söket (resizebar
-      cloudinary) i bild-resolvern. Avgör vilka som är värda en faktisk integration.
+    - [x] **ICA native detalj BYGGT (ingredienser/näring/allergener/ursprung/kategori).**
+      WAF-myten avfärdad: `handla.ica.se/produkt/{consumerItemId}` är SSR och nås med vanlig
+      httpx + browser-headers (`Sec-Fetch-*`); curl-blocket berodde på header-löshet. ICA är nu
+      tredje källa i `details.py` (`_fetch_ica` + `_parse_ica_detail`): EAN->consumerItemId via
+      globalsearch (butiks-scopat -> resolvern provar flera profiler, `database.ica_resolve_accounts`;
+      EAN nollpaddas till 14 siffror), cid cachad i `ica_item_map` (cid='' = försökt utan träff).
+      Detaljsidans microdata + sektioner parsas (näring i två varianter: `<table>` + komma-`<p>`).
+      Hämtas för ICA:s egna märken (prefix 731869, som Axfood/Coop saknar) + som sista fallback.
+      Finare ICA-kategori via breadcrumb-topp (`category_from_detail` source "ica" + `ica_nav`-
+      mappning i `DEFAULT_CATEGORY_MAP`). Stänger luckan för 234 ICA-egna-märkes-EAN i offers-
+      cachen (av 2185 utan product_info). Verifierat e2e: egna märken + branded utan regression.
+    - [ ] **ICA-bilder ur söket i bild-resolvern (uppskjutet).** ICA-söket/detaljen ger en
+      resizebar cloudinary-bild (`/image/upload/`); `images.py` skulle kunna föredra den för
+      ICA-egna-märkes-EAN som inte finns i någon offers-cache (idag bara ICA:s EAN-CDN-gissning).
+      Litet, ej en lucka - egen punkt.
+    - [ ] **ICA-ursprung ur inline-markörer (uppskjutet, delvis gjort).** För egna märken saknas
+      `Ursprungsland`-fältet; ursprunget ligger inline i ingredienserna (`*Ursprung X`/`*Odlade i X`).
+      `_ica_origin` fångar de vanligaste markörerna nu; fler varianter kan tillkomma vid behov.
+    - [ ] **ICA-kategori-förvärmning (uppskjutet).** Som `warm_coop_categories`: förvärma
+      `product_info`-kategori per ICA-EAN globalt (gynnar offer-kategori utan att öppna modalen).
+      Hör ihop med produktsöket - tas där.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
       compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
       det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
@@ -219,16 +232,31 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       artikelkod, EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,
       `priceValue`, `comparePrice`+`comparePriceUnit` (jämförpris), `googleAnalyticsCategory`,
       `image` (axfood cloudinary). EAN EJ inline (enda kedjan som kräver resolve i sök).
-    - **Lidl**: sök-API hittat (`GET lidl.se/q/api/search?q=&fetchsize=`) men **auth-gatat**
-      (401 även med sidans cookies; token-källan ej i sidan/sök-widgeten). Kräver obscura för
-      att fånga det riktiga anropets auth-header. Lidl förblir svårast (även offers regionala/PDF).
-    - **ICA produktdetalj** (ingredienser/näring): `handla.ica.se/produkt/{consumerItemId}` är
-      butiks-gatat + WAF; gateway-path ej hittad via gissning. ICA-SÖKET ger dock gtin/namn/
-      kategori/bild (basfält) - full detalj för ICA:s egna märken förblir luckan (Coop-fallback
-      täcker branded). Se "Utvärdera vad ICA:s katalog-sök kan förbättra" ovan.
-    - **Slutsats:** ALLA kedjor har sökbara katalog-API:er med pris. EAN inline för City Gross
-      (`gtin`), Coop (`ean`), ICA (`gtin`); Axfood kräver code->EAN-resolve. Jämförpris: alla
-      utom ICA. Unified produktsök är klart genomförbart för hela sortimentet.
+    - **Lidl**: `/q/api/search`-API:t är auth-gatat (401; host `<stage>.lidl.de` löses bara
+      klient-sidan, token ej i sidan/widgeten) - och obscura kan inte köra Lidls Nuxt-SPA
+      (för lättviktig JS-motor, saknar `createContextualFragment`/`dataset`). MEN sök-sidan är
+      **server-renderad**: `GET www.lidl.se/q/search?q=<term>` (vanlig GET, ingen auth/JS) bär
+      hela produkt-JSON:en per kort i `data-grid-data="{...}"` -> `fullTitle`, `itemId`/`erpNumber`,
+      `price.basePrice.text` (jämförpris inline), `image`, `category` ("Food" filtrerar non-food-
+      brus), `canonicalPath`. **Ingen EAN** - bara `ians` (Lidls interna artikelnr) -> Lidl kan
+      inte cross-matchas på EAN. Söket är luddigt (mjölk -> klädesplagg) och SSR ger bara
+      första sidan (~5-6 träffar; fulla 48 kräver API:t). Dugligt för listning, ej för compare.
+    - **ICA produktdetalj BYGGT** (se "ICA native detalj BYGGT" ovan för integrationen).
+      `GET handla.ica.se/produkt/{consumerItemId}` är **server-renderad (Astro)** och nås med
+      vanlig httpx OM man skickar browser-headers (`User-Agent` + `Sec-Fetch-Dest/Mode/Site/User`,
+      `Upgrade-Insecure-Requests`); AWS-WAF:en blockerar bara header-lösa anrop (curl), inte ett
+      riktigt browser-headerset. INGET butiksval krävs - full info ligger i SSR-microdatan:
+      `itemprop="sku"/"mpn"` = EAN, `productId` = consumerItemId, `name`, `categories` (full
+      breadcrumb), description, samt klartext-block för Ingredienser, Allergener, full
+      Näringsdeklaration (kcal/kJ/fett/...) och Ursprungsland. **EAN -> consumerItemId** fås ur
+      ICA-söket (quicksearch returnerar `gtin` + `consumerItemId` per item, EAN nollpaddad till
+      14). Stänger ICA:s detalj-lucka för ALLA produkter inkl. ICA:s egna märken - obscura behövs
+      ej (bypassar WAF:en men httpx med rätt headers gör samma sak billigare). Söket är butiks-
+      scopat -> resolvern provar flera butiksprofiler (Maxi/Kvantum/Supermarket/Nära).
+    - **Slutsats:** alla kedjor är sökbara med pris. EAN inline för City Gross (`gtin`), Coop
+      (`ean`), ICA (`gtin`); Axfood kräver code->EAN-resolve; **Lidl saknar EAN helt** (SSR-skrap,
+      bara internt artikelnr). Jämförpris: alla utom ICA. Unified produktsök är genomförbart för
+      hela sortimentet - de fem EAN-bärande kedjorna fullt ut, Lidl som EAN-lös listning.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
     ev. LLM/embeddings som domare).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
@@ -433,7 +461,8 @@ domäner:
     kontroller: text/sort/kategori/deal. compare-produkter bär kanonisk category-nyckel.
   - [ ] Frukt/grönt-viktvaror hos Coop får `ovrigt` (ingen produktdetalj på slump-EAN);
     ev. namn-heuristik eller annan Coop-signal senare.
-  - [ ] ICA finare kategorier (offer har bara `articleGroupId` 1-9; ehandel WAF-skyddad).
+  - [x] ICA finare kategorier LÖST via produktdetaljens breadcrumb-topp (`category_from_detail`
+    source "ica" -> `ica_nav`-mappning); ehandeln var aldrig WAF-skyddad mot rätt headers.
 
 ---
 

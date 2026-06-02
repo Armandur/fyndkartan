@@ -308,8 +308,17 @@ async function openProductModal(ean, chain, name) {
   }
 }
 
+function fmtInfoDate(iso) {
+  if (!iso) return "";
+  const dt = new Date(iso);
+  return isNaN(dt) ? "" : dt.toLocaleDateString("sv-SE");
+}
+
 function renderProductInfo(d, chain) {
-  if (!d.found || !d.info) return '<div class="text-muted small">Ingen produktinfo hittades för den här varan.</div>';
+  if (!d.found || !d.info) {
+    const checked = d.fetched_at ? ` <span class="text-muted">(kontrollerad ${fmtInfoDate(d.fetched_at)})</span>` : "";
+    return `<div class="text-muted small">Ingen produktinfo hittades för den här varan.${checked}</div>`;
+  }
   const x = d.info, P = [];
   if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
   if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
@@ -328,6 +337,8 @@ function renderProductInfo(d, chain) {
     }).join(" ");
     P.push(`<p class="small mb-0 mt-1"><span class="text-muted">Källa:</span> ${chips}</p>`);
   }
+  const upd = fmtInfoDate(d.fetched_at);
+  if (upd) P.push(`<p class="small text-muted mb-0 mt-1">Uppdaterad ${upd}</p>`);
   return P.join("") || '<div class="text-muted small">Ingen detaljdata.</div>';
 }
 

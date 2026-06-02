@@ -39,7 +39,7 @@ api/                 # Python-paketet (importeras som `api`)
   geo.py             # haversine(), grid() (geo_box-rutnät för Lidl)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), _norm_unit() (kanonisk jämförenhet), build_comparisons()
   brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
-  details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
+  details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API + ICA SSR-detalj (handla.ica.se, cid via globalsearch)
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
@@ -130,10 +130,19 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   EAN-nyckad cache `product_info`. **Normaliserad + sammanslagen över källor** (`_merge`):
   Axfood `/p/{code}` (EAN->code via `ean_cache`) + Coops personalization-API (POST EAN-array;
   näring i `nutrientLinks`; nyckel skrapas via `keys.scrape_coop_perso_key`, scrape-on-401).
-  Coop hämtas även när Axfood har gles näring; merge tar längsta textfält + rikaste näring,
-  `sources` listar bidragande källor. Allergener (`extract_allergens`) ur VERSALA ord i
-  ingredienserna. Coop är EAN-global -> täcker branded varor i alla kedjor inkl. ICA (vars
-  ehandel är AWS-WAF-bot-skyddad). ICA:s egna märken (ICA-intern EAN) saknas dock.
+  Coop hämtas även när Axfood har gles näring. **Tredje källa: ICA** (`_fetch_ica`) - SSR-
+  produktdetaljen `handla.ica.se/produkt/{consumerItemId}` (nås med browser-headers, ej WAF-
+  blockad mot rätt headerset). EAN->consumerItemId via ICA:s globalsearch (butiks-scopat, så
+  `database.ica_resolve_accounts` provar flera profiler; EAN nollpaddas till 14), cid cachad i
+  `ica_item_map` (''=försökt utan träff). Microdata + sektioner parsas; näring i två varianter
+  (`<table>` minifierad/whitespace + komma-`<p>`). ICA hämtas för egna märken (prefix 731869,
+  som Axfood/Coop saknar) + som sista fallback. Merge tar längsta textfält + rikaste näring,
+  `sources` listar bidragande källor. Allergener (`extract_allergens`) ur ingredienserna via
+  vokabulär. Coop är EAN-global (branded i alla kedjor); ICA täcker dessutom ICA:s egna märken.
+  **Cache-TTL (`product_info_cached`, lazy re-hämtning efter utgång):** positiv info 30 dygn
+  (ingredienser/näring/ursprung kan ändras), negativ (`null`-rad, "inget fanns" -> `found:false`
+  direkt utan re-hämtning) 14 dygn (så säsongsvaror kan dyka upp igen). Vid hämtningsfel cachas
+  inget (kan vara transient). Kategori påverkas ej (deriveras vid läsning ur `category_map`).
 - **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
   ur cachade offers (annars ICA:s EAN-CDN), **resizar via Cloudinary-transform** (källorna
   är cloudinary; `c_limit,w_400` -> små filer i stället för full-res), cachar bytes lokalt

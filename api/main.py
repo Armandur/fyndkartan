@@ -1033,18 +1033,23 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
     e = matching.normalize_ean(ean)
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
-    cached = database.get_product_info(e)
-    if cached is not None:
-        return {"ean": e, "found": True, "info": details.normalize_info(cached)}
+    present, cached, fetched_at = database.product_info_cached(e)
+    if present:  # cache-träff (cached=None = negativ cache: hämtat, inget fanns)
+        return {"ean": e, "found": cached is not None,
+                "info": details.normalize_info(cached), "fetched_at": fetched_at}
+    errored = False
+    info = None
     try:
         async with apilog.make_client(follow_redirects=True) as client:
             info = await details.fetch_for_ean(client, e, prefer_chain=prefer_chain)
     except Exception as ex:  # noqa: BLE001
         log.warning("produktinfo %s misslyckades: %s", e, ex)
-        info = None
-    if info is not None:
-        database.save_product_info(e, info)
-    return {"ean": e, "found": info is not None, "info": details.normalize_info(info)}
+        errored = True
+    # Spara även negativt (info=None -> data=null) så upprepade öppningar blir omedelbara och
+    # inte re-hämtar från källorna. Vid fel cachas inte (kan vara transient -> nytt försök).
+    fetched_at = database.save_product_info(e, info) if not errored else None
+    return {"ean": e, "found": info is not None,
+            "info": details.normalize_info(info), "fetched_at": fetched_at}
 
 
 @app.get("/v1/products/{ean}/image")

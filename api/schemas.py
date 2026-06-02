@@ -258,3 +258,5 @@ class ProductInfoResponse(BaseModel):
     ean: str = Field(..., description="Normaliserad EAN/GTIN")
     found: bool = Field(..., description="Om produktinfo hittades")
     info: ProductInfoData | None = Field(None, description="Produktinfo, eller null")
+    fetched_at: str | None = Field(
+        None, description="När infon hämtades/cachades (ISO); null vid hämtningsfel")

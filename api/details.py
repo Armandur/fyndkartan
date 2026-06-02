@@ -3,20 +3,36 @@ normaliserad och sammanslagen över källor (`_merge`). Cachas EAN-nyckat i prod
 
 Källor: Axfood (`/axfood/rest/p/{code}`, code via ean_cache; har näringsvärden) +
 Coop personalization-API (EAN-DB; ingredienser/ursprung, täcker branded varor i alla
-kedjor inkl. ICA vars ehandel är bot-skyddad). Coop hämtas bara när Axfood saknas/är
-ofullständig. Allergener plockas ur de VERSALA orden i ingredienslistan.
+kedjor) + ICA (handla.ica.se SSR-produktdetalj, WAF-förbi med browser-headers; EAN->
+consumerItemId via globalsearch). Coop hämtas när Axfood saknas/är ofullständig; ICA
+för ICA:s egna märken (ICA-intern EAN som de andra saknar) + som sista fallback.
+Allergener härleds ur ingredienslistan via vokabulär (`extract_allergens`).
 """
 
+import html as _html
 import json
 import logging
 import re
 
 from . import config, database as db
-from .adapters import keys
+from .adapters import ica_token, keys
 from .adapters.axfood_offers import DOMAIN, UA
 
 log = logging.getLogger("matbutiker")
 _AXFOOD = ("willys", "hemkop")
+
+# ICA-detaljsidan (handla.ica.se) är server-renderad men AWS-WAF-skyddad mot header-lösa
+# anrop; ett riktigt browser-headerset (Sec-Fetch-*) släpps igenom. EAN->consumerItemId
+# resolvas via ICA:s globalsearch (butiks-scopat, se database.ica_resolve_accounts).
+ICA_SEARCH = "https://apimgw-pub.ica.se/sverige/digx/globalsearch/v1/search/quicksearch"
+_ICA_BROWSER_HDRS = {
+    "User-Agent": UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "sv-SE,sv;q=0.9",
+    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none", "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 _coop_key = None  # skrapad personalization-nyckel (cache), scrape-on-401
 
@@ -238,6 +254,161 @@ async def fetch_coop_batch(client, eans):
     return out
 
 
+def _micro(h, ip):
+    """Värdet i `<meta itemprop="ip" content="...">` (HTML-avkodat)."""
+    m = re.search(r'itemprop="%s"\s+content="([^"]*)"' % ip, h)
+    return _html.unescape(m.group(1)) if m else None
+
+
+def _ica_section(h, heading):
+    """De-taggad text efter `<h2>heading</h2>` fram till nästa `<h2>`. None om saknas/tom."""
+    m = re.search(r"<h2[^>]*>\s*" + re.escape(heading) + r"\s*</h2>", h)
+    if not m:
+        return None
+    seg = h[m.end():m.end() + 2000].split("<h2")[0]
+    txt = _html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", seg))).strip()
+    return txt or None
+
+
+_ICA_BASIS_UNIT = {"gram": "g", "milliliter": "ml", "millilitre": "ml"}
+
+
+def _ica_nutrition(h):
+    """Näringsdeklarationen -> ([{label,value,unit}], basis). ICA renderar två varianter:
+    en `<table>` (rad = `<td>label</td><td>value unit</td>`) eller en kommaseparerad `<p>`
+    ("Energi (kcal) 20 kcal, Fett 0.5 g, ..."). '(kcal)/(kJ)'-suffix strippas ur etiketten."""
+    m = re.search(r"Näringsdeklaration.*?<table>(.*?)</table>", h, re.S)
+    if m:
+        table = m.group(1)
+        # Rad-/cell-baserad parsning (tål blanksteg mellan taggar - ICA serverar både
+        # minifierad och pretty-printad HTML; header-raden använder <th> -> 0 <td> -> hoppas).
+        out = []
+        for row in re.findall(r"<tr>(.*?)</tr>", table, re.S):
+            cells = [re.sub(r"<[^>]+>", "", _html.unescape(td)).strip()
+                     for td in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+            if len(cells) < 2 or not cells[0] or not cells[1]:
+                continue
+            label = re.sub(r"\s*\(.*?\)\s*$", "", cells[0])
+            vu = re.match(r"\s*([\d.,]+)\s*(\S+)?", cells[1])
+            if label and vu:
+                out.append({"label": label, "value": vu.group(1), "unit": vu.group(2)})
+        basis = None
+        hrow = re.search(r"<tr>(.*?)</tr>", table, re.S)  # header: <th>Näringsvärde</th><th>100 Gram</th>
+        ths = re.findall(r"<th[^>]*>(.*?)</th>", hrow.group(1), re.S) if hrow else []
+        if len(ths) >= 2:
+            bm = re.match(r"\s*([\d.,]+)\s*(\S+)?",
+                          re.sub(r"<[^>]+>", "", _html.unescape(ths[1])).strip())
+            if bm:
+                u = (bm.group(2) or "").strip()
+                basis = {"value": bm.group(1), "unit": _ICA_BASIS_UNIT.get(u.lower(), u) or None}
+        return out, (basis if out else None)
+    seg = _ica_section(h, "Näringsdeklaration")  # kommaseparerad variant (basis okänd -> None)
+    if not seg:
+        return [], None
+    out = []
+    for part in seg.split(","):
+        pm = re.match(r"\s*(.+?)\s+([\d.,]+)\s+(\S+)\s*$", part)
+        if pm:
+            label = re.sub(r"\s*\(.*?\)\s*$", "", pm.group(1).strip())
+            out.append({"label": label, "value": pm.group(2), "unit": pm.group(3)})
+    return out, None
+
+
+def _ica_origin(h, ingredients):
+    """Ursprungsland-sektionen; för egna märken ligger ursprunget inline i ingredienserna."""
+    o = _ica_section(h, "Ursprungsland")
+    if o:
+        return o
+    if ingredients:
+        m = re.search(r"\*\s*(?:Ursprung|Odlade i|Producerad i|Tillverkad i)\s+([A-ZÅÄÖ][\wåäöÅÄÖ]+)", ingredients)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _parse_ica_detail(h):
+    """handla.ica.se produktdetalj (SSR-microdata + sektioner) -> normaliserad info-del."""
+    ingredients = _ica_section(h, "Ingredienser")
+    if ingredients:
+        ingredients = re.sub(r"^INGREDIENSER:\s*", "", ingredients, flags=re.I).strip() or None
+    nutrition, basis = _ica_nutrition(h)
+    desc = _micro(h, "description")
+    if desc:
+        desc = re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", " ", desc))).strip()
+        desc = re.sub(r"^Information från leverantör\s*", "", desc).strip() or None
+    if not (ingredients or desc or nutrition):
+        return None
+    cats = _micro(h, "categories")
+    try:
+        cats = json.loads(cats) if cats else []
+    except (ValueError, TypeError):
+        cats = []
+    return {
+        "description": desc,
+        "ingredients": ingredients,
+        "origin": _ica_origin(h, ingredients),
+        "province": None,
+        "storage": _ica_section(h, "Förvaring"),
+        "nutrition": nutrition,
+        "nutrition_basis": basis,
+        "labels": [],
+        "source": "ica",
+        "category_raw": cats[0] if cats else None,
+    }
+
+
+async def _resolve_ica_cid(client, ean):
+    """EAN(13) -> ICA consumerItemId via globalsearch (butiks-scopat, provar flera profiler).
+    Cachas; cid='' = försökt utan träff. None vid fel (cachas ej -> nytt försök senare)."""
+    cached = db.get_ica_cid(ean)
+    if cached is not None:
+        return cached or None
+    target = str(ean).lstrip("0")
+    pad = str(ean).zfill(14)  # söket kräver 14-siffrig gtin
+    try:
+        token = await ica_token.get_token(client)
+    except Exception as ex:  # noqa: BLE001
+        log.warning("ICA detalj: token-hämtning misslyckades: %s", ex)
+        return None
+    cid = None
+    for acct in db.ica_resolve_accounts():
+        try:
+            r = await client.post(
+                ICA_SEARCH,
+                json={"queryString": pad, "take": 5, "offset": 0,
+                      "accountNumber": acct, "searchDomain": "All", "sessionId": "x"},
+                headers={"User-Agent": UA, "Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"},
+                timeout=15,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if r.status_code != 200:
+            continue
+        docs = (r.json().get("products") or {}).get("documents") or []
+        m = next((d for d in docs if str(d.get("gtin") or "").lstrip("0") == target), None)
+        if m and m.get("consumerItemId"):
+            cid = str(m["consumerItemId"])
+            break
+    db.save_ica_cid(ean, cid or "")
+    return cid
+
+
+async def _fetch_ica(client, ean):
+    """ICA produktdetalj (handla.ica.se SSR, WAF-förbi med browser-headers). Täcker ICA:s
+    egna märken (ICA-intern EAN) som Coop/Axfood saknar. EAN->cid resolvas + cachas."""
+    cid = await _resolve_ica_cid(client, ean)
+    if not cid:
+        return None
+    try:
+        r = await client.get(f"https://handla.ica.se/produkt/{cid}",
+                             headers=_ICA_BROWSER_HDRS, timeout=15)
+    except Exception as ex:  # noqa: BLE001
+        log.warning("ICA detalj %s (cid %s) misslyckades: %s", ean, cid, ex)
+        return None
+    return _parse_ica_detail(r.text) if r.status_code == 200 else None
+
+
 def _merge(parts):
     """Slå ihop produktinfo från flera källor per fält (näring från Axfood +
     ingredienser/ursprung från Coop osv). Textfält: längsta icke-tomma. `sources`
@@ -277,6 +448,12 @@ async def fetch_for_ean(client, ean, prefer_chain=None):
     need_more = not ax or not ax.get("ingredients") or len(ax.get("nutrition") or []) < 4
     co = await _fetch_coop(client, ean) if need_more else None
     parts = [p for p in (ax, co) if p and (p.get("ingredients") or p.get("description"))]
+    # ICA-detalj: enda källan för ICA:s egna märken (ICA-intern EAN, prefix 731869) som
+    # Axfood/Coop saknar; även fallback när de andra gett tomt.
+    if str(ean).lstrip("0").startswith("731869") or not parts:
+        ic = await _fetch_ica(client, ean)
+        if ic and (ic.get("ingredients") or ic.get("description")):
+            parts.append(ic)
     if not parts:
         return None
     return _merge(parts)

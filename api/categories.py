@@ -46,6 +46,8 @@ def category_from_detail(source, raw):
         return CATEGORY_MAP.get(("axfood", raw.split("|")[0]))
     if source == "coop":
         return CATEGORY_MAP.get(("coop_nav", raw))
+    if source == "ica":
+        return CATEGORY_MAP.get(("ica_nav", raw))
     return None
 
 
