@@ -32,13 +32,24 @@ Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla ked
 | Lidl | 212 | Schwarz geo_box-svep (`x-apikey`) |
 
 **Att göra (nya kedjor):**
-- [ ] **Utvärdera City Gross som 6:e kedja** (Bergendahls). Rekognoscera datakällor:
-  - Butiker: `citygross.se/butiker` (+ butikssida `citygross.se/butiker/<ort>/`).
-  - Butikssidan har **serviceutbud** = tags att mappa: Fisk, Deli, Bageri, Catering,
-    ATG, Självscanning, Svenska spel, Uttagsautomat (-> `classify_service`/`seed_types`).
-  - Erbjudanden: `citygross.se/matvaror/veckans-erbjudande` (+ `citygross.se/matvaror`).
-  - Kolla efter EAN + jämförpris i erbjudande-API:t (krävs för compare). Ny adapter
-    `adapters/citygross.py` + ev. `citygross_offers.py`, registrera i `sync.py` +
+- [ ] **City Gross som 6:e kedja** (Bergendahls). REKON KLAR - genomförbart, börja med
+  butiks-adaptern:
+  - **Butiker: KLART att bygga.** `GET https://www.citygross.se/api/v1/PageData/stores`
+    (JSON, ~39 butiker, ingen auth). Per butik: `storeName`, `address` (streetAddress/
+    zipCode/city), `storeLocation.coordinates` ("lat,lng"-sträng), `openingHours`
+    (mon-sun + holidays, opens/closes ISO -> vår week-normalisering), `services`
+    (booleans: fish/deli/bakery/catering/atg/scanning/svenskaSpel/atm/wifi/postnord/
+    schenker -> tags), `contactInformation` (phone/email), `url`, `siteId`.
+  - **storeNumber:** `GET /api/v1/sites/{siteId}/storeNumber` -> `{storeNumber, provider:"Axfood"}`.
+    Erbjudandena går alltså via **Axfoods** infrastruktur (som Willys/Hemköp) -> EAN +
+    jämförpris sannolikt tillgängliga på samma sätt.
+  - **Erbjudanden: endpoint hittad, ett kvarvarande frågetecken.** `GET /api/v1/offers?
+    size=999&currentweekoffer=true` (`nextweekoffer=true` för nästa vecka, `&category=`-
+    filter) med `Cookie: store={storeNumber}` -> `{offers, aggregations, total}`. Cookien
+    läses (utan -> 400 "Store Number is required"), men `total=0` för alla testade butiker/
+    värden via curl. Butiks-väljaren sätter troligen en session/encodad cookie -> fånga det
+    riktiga anropet via **obscura** (headless) i en uppföljning, sen verifiera EAN+jämförpris.
+  - Ny adapter `adapters/citygross.py` (+ `citygross_offers.py`), registrera i `sync.py` +
     `config.CHAINS`/`CHAIN_META`/`DATA_SOURCES` + `COMPARE_CHAINS`.
 
 ---
