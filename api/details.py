@@ -112,14 +112,48 @@ def _normalize_nutrition(nutrition):
     return out
 
 
+# Axfood-märknings-koder (produktinfons `labels`) -> läsbar svensk etikett. `environmental_facet`
+# är en vag intern facet och droppas; okända koder humaniseras ('_' -> mellanslag, versal).
+_LABELS = {
+    "keyhole": "Nyckelhålsmärkt",
+    "ecological": "Ekologisk",
+    "eu_ecological": "EU-ekologisk",
+    "krav": "KRAV",
+    "swedish_flag": "Svenskt",
+    "from_sweden": "Från Sverige",
+    "meat_from_sweden": "Kött från Sverige",
+    "swedish_bird": "Svensk fågel",
+    "rainforest_alliance": "Rainforest Alliance",
+    "msc_fish": "MSC-märkt",
+    "asc_fish": "ASC-märkt",
+    "glutenfree": "Glutenfri",
+    "laktosfree": "Laktosfri",
+    "frozen": "Fryst",
+}
+_LABELS_DROP = {"environmental_facet"}
+
+
+def _normalize_labels(labels):
+    out = []
+    for raw in labels or []:
+        key = str(raw).strip()
+        if not key or key.lower() in _LABELS_DROP:
+            continue
+        disp = _LABELS.get(key.lower(), key.replace("_", " ").capitalize())
+        if disp not in out:
+            out.append(disp)
+    return out
+
+
 def normalize_info(info):
-    """Read-time-normalisering av produktinfo: kanonisk + ordnad näring och allergener ur
-    vokabulär. Idempotent. Täcker även gamla cachade rader (raw label/value/unit)."""
+    """Read-time-normalisering av produktinfo: kanonisk + ordnad näring, allergener och
+    märkningar ur vokabulär. Idempotent. Täcker även gamla cachade rader (raw koder)."""
     if not info:
         return info
     info = dict(info)
     info["nutrition"] = _normalize_nutrition(info.get("nutrition"))
     info["allergens"] = extract_allergens(info.get("ingredients"))
+    info["labels"] = _normalize_labels(info.get("labels"))
     return info
 
 

@@ -2,7 +2,19 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from babel import Locale
+
 log = logging.getLogger("matbutiker")
+
+# Axfood anger ursprung på engelska ('Sweden'/'Norway'/'Italy'); översätt till svenska via
+# babel (engelskt namn -> ISO-kod -> svenskt namn) så det matchar övriga kedjors origin-format.
+_EN_NAME_TO_CODE = {n.lower(): c for c, n in Locale("en").territories.items() if len(c) == 2}
+_SV_TERRITORIES = Locale("sv").territories
+
+
+def _country_en_to_sv(name):
+    code = _EN_NAME_TO_CODE.get((name or "").strip().lower())
+    return _SV_TERRITORIES.get(code) if code else None
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -16,8 +28,10 @@ _EAN_CONCURRENCY = 10
 
 
 async def fetch_p_meta(client, chain, codes):
-    """{code: {"ean":..., "category":...}} via produktdetaljen (`/axfood/rest/p/{code}`).
-    category = googleAnalyticsCategory (pipe-path). Bunden parallellism."""
+    """{code: {"ean":..., "category":..., "origin":...}} via produktdetaljen
+    (`/axfood/rest/p/{code}`). category = googleAnalyticsCategory (pipe-path); origin =
+    `tradeItemCountryOfOrigin` översatt till svenska (None om saknas - ofta för färskvaror).
+    Bunden parallellism."""
     domain = DOMAIN.get(chain)
     if not domain or not codes:
         return {}
@@ -30,10 +44,14 @@ async def fetch_p_meta(client, chain, codes):
                 r = await client.get(f"https://{domain}/axfood/rest/p/{code}", headers=headers, timeout=15)
                 if r.status_code == 200:
                     d = r.json()
-                    return code, {"ean": d.get("ean") or "", "category": d.get("googleAnalyticsCategory") or None}
+                    return code, {
+                        "ean": d.get("ean") or "",
+                        "category": d.get("googleAnalyticsCategory") or None,
+                        "origin": _country_en_to_sv(d.get("tradeItemCountryOfOrigin")),
+                    }
             except Exception as e:  # noqa: BLE001
                 log.warning("Axfood meta %s misslyckades: %s", code, e)
-        return code, {"ean": "", "category": None}
+        return code, {"ean": "", "category": None, "origin": None}
 
     return dict(await asyncio.gather(*(one(c) for c in codes)))
 

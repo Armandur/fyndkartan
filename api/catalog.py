@@ -203,14 +203,14 @@ async def _search_ica(client, q, limit):
 
 
 # --- Axfood (willys.se/hemkop.se /search, ingen auth; EAN via ean_cache) ------------------
-def _norm_axfood(it, chain, ean, cat_raw):
+def _norm_axfood(it, chain, ean, cat_raw, origin):
     img = (it.get("image") or {})
     return {
         "chain": chain,
         "ean": ean,
         "name": it.get("name"),
         "brand": (it.get("manufacturer") or "").strip() or None,
-        "origin": None,
+        "origin": _origin_list(origin),
         "image": img.get("url") if isinstance(img, dict) else None,
         "category": categories.category_for(chain, cat_raw or None),
         "package_size": it.get("productLine2") or None,
@@ -232,9 +232,10 @@ async def _search_axfood(client, chain, q, limit):
     items = r.json().get("results") or []
     codes = [it.get("code") for it in items if it.get("code")]
     code_eans = db.get_cached_eans(codes)  # warmad ur offers/tidigare sök
-    # Resolva koder utan EAN via /p/{code} (capat) - ger även kategori; persistera till ean_cache.
+    code_cat = db.get_axfood_categories(codes)   # förvärmd kategori
+    code_origin = db.get_axfood_origins(codes)   # förvärmt ursprung (svenska)
+    # Resolva koder utan EAN via /p/{code} (capat) - ger även kategori + ursprung; persistera.
     uncached = [c for c in codes if not code_eans.get(c)][:AXFOOD_RESOLVE_CAP]
-    code_cat = {}
     if uncached:
         meta = await axfood_offers.fetch_p_meta(client, chain, uncached)
         db.save_ean_meta(meta)
@@ -243,12 +244,14 @@ async def _search_axfood(client, chain, q, limit):
                 code_eans[c] = m["ean"]
             if m.get("category"):
                 code_cat[c] = m["category"]
+            if m.get("origin"):
+                code_origin[c] = m["origin"]
     out = []
     for it in items:
         code = it.get("code")
         ean = matching.normalize_ean(code_eans.get(code))
         cat_raw = it.get("googleAnalyticsCategory") or code_cat.get(code)
-        out.append(_norm_axfood(it, chain, ean, cat_raw))
+        out.append(_norm_axfood(it, chain, ean, cat_raw, code_origin.get(code)))
     return out
 
 

@@ -217,6 +217,7 @@ def init_db():
     _ensure_column(conn, "offers", "member_price", "INTEGER")
     _ensure_column(conn, "offers", "savings", "REAL")
     _ensure_column(conn, "ean_cache", "category", "TEXT")  # Axfood googleAnalyticsCategory (förvärmd)
+    _ensure_column(conn, "ean_cache", "origin", "TEXT")  # Axfood ursprungsland (svenska, förvärmt)
     _ensure_column(conn, "stores", "hours", "TEXT")  # JSON {week, exceptions} - normaliserad veckoöppettid
     conn.commit()
     conn.close()
@@ -437,13 +438,15 @@ def save_eans(mapping):
 
 
 def save_ean_meta(mapping):
-    """Förvärm code -> {ean, category} (Axfood /p/{code}). category = googleAnalyticsCategory."""
+    """Förvärm code -> {ean, category, origin} (Axfood /p/{code}). category =
+    googleAnalyticsCategory; origin = ursprungsland (svenska)."""
     if not mapping:
         return
     conn = get_conn()
     conn.executemany(
-        "INSERT OR REPLACE INTO ean_cache (code, ean, category, fetched_at) VALUES (?,?,?,?)",
-        [(c, m.get("ean") or "", m.get("category") or None, _now()) for c, m in mapping.items()],
+        "INSERT OR REPLACE INTO ean_cache (code, ean, category, origin, fetched_at) VALUES (?,?,?,?,?)",
+        [(c, m.get("ean") or "", m.get("category") or None, m.get("origin") or None, _now())
+         for c, m in mapping.items()],
     )
     conn.commit()
     conn.close()
@@ -478,6 +481,21 @@ def get_axfood_categories(codes):
     ).fetchall()
     conn.close()
     return {r["code"]: r["category"] for r in rows}
+
+
+def get_axfood_origins(codes):
+    """{code: origin} ur ean_cache för Axfood-koder (förvärmt ursprungsland, svenska)."""
+    codes = list(codes)
+    if not codes:
+        return {}
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT code, origin FROM ean_cache WHERE origin IS NOT NULL AND origin != '' "
+        f"AND code IN ({','.join('?' * len(codes))})",
+        codes,
+    ).fetchall()
+    conn.close()
+    return {r["code"]: r["origin"] for r in rows}
 
 
 def coop_offer_eans():
