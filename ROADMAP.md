@@ -470,11 +470,10 @@ domäner:
     `category_map` in-place, omappade sorteras först/markeras). Avslöjade att
     produktdetaljens `googleAnalyticsCategory` använder andra segment-namn än kampanjen
     (t.ex. `kott-chark-och-fagel` vs `kott-fagel-och-chark`) - varianterna seedade.
-    - [ ] **Kategori-flikens (#cats) tabell: bättre kedje-chips + filter/sortering.**
-      `chain_key`-kolumnen visar råa nycklar (`axfood`/`coop_nav`/`citygross`...) utan
-      kedje-chip/färg - ge dem rätt chips (axfood -> Willys/Hemköp, coop_nav -> Coop osv).
-      Gör dessutom alla kolumner (kedja, råkategori, antal, kanonisk) filtrerbara/sorterbara
-      (idag bara fritext-sök). Spegla ev. taggfliken.
+    - [x] **Kategori-flikens (#cats) tabell: bättre kedje-chips + filter/sortering BYGGT.**
+      `chain_key` visas nu som färgkodat kedje-chip (axfood -> Willys-färg, coop/coop_nav ->
+      Coop osv). Källfilter-dropdown + "Bara omappade"-växel + sorterbara kolumner (kedja/
+      råkategori/antal/kanonisk) med pilindikatorer och antalsräknare; filter överlever sort.
   - [x] **Coop-kategoriförvärmning BYGGT** (`warm_coop_categories`). Coops offer-nivå
     (Färsk/Kolonial/Nonfood) är för grov och delvis felklassad (Nonfood innehöll
     grönsaker+kaffe). Förvärmar nu `product_info` per Coop-EAN via personalization-API:t
@@ -483,8 +482,10 @@ domäner:
   - [x] **Kategori- + deal_type-filter + sort i compare/favorit-vyer BYGGT.** Alla tre
     erbjudande-vyerna (enskild butik, prisjämför nära, favoriters erbjudanden) har nu samma
     kontroller: text/sort/kategori/deal. compare-produkter bär kanonisk category-nyckel.
-  - [ ] Frukt/grönt-viktvaror hos Coop får `ovrigt` (ingen produktdetalj på slump-EAN);
-    ev. namn-heuristik eller annan Coop-signal senare.
+  - [x] **Frukt/grönt-viktvaror hos Coop -> `frukt_gront` BYGGT.** Slump-EAN saknar
+    produktdetalj och föll till `ovrigt`. `categories.category_from_name` mappar tydliga
+    färskvaru-termer (helord) -> frukt_gront, men BARA som fallback när kategorin annars
+    blir ovrigt (varor med egen kategori orörda). Inkopplad i get_store_offers + list_products.
   - [x] ICA finare kategorier LÖST via produktdetaljens breadcrumb-topp (`category_from_detail`
     source "ica" -> `ica_nav`-mappning); ehandeln var aldrig WAF-skyddad mot rätt headers.
 
@@ -507,8 +508,14 @@ aggregering - stäm av innan skarp drift.
   historiken på.
 
 **Vad som saknas / måste byggas:**
-- **Arkivering av offers.** Idag kastas en butiks offers vid varje synk (`replace_store_offers`
-  gör DELETE + re-insert), så ingen historik sparas. Steg 4 = skriv i stället varje observation
-  (chain, store_id, ean, price, comparison_value, valid_to, observed_at) till en append-only
-  `offer_observations`-tabell parallellt med replace.
-- Avvägning: spara per butik (stort) vs aggregerat per kedja/nationellt (juridiskt känsligare).
+- [x] **Arkivering av offers BYGGT (#1).** `replace_store_offers` kallar nu `archive_offers`
+  före DELETE+insert: varje observation skrivs append-only till `offer_observations`
+  (chain, store_id, offer_id, ean, name, price, comparison_value/unit, savings, member_price,
+  valid_to, observed_at), deduppat per (pris, jämförvärde, savings, valid_to) per offer_id ->
+  bara faktiska prisändringar lagras. **Per butik** (medvetet: vi vill alltid kunna se
+  avvikelser per butik). Ordinarie pris spåras via `savings` + `member_price`.
+  `offer_observations_stats()` för konsolen.
+- [ ] **UI/grafer för prishistorik** - endpoint + vy som visar tidsserien per EAN/produkt
+  (pris över tid, per kedja/butik). Ej byggt.
+- Avvägning kvarstår: per butik (nu, stort) vs aggregerat per kedja/nationellt (juridiskt
+  känsligare) - stäm av ToS innan ev. nationell aggregering.
