@@ -275,6 +275,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     token-överlapp missar ("Krossade Tomater" ~ "Tomatkross") och slipper eko-falskmatchningar.
     - [ ] (framtid) **LLM som domare** ovanpå embeddings-kandidaterna - låt en LLM avgöra de
       osäkra paren (embeddings rankar/grovsållar, LLM bekräftar). Ej byggt.
+  - [ ] **Förhandsmatcha märkesvaror ur katalogen (inte bara offers).** Idag kommer paringslistan
+    från offers-cachen, så man kan bara para varor som råkar ha ett aktuellt erbjudande. Idé: sök
+    private-label-produkter ur kedjornas fulla katalog (återanvänd `catalog.py` + `_is_private`),
+    para dem i förväg och lagra som vanligt i `product_matches`. En paring är EAN-nyckel + snapshot
+    och gör inget förrän offers finns -> den **tänds automatiskt** när ett erbjudande dyker upp
+    (build_comparisons grupperar via manual_groups). Front-loadar paringsjobbet. **Egen "väntar på
+    erbjudande"-sektion** för förhandsmatchade utan aktuellt offer (visa namn/märke/bild, ev.
+    katalog-hyllpris som fingervisning). Förbehåll: katalogsöket är fråga-baserat (term för term,
+    ingen full dump); Axfood kräver EAN-resolve; Lidl saknar EAN (utesluts).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
   + editerbar `tag_map` (label -> typ). Typen härleds vid läsning (`tags.effective_type`):
   override från tag_map annars `classify_service`-seed, så admin-ändringar slår igenom
