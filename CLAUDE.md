@@ -40,6 +40,7 @@ api/                 # Python-paketet (importeras som `api`)
   matching.py        # cross-chain EAN-matchning: normalize_ean(), _norm_unit() (kanonisk jämförenhet), build_comparisons()
   brands.py          # märkesvaru-paring: private-label-detektion + förslag + APIRouter (/v1/admin/...)
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API + ICA SSR-detalj (handla.ica.se, cid via globalsearch)
+  catalog.py         # unified katalog-sök (live fan-out mot kedjornas sök-API:er, hela sortimentet/hyllpris, EAN-grupperat) -> GET /v1/products/catalog
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
@@ -191,6 +192,17 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   kategori, brand/origin, package, deal_type) + kedjor + prisintervall. Namnmatchning i
   Python (Unicode-skiftläge; SQLite `LOWER` fäller bara ASCII). Begränsning: bara butiker
   vars offers hämtats (lazy-cache).
+- **Unified katalog-sök (`catalog.py` + `GET /v1/products/catalog?q=`):** **live fan-out** mot
+  kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt hyllpris** (ej
+  butikslokalt, ej offers). En upptäckts-funktion, medvetet skild från `list_products`/`/search`
+  (offers-cachen = butikslokala deals, appens kärna). Per kedja `_search_<chain>` -> gemensam
+  normaliserad form, grupperat på EAN cross-chain (`CatalogProduct` med per-kedje-`prices`).
+  Kedjor: City Gross (Loop54 search/quick), Coop (perso-search, `_parse_coop_item`), ICA
+  (globalsearch + flaggskepps-accountNumber + token), Willys/Hemköp (`/search`, EAN via `ean_cache`
+  -> okända katalog-koder blir fristående poster). Lidl saknas (ingen EAN i deras sök). Per-kedja
+  timeout -> delresultat. Honest schema: INGA deal_type/offer_count (hyllpris ≠ deal). Katalog-
+  specifika kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i `category_map`.
+  Bara API (ingen frontend än). Auth via `require_consumer` som övriga `/v1`.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och

@@ -42,6 +42,37 @@ class ProductSearchResponse(BaseModel):
     products: list[Product] = Field(..., description="Distinkta produkter")
 
 
+class CatalogPrice(BaseModel):
+    chain: str = Field(..., description="Kedja")
+    price: float | None = Field(None, description="Hyllpris i kr (nationellt/representativt)")
+    comparison_value: float | None = Field(None, description="Jämförpris-värde eller null")
+    comparison_unit: str | None = Field(None, description="Jämförpris-enhet (kg/l/st...) eller null")
+
+
+class CatalogProduct(BaseModel):
+    """Produkt ur kedjornas KATALOG-sök (hela sortimentet, nationellt hyllpris - ej offers)."""
+
+    ean: str | None = Field(None, description="EAN/GTIN, eller null")
+    name: str | None = Field(None, description="Produktnamn")
+    brand: str | None = Field(None, description="Varumärke eller null")
+    origin: list[str] | None = Field(None, description="Ursprungsländer (lista) eller null")
+    image: str | None = Field(None, description="Bild-URL")
+    category: str | None = Field(None, description="Kanonisk kategori-nyckel")
+    package_size: str | None = Field(None, description="Förpackningsstorlek (sträng) eller null")
+    package_value: float | None = Field(None, description="Förpackningens mängd (numeriskt) eller null")
+    package_unit: str | None = Field(None, description="Förpackningens enhet eller null")
+    chains: list[str] = Field(..., description="Kedjor vars katalog har produkten")
+    prices: list[CatalogPrice] = Field(..., description="Hyllpris per kedja (stigande)")
+    price_min: float | None = Field(None, description="Lägsta hyllpris i kr")
+    price_max: float | None = Field(None, description="Högsta hyllpris i kr")
+
+
+class CatalogSearchResponse(BaseModel):
+    query: str = Field(..., description="Söktexten")
+    count: int = Field(..., description="Antal träffar")
+    products: list[CatalogProduct] = Field(..., description="Produkter (hela sortimentet, hyllpris)")
+
+
 class ProductCategoryResponse(BaseModel):
     category: str = Field(..., description="Kanonisk kategori-nyckel")
     count: int = Field(..., description="Antal produkter")

@@ -162,6 +162,35 @@ DEFAULT_CATEGORY_MAP = {
     ("citygross", "Hem & fritid"): "hem_hushall",
     ("citygross", "Köket"): "hem_hushall",
     ("citygross", "Blommor"): "hem_hushall",
+    # Katalog-sök (api/catalog.py) - kedjornas sök-API:er använder delvis andra/finare
+    # kategori-vokabulärer än offers. City Gross superCategory ur search/quick:
+    ("citygross", "Skafferiet"): "skafferi",
+    ("citygross", "Dryck"): "dryck",
+    ("citygross", "Barn"): "barn",
+    # ICA mainCategoryName ur globalsearch (helt egen vokabulär, finare än offer-nivån):
+    ("ica", "Ost"): "mejeri_agg",
+    ("ica", "Fågel"): "kott_chark",
+    ("ica", "Pålägg & deli chark"): "kott_chark",
+    ("ica", "Drycker varma"): "dryck",
+    ("ica", "Drycker"): "dryck",
+    ("ica", "Pasta, ris, mos & matgryner"): "skafferi",
+    ("ica", "All världens mat"): "skafferi",
+    ("ica", "Matöverkänslighet kolonial"): "skafferi",
+    ("ica", "Baka"): "skafferi",
+    ("ica", "Skafferiet sylt, mos, marmelad & dessert"): "skafferi",
+    ("ica", "Mjukt fikabröd, kex & kakor"): "brod_bageri",
+    ("ica", "Bröd"): "brod_bageri",
+    ("ica", "Bröd hårt"): "brod_bageri",
+    ("ica", "Butiksbakat bröd & konditori"): "brod_bageri",
+    ("ica", "Frukt"): "frukt_gront",
+    ("ica", "Grönsaker"): "frukt_gront",
+    ("ica", "Skönhet"): "halsa_skonhet",
+    ("ica", "Blöjor & babyvård"): "barn",
+    ("ica", "Konfektyr"): "godis_snacks",
+    ("ica", "Glass"): "godis_snacks",
+    ("ica", "Färdigmat"): "fardigmat",
+    ("ica", "Färdigmat fryst"): "fardigmat",
+    ("ica", "Fisk & skaldjur"): "fisk_skaldjur",
 }
 
 # Private-label-brand-rötter per kedja (egna märkesvaror). Editerbar i admin-UI
@@ -257,6 +286,11 @@ OWN_APIS = [
      "desc": "Bläddra produkter i en kanonisk kategori (ur erbjudande-cachen).",
      "params": [{"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_LIMIT, _P_CHAIN],
      "returns": _RET_PRODUCT},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog?q=kaffe",
+     "desc": "Live katalog-sök mot kedjornas NATIVA sök-API:er (hela sortimentet, nationellt "
+             "hyllpris - ej offers). EAN-grupperat cross-chain. Lidl saknas.",
+     "params": [{"name": "q", "desc": "Söktext mot kedjornas katalog (min 2 tecken)"}, _P_LIMIT],
+     "returns": schemas.fields_doc(schemas.CatalogSearchResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
      "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor.",
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},

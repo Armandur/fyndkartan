@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, categories, config, database, details, images, matching, schemas, tags
+from . import apilog, auth, brands, catalog, categories, config, database, details, images, matching, schemas, tags
 from .adapters import axfood_offers, citygross_offers, coop_offers, ica_offers
 from .database import (
     get_cached_eans,
@@ -1032,6 +1032,22 @@ async def products_by_category(
         return JSONResponse({"detail": "Okänd kategori."}, status_code=400)
     products = database.list_products(category=category, chain=chain, limit=max(1, min(limit, 200)))
     return {"category": category, "count": len(products), "products": products}
+
+
+@app.get("/v1/products/catalog", responses={200: {"model": schemas.CatalogSearchResponse}})
+async def products_catalog(
+    q: str = Query(..., min_length=2, description="Söktext mot kedjornas katalog-sök"),
+    limit: int = 60,
+    _auth=Depends(require_consumer),
+):
+    """Live katalog-sök mot kedjornas NATIVA sök-API:er - **hela sortimentet**, nationellt/
+    representativt **hyllpris** (ej butikslokalt, ej erbjudanden), grupperat på EAN cross-chain.
+    Skilt från /v1/products/search (offers-cachen = butikslokala deals). Lidl saknas (ingen EAN
+    i deras sök). Delresultat om en kedja är seg/nere; Axfood-EAN resolvas via ean_cache så
+    okända katalog-koder blir fristående poster (ingen cross-chain-matchning)."""
+    async with apilog.make_client(follow_redirects=True) as client:
+        products = await catalog.catalog_search(client, q.strip(), limit=max(1, min(limit, 100)))
+    return {"query": q.strip(), "count": len(products), "products": products}
 
 
 @app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})

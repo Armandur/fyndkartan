@@ -205,11 +205,17 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
           första träffen (LIMIT 1). Bildcachen rensad så det slår igenom.
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
-  - [ ] **Unified produktsök mot kedjornas NATIVA katalog-API:er.** Nuvarande
-    `/v1/products/search` söker bara offers-cachen. Kedjorna har riktiga katalog-sök-API:er
-    (City Gross `Loop54/search/quick?SearchQuery=`, Axfood-sök, ev. ICA/Coop) som täcker
-    hela sortimentet - bygg ett unified sök ovanpå dem (live eller cachat). Närbesläktat
-    med Fulla sortiment men lättare (sök on-demand, ingen full spegling).
+  - [x] **Unified produktsök (API) BYGGT (`api/catalog.py` + `GET /v1/products/catalog?q=`).**
+    Live fan-out mot kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt
+    hyllpris** (ej butikslokalt, ej offers - en upptäckts-funktion skild från `/v1/products/search`).
+    Per kedja en `_search_<chain>` -> normaliserad form, grupperat på EAN cross-chain (`CatalogProduct`
+    med per-kedje-`prices`). City Gross (Loop54 search/quick), Coop (perso-search, återanvänder
+    `_parse_coop_item`), ICA (globalsearch, flaggskepps-accountNumber), Willys/Hemköp (`/search`,
+    EAN via `ean_cache` -> okända katalog-koder blir fristående). Lidl saknas (ingen EAN). Per-kedja
+    timeout -> delresultat om en fallerar. Honest schema: inga deal_type/offer_count (hyllpris, ej
+    deals). Katalog-kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i
+    `DEFAULT_CATEGORY_MAP`. **Bara API (v1)** - ingen frontend än (medvetet val). Kvar: ev. per-query-
+    cache (typeahead), Axfood-EAN-resolve för fler cross-chain-träffar, frontend-läge.
   - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
     EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
     ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):
