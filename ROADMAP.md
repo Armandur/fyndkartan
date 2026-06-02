@@ -214,8 +214,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     EAN via `ean_cache` -> okända katalog-koder blir fristående). Lidl saknas (ingen EAN). Per-kedja
     timeout -> delresultat om en fallerar. Honest schema: inga deal_type/offer_count (hyllpris, ej
     deals). Katalog-kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i
-    `DEFAULT_CATEGORY_MAP`. **Bara API (v1)** - ingen frontend än (medvetet val). Kvar: ev. per-query-
-    cache (typeahead), Axfood-EAN-resolve för fler cross-chain-träffar, frontend-läge.
+    `DEFAULT_CATEGORY_MAP`. **Bara API (v1)** - ingen frontend än (medvetet val).
+    Per-query-cache (in-process, 90s TTL, cachar full lista + limit-slicar) skyddar typeahead.
+    Axfood-EAN-resolve: koder utan EAN i `ean_cache` resolvas via `/p/{code}` (capat `AXFOOD_RESOLVE_CAP`
+    /kedja+sök, ger även kategori, persisteras -> warmar) - lyfte cross-chain-träffarna kraftigt
+    (t.ex. "yoghurt" 4-kedjes-matchningar med alla hyllpriser). Kvar: frontend-läge.
   - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
     EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
     ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):

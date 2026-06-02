@@ -18,15 +18,40 @@ via `ean_cache` (warmad ur offers) -> många katalog-koder saknar EAN och blir f
 import asyncio
 import logging
 import re
+import time
 
 from . import categories, config, database as db, details, matching
-from .adapters import ica_token
+from .adapters import axfood_offers, ica_token
 
 log = logging.getLogger("matbutiker")
 
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 _CHAIN_TIMEOUT = 12  # per kedja; delresultat om en är seg
+# Axfood-koder utan EAN i ean_cache resolvas via /p/{code} (ger även kategori), capat per
+# kedja+sök och persisterat till ean_cache -> warmar över tid (färre live-resolves sen).
+AXFOOD_RESOLVE_CAP = 15
+
+# Per-query-cache (in-process): kort TTL, skyddar mot typeahead/upprepade sök. Cachar den
+# fulla grupperade+sorterade listan per (q, per_chain); limit-slicen sker vid retur.
+_CACHE_TTL = 90
+_CACHE_MAX = 256
+_cache = {}  # (q_lower, per_chain) -> (monotonic_ts, products)
+
+
+def _cache_get(key):
+    hit = _cache.get(key)
+    if hit and time.monotonic() - hit[0] < _CACHE_TTL:
+        return hit[1]
+    _cache.pop(key, None)
+    return None
+
+
+def _cache_put(key, products):
+    if len(_cache) >= _CACHE_MAX:  # enkel evict: släng äldsta
+        oldest = min(_cache, key=lambda k: _cache[k][0])
+        _cache.pop(oldest, None)
+    _cache[key] = (time.monotonic(), products)
 
 
 def _price_num(v):
@@ -178,7 +203,7 @@ async def _search_ica(client, q, limit):
 
 
 # --- Axfood (willys.se/hemkop.se /search, ingen auth; EAN via ean_cache) ------------------
-def _norm_axfood(it, chain, ean):
+def _norm_axfood(it, chain, ean, cat_raw):
     img = (it.get("image") or {})
     return {
         "chain": chain,
@@ -187,7 +212,7 @@ def _norm_axfood(it, chain, ean):
         "brand": (it.get("manufacturer") or "").strip() or None,
         "origin": None,
         "image": img.get("url") if isinstance(img, dict) else None,
-        "category": categories.category_for(chain, it.get("googleAnalyticsCategory") or None),
+        "category": categories.category_for(chain, cat_raw or None),
         "package_size": it.get("productLine2") or None,
         "package_value": None,
         "package_unit": None,
@@ -206,11 +231,24 @@ async def _search_axfood(client, chain, q, limit):
     r.raise_for_status()
     items = r.json().get("results") or []
     codes = [it.get("code") for it in items if it.get("code")]
-    code_eans = db.get_cached_eans(codes)  # warmad ur offers; många katalogkoder saknas -> None
+    code_eans = db.get_cached_eans(codes)  # warmad ur offers/tidigare sök
+    # Resolva koder utan EAN via /p/{code} (capat) - ger även kategori; persistera till ean_cache.
+    uncached = [c for c in codes if not code_eans.get(c)][:AXFOOD_RESOLVE_CAP]
+    code_cat = {}
+    if uncached:
+        meta = await axfood_offers.fetch_p_meta(client, chain, uncached)
+        db.save_ean_meta(meta)
+        for c, m in meta.items():
+            if m.get("ean"):
+                code_eans[c] = m["ean"]
+            if m.get("category"):
+                code_cat[c] = m["category"]
     out = []
     for it in items:
-        ean = matching.normalize_ean(code_eans.get(it.get("code")))
-        out.append(_norm_axfood(it, chain, ean))
+        code = it.get("code")
+        ean = matching.normalize_ean(code_eans.get(code))
+        cat_raw = it.get("googleAnalyticsCategory") or code_cat.get(code)
+        out.append(_norm_axfood(it, chain, ean, cat_raw))
     return out
 
 
@@ -234,19 +272,25 @@ async def _safe(chain, coro):
 
 async def catalog_search(client, q, per_chain=20, limit=60):
     """Live fan-out mot kedjornas katalog-sök -> grupperade CatalogProduct (EAN cross-chain).
-    Delresultat om en kedja fallerar/timeoutar. per_chain = träffar per kedja att hämta."""
+    Delresultat om en kedja fallerar/timeoutar. per_chain = träffar per kedja att hämta.
+    Kort per-query-cache (skyddar typeahead); cachar full lista, limit-slicas vid retur."""
+    ckey = ((q or "").strip().lower(), per_chain)
+    cached = _cache_get(ckey)
+    if cached is not None:
+        return cached[:limit]
     results = await asyncio.gather(*(
         _safe(ch, fn(client, q, per_chain)) for ch, fn in _SEARCHERS.items()
     ))
     items = [it for _, lst in results for it in lst if it and it.get("name")]
     groups = {}
     for it in items:
-        key = it["ean"] or f"{it['chain']}:{(it['name'] or '').lower()}"
-        groups.setdefault(key, []).append(it)
+        gkey = it["ean"] or f"{it['chain']}:{(it['name'] or '').lower()}"
+        groups.setdefault(gkey, []).append(it)
     products = [_build_product(g) for g in groups.values()]
     # Flest kedjor först, sedan billigast, sedan namn.
     products.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                                  (p["name"] or "").lower()))
+    _cache_put(ckey, products)
     return products[:limit]
 
 
