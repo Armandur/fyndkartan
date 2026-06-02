@@ -98,6 +98,14 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (`OFFERS_MIN_REFRESH`) så källans kvarliggande utgångna offers inte ger refetch-loop.
   Compare/favoriter laddar via samma `_ensure_offers` (TTL-respekterande, ej tvingat).
   Byggt för ICA, Willys, Hemköp, Coop (ej Lidl). Coop/Axfood bär `member_price`.
+- **Prishistorik (steg 4, `offer_observations` + `GET /v1/products/{ean}/history`):** offers
+  churnar vid synk (`replace_store_offers` = DELETE+insert), så historiken skrivs append-only.
+  `archive_offers` (kallas före replace) skriver en observation per offer NÄR (pris/jämförvärde/
+  savings/valid_to) ändrats sedan senaste -> kompakt prisförändrings-logg, **per butik** (avvikelser
+  per butik). `savings`+`member_price` låter ordinarie pris härledas. `database.price_history(ean)`
+  grupperar per kedja och kollapsar lika prisnivå (butiker med samma pris -> en punkt, `stores`
+  räknar). Konsument-appens produktmodal ritar en inline-SVG stegfunktion (lucka vid utgånget
+  erbjudande - fyndspårning, inte prisindex). Stats i konsolens Översikt (`offer_observations_stats`).
 - **Coop-berikning:** `coop.py` gör ett detalj-anrop per butik (bunden
   parallellism) för `services` -> tags och `concept` -> brand. Tyngre synk men
   ger samma metadata som ICA.

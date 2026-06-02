@@ -611,6 +611,47 @@ def offer_observations_stats():
     return {"rows": r["c"], "products": r["p"], "since": r["o"]}
 
 
+def price_history(ean):
+    """Prishistorik för en EAN ur `offer_observations`, grupperad per kedja och kollapsad på
+    på varandra följande lika prisnivå (butiker med samma pris/period vid samma synk -> EN punkt,
+    `stores` räknar dem). Varje punkt: pris + jämförpris + medlemspris-flagga + `valid_to`
+    (när erbjudandet går ut, för stegfunktion/gap-rendering klient-sida). Tidsordnat per kedja."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, store_id, name, price, comparison_value, comparison_unit, member_price, "
+        "valid_to, observed_at FROM offer_observations WHERE ean=? "
+        "ORDER BY chain, observed_at, store_id",
+        (ean,),
+    ).fetchall()
+    conn.close()
+    name = None
+    by_chain = {}
+    for r in rows:
+        name = name or r["name"]
+        by_chain.setdefault(r["chain"], []).append(r)
+    out = []
+    for chain, obs in by_chain.items():
+        pts = []
+        for o in obs:
+            p = o["price"]
+            last = pts[-1] if pts else None
+            same = (last and last["valid_to"] == o["valid_to"]
+                    and ((last["price"] is None and p is None)
+                         or (last["price"] is not None and p is not None
+                             and abs(last["price"] - p) < 0.005)))
+            if same:
+                last["stores"] += 1
+                last["member_price"] = last["member_price"] or bool(o["member_price"])
+                continue
+            pts.append({
+                "observed_at": o["observed_at"], "price": p,
+                "comparison_value": o["comparison_value"], "comparison_unit": o["comparison_unit"],
+                "member_price": bool(o["member_price"]), "valid_to": o["valid_to"], "stores": 1,
+            })
+        out.append({"chain": chain, "points": pts})
+    return {"ean": ean, "name": name, "chains": out}
+
+
 def replace_store_offers(chain, store_id, offers):
     """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON.
     Arkiverar prisförändringar (prishistorik) innan replace."""

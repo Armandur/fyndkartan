@@ -448,6 +448,7 @@ async def admin_overview(_=Depends(require_admin)):
         ],
         "offers": {"rows": offers_rows, "stores_cached": offers_stores},
         "ean_cache": ean_n,
+        "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
         "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
     }
@@ -1091,6 +1092,18 @@ async def product_image(ean: str, size: str = "default", _auth=Depends(require_c
         return JSONResponse({"detail": "Ingen bild hittades."}, status_code=404)
     path, ct = res
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/v1/products/{ean}/history", responses={200: {"model": schemas.PriceHistoryResponse}})
+async def product_price_history(ean: str, _auth=Depends(require_consumer)):
+    """Prishistorik (tidsserie) för en EAN ur arkiverade erbjudande-observationer
+    (`offer_observations`). Grupperad per kedja, kollapsad på lika prisnivå (butiker med samma
+    pris -> en punkt, `stores` räknar dem). Erbjudande-data = fyndspårning: en produkt syns
+    bara när den varit nedsatt, så serien har luckor (offer utgår vid `valid_to`)."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    return database.price_history(e)
 
 
 @app.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})

@@ -295,3 +295,24 @@ class ProductInfoResponse(BaseModel):
     info: ProductInfoData | None = Field(None, description="Produktinfo, eller null")
     fetched_at: str | None = Field(
         None, description="När infon hämtades/cachades (ISO); null vid hämtningsfel")
+
+
+class PricePoint(BaseModel):
+    observed_at: str = Field(..., description="När observationen registrerades (ISO)")
+    price: float | None = Field(None, description="Erbjudandepris (kr)")
+    comparison_value: float | None = Field(None, description="Jämförpris (per enhet)")
+    comparison_unit: str | None = Field(None, description="Jämförprisets enhet (kg/l/st)")
+    member_price: bool = Field(False, description="Om priset är medlems-/klubbpris")
+    valid_to: str | None = Field(None, description="Erbjudandet gäller t.o.m. (ISO-datum)")
+    stores: int = Field(1, description="Antal butiker med samma pris/period vid den observationen")
+
+
+class PriceHistoryChain(BaseModel):
+    chain: str = Field(..., description="Kedjenyckel")
+    points: list[PricePoint] = Field(..., description="Tidsordnade prispunkter (prisändringar)")
+
+
+class PriceHistoryResponse(BaseModel):
+    ean: str = Field(..., description="Normaliserad EAN/GTIN")
+    name: str | None = Field(None, description="Produktnamn (representativt)")
+    chains: list[PriceHistoryChain] = Field(..., description="Prishistorik per kedja")

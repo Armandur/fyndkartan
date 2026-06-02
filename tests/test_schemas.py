@@ -77,8 +77,25 @@ def test_offer_matches_model():
     return n
 
 
+def test_price_history_matches_model():
+    """Prishistorik-svar (price_history) ska validera mot PriceHistoryResponse, för EAN:er
+    med flest observationer. Tom om inga arkiverats än - då hoppas testet."""
+    conn = database.get_conn()
+    eans = [r["ean"] for r in conn.execute(
+        "SELECT ean FROM offer_observations WHERE ean IS NOT NULL "
+        "GROUP BY ean ORDER BY COUNT(*) DESC LIMIT 10"
+    ).fetchall()]
+    conn.close()
+    if not eans:
+        return 0
+    for e in eans:
+        schemas.PriceHistoryResponse.model_validate(database.price_history(e))
+    return len(eans)
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
     print(f"OK: {test_store_matches_model()} butiker validerade mot Store")
     print(f"OK: {test_offer_matches_model()} erbjudanden validerade mot Offer")
+    print(f"OK: {test_price_history_matches_model()} prishistorik-EAN validerade mot PriceHistoryResponse")

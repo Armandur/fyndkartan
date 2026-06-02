@@ -307,6 +307,12 @@ OWN_APIS = [
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},
                 {"name": "size", "desc": "thumb | default | full"}],
      "returns": [{"field": "(binär)", "desc": "image/* - inte JSON"}]},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/history",
+     "desc": "Prishistorik (tidsserie) per EAN ur arkiverade erbjudande-observationer, "
+             "grupperad per kedja och kollapsad på lika prisnivå. Fyndspårning -> luckor när "
+             "varan inte varit nedsatt.",
+     "params": [{"name": "ean", "desc": "Path: EAN/GTIN"}],
+     "returns": schemas.fields_doc(schemas.PriceHistoryResponse)},
     {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5",
      "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt.",
      "params": [{"name": "lat, lng, radius_km", "desc": "Område runt punkt"},
