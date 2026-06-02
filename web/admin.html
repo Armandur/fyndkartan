@@ -545,6 +545,27 @@
       const cs = [...new Set(marq.products.flatMap(p => p.chains))];
       const opts = `<option value="">Alla kedjor</option>` + cs.map(c => `<option value="${c}">${c}</option>`).join("");
       document.getElementById("marques").innerHTML = `
+        <details class="alert alert-light border small mb-3" open>
+          <summary class="fw-semibold" style="cursor:pointer">Vad gör jag här? (märkesvaru-paring)</summary>
+          <p class="mb-1 mt-2">Egna märkesvaror (ICA, Garant, Coop, X-tra, City Gross…) har kedjeinterna
+            EAN och matchar därför <em>aldrig</em> automatiskt mellan kedjor. Här parar du ihop
+            motsvarigheter manuellt så att de får cross-chain-prisjämförelse i appen.</p>
+          <ul class="mb-0">
+            <li>Välj en produkt till vänster → granska förslagen (semantiskt rankade) eller sök
+              manuellt → markera motsvarigheterna → <em>Para ihop valda</em>.</li>
+            <li>Para bara <strong>samma vara</strong> (samma innehåll, storlek och variant –
+              naturell med naturell, 500 g med 500 g). Jämförelsen bygger på din paring, så en
+              felaktig paring ger fel prisjämförelse för slutanvändaren.</li>
+            <li>Förslagen är <strong>hjälp, inte facit</strong> – verifiera med <em>info</em>
+              (ingredienser/förpackning) och klicka på bilden för att granska den i full storlek.</li>
+            <li>Samma EAN i flera kedjor (t.ex. Willys + Hemköp) matchar redan automatiskt och
+              behöver inte paras – de visas hopslagna med flera kedje-chips.</li>
+            <li>Ett förslag som redan ligger i en paring visar <em>→ grupp N</em>; klick lägger din
+              valda produkt i den befintliga gruppen i stället för att skapa en ny.</li>
+            <li>Under <em>Befintliga paringar</em> kan du söka, lägga till fler produkter (+ Lägg
+              till) och ta bort enskilda medlemmar (✕). En grupp med &lt; 2 medlemmar upplöses.</li>
+          </ul>
+        </details>
         <div class="row g-3">
           <div class="col-lg-6"><div class="card p-3">
             <div class="d-flex gap-2 mb-2 align-items-center">
