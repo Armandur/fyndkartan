@@ -42,7 +42,7 @@ api/                 # Python-paketet (importeras som `api`)
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API; ICA via Coop-fallback
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
-  tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types)
+  tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
   categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories() (kategori-förvärmning). STATE per kedja
