@@ -541,6 +541,21 @@ def ica_offer_eans():
     return [e for e in out if e and len(str(e)) == 13]
 
 
+def axfood_offer_codes():
+    """Distinkta Axfood-artikelkoder (offer_id) ur cachade Willys/Hemköp-erbjudanden, per kedja.
+    Efter en sweep är offers-cachen komplett -> hela kodmängden (inkl. ev. regionala koder som
+    15-butikers-samplingen i warm_axfood_eans missar). {chain: [codes]}."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, offer_id FROM offers WHERE chain IN ('willys','hemkop') GROUP BY chain, offer_id"
+    ).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r["chain"], []).append(r["offer_id"])
+    return out
+
+
 def product_info_eans():
     """RÅ mängd EAN i product_info (positiva som negativa rader, oavsett TTL). Används som
     'redan försökt'-filter i förvärmning - utgångna negativa ska INTE re-warmas (TTL-vägen

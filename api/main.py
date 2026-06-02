@@ -31,6 +31,7 @@ from .sync import (
     run_scheduler,
     run_sync,
     sync_and_warm,
+    warm_after_sweep,
     warm_axfood_eans,
     warm_coop_categories,
     warm_ica_categories,
@@ -810,35 +811,36 @@ async def _ensure_offers(client, chain, store_id, link_offers, native_json, refr
 # som inte är färska (_offers_fresh, som redan är valid_to-medveten). Efter en kall fyllning
 # refetchas alltså bara butiker vars offers gått ut. Rate-limitad per kedja (semafor + paus),
 # back-off med retry per butik, och en circuit breaker som pausar en kedja vars API:t spottar fel.
+SWEEP_ERROR_SAMPLE = 8  # antal sparade fel-detaljer per kedja (för konsolen)
 SWEEP_STATE = {
     "running": False, "started_at": None, "finished_at": None, "force": False,
-    "chains": {c: {"status": "idle", "total": 0, "fetched": 0, "skipped": 0, "errors": 0}
+    "chains": {c: {"status": "idle", "total": 0, "fetched": 0, "skipped": 0, "errors": 0, "last_errors": []}
                for c in SUPPORTED_OFFER_CHAINS},
 }
 
 
 async def _sweep_one_store(client, chain, store, force):
     """Hämta en butiks erbjudanden om de inte är färska (om inte force). Retry + exponentiell
-    back-off vid fel. Returnerar 'fetched' | 'skipped' | 'error'."""
+    back-off vid fel. Returnerar ('fetched'|'skipped'|'error', fel-detalj eller None)."""
     sid = str(store["store_id"])
     if not force and _offers_fresh(chain, sid):
-        return "skipped"
+        return "skipped", None
     for attempt in range(config.OFFERS_SWEEP_RETRIES):
         try:
             offers = await _fetch_offers_for(client, chain, sid, store["link_offers"], store["native"])
             replace_store_offers(chain, sid, offers)
-            return "fetched"
+            return "fetched", None
         except Exception as e:  # noqa: BLE001
             if attempt + 1 >= config.OFFERS_SWEEP_RETRIES:
                 log.warning("sweep %s/%s misslyckades slutgiltigt: %s", chain, sid, e)
-                return "error"
+                return "error", f"{sid}: {e}"
             await asyncio.sleep(config.OFFERS_SWEEP_BACKOFF * (3 ** attempt) + random.uniform(0, 0.5))
-    return "error"
+    return "error", f"{sid}: okänt fel"
 
 
 async def _sweep_chain(client, chain, stores, force):
     st = SWEEP_STATE["chains"][chain]
-    st.update(status="running", total=len(stores), fetched=0, skipped=0, errors=0)
+    st.update(status="running", total=len(stores), fetched=0, skipped=0, errors=0, last_errors=[])
     sem = asyncio.Semaphore(config.OFFERS_SWEEP_CONCURRENCY)
     streak = 0       # fel i rad -> circuit breaker
     tripped = False
@@ -848,7 +850,7 @@ async def _sweep_chain(client, chain, stores, force):
         async with sem:
             if tripped:
                 return
-            res = await _sweep_one_store(client, chain, store, force)
+            res, detail = await _sweep_one_store(client, chain, store, force)
             if res == "fetched":
                 st["fetched"] += 1
                 streak = 0
@@ -858,6 +860,8 @@ async def _sweep_chain(client, chain, stores, force):
             else:
                 st["errors"] += 1
                 streak += 1
+                if len(st["last_errors"]) < SWEEP_ERROR_SAMPLE:
+                    st["last_errors"].append(detail)
                 if streak >= config.OFFERS_SWEEP_CIRCUIT:
                     tripped = True
                     log.error("sweep %s: %d fel i rad - circuit breaker, pausar kedjan", chain, streak)
@@ -883,6 +887,10 @@ async def sweep_offers(force=False):
         async with apilog.make_client(follow_redirects=True) as client:
             await asyncio.gather(*(_sweep_chain(client, c, by_chain.get(c, []), force)
                                    for c in SUPPORTED_OFFER_CHAINS))
+        # Stäng EAN/kategori-luckan för precis de offers vi just cachade (Axfood-EAN ur de nya
+        # koderna, Coop+ICA-kategori). Bara om något faktiskt hämtades - annars inget nytt att warma.
+        if any(SWEEP_STATE["chains"][c]["fetched"] for c in SUPPORTED_OFFER_CHAINS):
+            await warm_after_sweep()
     finally:
         SWEEP_STATE.update(running=False,
                            finished_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))

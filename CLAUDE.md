@@ -104,9 +104,12 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   utgångna). Per kedja: bunden parallellism + paus + exponentiell back-off/retry per butik + circuit
   breaker (fel i rad -> pausa kedjan). Egen cadence `OFFERS_SWEEP_CRON` (default varje timme); INGEN
   kall sweep vid uppstart. Schemaläggaren är generisk: `run_scheduler(cron, tz, job, label)` kör både
-  butikssynk och sweep. `SWEEP_STATE` (per-kedje-räknare) + `database.offers_coverage` (nuvarande
-  cachade erbjudanden per kedja) visas i konsolens Översikt. Arkiverar prishistorik via samma
-  `replace_store_offers`.
+  butikssynk och sweep. `SWEEP_STATE` (per-kedje-räknare + `last_errors`) + `database.offers_coverage`
+  (nuvarande cachade erbjudanden per kedja) visas i konsolens Översikt. Arkiverar prishistorik via
+  samma `replace_store_offers`. Efter en sweep körs `warm_after_sweep`: Axfood-EAN warmas ur de NYSS
+  cachade koderna (`database.axfood_offer_codes` -> `sync.warm_axfood_eans_cached`, komplett kodmängd,
+  ej sampling) + Coop/ICA-kategori (`ica_offer_eans`/`coop_offer_eans` är redan offers-baserade).
+  ICA/Coop bär EAN inline i offers (cachas direkt); bara Axfood kräver code->EAN-resolve.
 - **Prishistorik (steg 4, `offer_observations` + `GET /v1/products/{ean}/history`):** offers
   churnar vid synk (`replace_store_offers` = DELETE+insert), så historiken skrivs append-only.
   `archive_offers` (kallas före replace) skriver en observation per offer NÄR (pris/jämförvärde/

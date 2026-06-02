@@ -8,6 +8,7 @@ from croniter import croniter
 from . import apilog, config, details
 from .adapters import axfood_offers, citygross, coop, hemkop, ica, lidl, willys
 from .database import (
+    axfood_offer_codes,
     codes_missing_category,
     coop_offer_eans,
     get_conn,
@@ -83,8 +84,21 @@ async def run_sync():
 WARM_SAMPLE = 15
 
 
+async def _resolve_axfood_codes(client, chain, codes):
+    """Resolva code->{EAN, kategori, ursprung} för de koder som saknar kategori (`/p/{code}`),
+    batchat, och spara i ean_cache. Returnerar antal nya kategori-uppslag."""
+    missing = codes_missing_category(codes)  # saknar kategori (-> även EAN hämtas)
+    resolved = 0
+    for i in range(0, len(missing), 200):
+        meta = await axfood_offers.fetch_p_meta(client, chain, missing[i : i + 200])
+        save_ean_meta(meta)
+        resolved += sum(1 for m in meta.values() if m.get("category"))
+    log.info("EAN/kategori-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
+    return resolved
+
+
 async def warm_axfood_eans():
-    """Förvärm code->{EAN, kategori}-cachen för Willys/Hemköp (`/p/{code}`).
+    """Förvärm code->{EAN, kategori}-cachen för Willys/Hemköp (`/p/{code}`) via ett butiks-urval.
 
     Ger snabb compare (EAN) OCH fyller Willys saknade offer-kategori (Willys-kampanjer
     bär ingen kategori; produktdetaljen gör det). Cachen är global -> värma en gång
@@ -117,13 +131,22 @@ async def warm_axfood_eans():
 
             lists = await asyncio.gather(*(grab(s) for s in ids))
             codes = {c for lst in lists for c in lst}
-            missing = codes_missing_category(codes)  # saknar kategori (-> även EAN hämtas)
-            for i in range(0, len(missing), 200):
-                meta = await axfood_offers.fetch_p_meta(client, chain, missing[i : i + 200])
-                save_ean_meta(meta)
-                resolved += sum(1 for m in meta.values() if m.get("category"))
-            log.info("EAN/kategori-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
+            resolved += await _resolve_axfood_codes(client, chain, codes)
     log.info("EAN/kategori-förvärmning klar (%d nya kategorier cachade)", resolved)
+
+
+async def warm_axfood_eans_cached():
+    """Förvärm Axfood code->EAN/kategori ur de REDAN cachade offers (efter en sweep, då offers-
+    cachen täcker alla butiker -> hela kodmängden, inkl. ev. regionala koder som butiks-urvalet i
+    warm_axfood_eans missar). Inget campaigns-refetch: koderna läses ur offers-tabellen."""
+    by_chain = axfood_offer_codes()
+    if not by_chain:
+        return
+    resolved = 0
+    async with apilog.make_client(follow_redirects=True) as client:
+        for chain, codes in by_chain.items():
+            resolved += await _resolve_axfood_codes(client, chain, codes)
+    log.info("Axfood-EAN-förvärmning ur cache klar (%d nya kategorier cachade)", resolved)
 
 
 # EAN per batch till Coops personalization-API (POST tar en array).
@@ -204,6 +227,19 @@ async def warm_ica_categories(cap=ICA_WARM_CAP):
     async with apilog.make_client(follow_redirects=True) as client:
         await asyncio.gather(*(warm(e, client) for e in todo))
     log.info("ICA-kategoriförvärmning klar: %d EAN hämtade, %d med info", len(todo), saved)
+
+
+async def warm_after_sweep():
+    """Förvärmning efter en erbjudande-sweep: stänger EAN/kategori-luckan för precis de offers
+    sweepen nyss cachade. Axfood-EAN ur cachade koder (komplett, ej sampling), Coop+ICA-kategori
+    ur cachade offer-EAN (ICA capad per körning, inkrementell). Resilient - ett fel stoppar inte."""
+    for label, coro in (("Axfood-EAN", warm_axfood_eans_cached()),
+                        ("Coop-kategori", warm_coop_categories()),
+                        ("ICA-kategori", warm_ica_categories())):
+        try:
+            await coro
+        except Exception:  # noqa: BLE001
+            log.exception("%s-förvärmning efter sweep misslyckades", label)
 
 
 async def sync_and_warm():

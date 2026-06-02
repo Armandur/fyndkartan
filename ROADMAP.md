@@ -111,8 +111,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       kedjorna vid omstart). Schemaläggaren generaliserad (`run_scheduler(cron, tz, job, label)`).
       Arkiverar prishistorik via `replace_store_offers`. Konsolens Översikt: "Hämta alla
       erbjudanden"-knapp (+tvinga) + per-kedje-tabell med nuvarande täckning (butiker med cachade
-      erbjudanden) och senaste sweep-räknare (`offers_coverage` + `SWEEP_STATE`). Låser upp
-      kartfilter på produkt + full produktsök (lazy-cachen täckte bara öppnade butiker).
+      erbjudanden) och senaste sweep-räknare (`offers_coverage` + `SWEEP_STATE`) inkl. fel-detaljer
+      per kedja (`last_errors`). Låser upp kartfilter på produkt + full produktsök (lazy-cachen
+      täckte bara öppnade butiker). **EAN/kategori-förvärmning hängd på** (`warm_after_sweep`):
+      efter en sweep warmas Axfood-EAN ur de NYSS cachade koderna (`axfood_offer_codes` ->
+      `warm_axfood_eans_cached`, komplett kodmängd inkl. regionala koder samplingen missar) +
+      Coop/ICA-kategori - stänger luckan att sweep-koder annars väntar på nästa butikssynks warm.
 - [ ] Rekognoscera Lidl erbjudande-källa + EAN (regionalt via `offerRegion`).
       Lidl verkar bara ha PDF-reklamblad -> kräver fångst av nätverksanrop / OCR.
 - [x] **ICA To Go** - hanterad: `togo`-typen finns i vokabulären och `seed_types`
