@@ -203,7 +203,7 @@
         </div>
         <div class="row g-3 mb-3">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">EAN i cache</div><div class="stat">${d.ean_cache}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Axfood-EAN i cache</div><div class="stat">${d.ean_cache}</div><div class="small text-muted">code-&gt;EAN (Willys/Hemköp); ICA/Coop/CG har EAN inline</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Synk pågår</div><div class="stat">${d.syncing ? "Ja" : "Nej"}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>

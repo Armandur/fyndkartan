@@ -14,6 +14,14 @@ Unified store-API för 5 kedjor, ~2682 butiker, Leaflet/OSM-karta. Spec i
 `UNIFIED-API.md`. Självförnyande nycklar (ICA token-API, Coop/Lidl scrape-on-401).
 Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla kedjor.
 
+**Att göra (butikslivscykel):**
+- [ ] **Rensa/flagga stängda butiker.** En butik vars `link_offers` ger ihållande 404 i sweepen
+  (t.ex. ICA Nära Torgboden Falsterbo) är sannolikt stängd/omdöpt, men erbjudande-404 ENSAMT får
+  inte avgöra borttagning (en öppen butik kan sakna erbjudanden). Behöver fler signaler: butiken
+  saknas i nästa butikssynks lista, koordinater/öppettider borta, e.d. -> markera `closed` (mjuk)
+  och först därefter ev. rensa. Undviker att döda butiker felar varje sweep utan att råka kasta
+  levande butiker utan erbjudanden.
+
 **Att göra (öppettider):**
 - [x] **Helgdagsavvikelser normaliserade.** `enrich_exceptions` i make_store fyller saknat
   namn (Lidl: datum -> helgnamn) och saknat datum (ICA: helgnamn -> datum) via en svensk
