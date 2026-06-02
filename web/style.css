@@ -229,6 +229,12 @@ body {
 }
 .o-img { width: 48px; height: 48px; flex: 0 0 48px; object-fit: contain; border-radius: 6px; background: #f2f5f7; }
 .o-img--ph { background: #eef1f4; }
+img.o-img { cursor: zoom-in; }
+
+/* Lightbox: förstorad produktbild för granskning av förpackningen. */
+.lb-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, .85); cursor: zoom-out; }
+.lb-overlay[hidden] { display: none; }
+.lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
 .o-body { min-width: 0; flex: 1; }
 .o-name { font-weight: 600; font-size: .82rem; color: #1c2530; line-height: 1.2; }
 .o-meta { font-size: .72rem; color: #8b95a4; }

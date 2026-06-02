@@ -19,8 +19,16 @@ _ICA_CDN = "https://assets.icanet.se/q_auto,f_auto/c_lpad,h_400,w_400,e_sharpen:
 
 
 def _sized(url, px=400):
-    """Begränsa storleken via Cloudinary-transform (Coop/Axfood = `/image/upload/`).
-    Annars (ICA-formatet) är URL:en redan storleks-transformerad -> oförändrad."""
+    """Begränsa storleken via Cloudinary-transform. Coop/ICA tillåter att vi kedjar in en
+    c_limit-transform. Axfood AVVISAR godtyckliga (osignerade) transforms (401) - bara deras
+    pre-bakade finns: `t_200` (~200px) eller `f_auto` (full-res). Stora storlekar -> full,
+    annars behåll t_200. ICA-EAN-CDN är redan storleks-transformerad -> oförändrad."""
+    if "assets.axfood.se" in url:
+        if px >= 600:  # lightbox/full -> full-res (Axfood saknar en mellan-transform vi får använda)
+            head, _, tail = url.partition("/image/upload/")
+            _, _, rest = tail.partition("/")  # släng transform-segmentet (t.ex. "f_auto,t_200")
+            return f"{head}/image/upload/f_auto/{rest}"
+        return url
     marker = "/image/upload/"
     if marker in url:
         head, tail = url.split(marker, 1)

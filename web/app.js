@@ -345,6 +345,27 @@ function renderProductInfo(d, chain) {
 function closeProductModal() { document.getElementById("productModal").classList.add("d-none"); }
 document.getElementById("productClose").addEventListener("click", closeProductModal);
 document.getElementById("productModal").addEventListener("click", (e) => { if (e.target.id === "productModal") closeProductModal(); });
+
+// Lightbox: klick på en produktbild visar den i full storlek (för att granska förpackningen).
+function openLightbox(src) {
+  let lb = document.getElementById("lightbox");
+  if (!lb) {
+    lb = document.createElement("div");
+    lb.id = "lightbox"; lb.className = "lb-overlay"; lb.hidden = true;
+    lb.innerHTML = '<img class="lb-img" alt="">';
+    lb.addEventListener("click", () => { lb.hidden = true; });
+    document.body.appendChild(lb);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") lb.hidden = true; });
+  }
+  lb.querySelector(".lb-img").src = src;
+  lb.hidden = false;
+}
+document.addEventListener("click", (e) => {
+  const img = e.target.closest("img.o-img");
+  if (!img) return;
+  const src = img.getAttribute("src") || "";
+  openLightbox(src.includes("size=thumb") ? src.replace("size=thumb", "size=full") : src);
+});
 document.getElementById("offersList").addEventListener("click", (e) => {
   const b = e.target.closest(".o-info");
   if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);

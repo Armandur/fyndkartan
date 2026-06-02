@@ -72,6 +72,10 @@
     #apiOut .jt-leaf { white-space: pre-wrap; }
     #apiOut .jt-n { color: #6b7480; font-size: .85em; margin: 0 .4em; }
     #apiOut .jt-text { white-space: pre-wrap; }
+    img.lb { cursor: zoom-in; }
+    .lb-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.85); cursor: zoom-out; }
+    .lb-overlay[hidden] { display: none; }
+    .lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
   </style>
 </head>
 <body>
@@ -526,7 +530,11 @@
     // ---- Märkesvaror (cross-chain-paring av private label, EAN-centrerat) ----
     const marq = { products: [], selected: null, picks: new Map() };
     const mqUnit = (p) => p.comparison_value != null ? `${p.comparison_value} kr/${p.comparison_unit || "st"}` : "-";
-    const mqThumb = (p, cls = "mq-thumb") => p.image ? `<img class="${cls}" src="${esc(p.image)}" alt="" loading="lazy">` : `<span class="${cls}"></span>`;
+    const mqThumb = (p, cls = "mq-thumb") => {
+      const full = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=full` : (p.image || "");
+      const src = p.image || full;
+      return src ? `<img class="${cls} lb" src="${esc(src)}" data-full="${esc(full || src)}" alt="" loading="lazy">` : `<span class="${cls}"></span>`;
+    };
     const chains = (p) => (p.chains || []).map(chip).join("");
     const detailChain = (p) => (p.chains || []).find(c => c === "willys" || c === "hemkop") || (p.chains || [])[0];
     const findProduct = (ean) => marq.products.find(p => p.ean === ean);
@@ -838,6 +846,25 @@
       const box = btn.closest(".dt-wrap").querySelector(".dt-box");
       if (box.dataset.loaded) box.classList.toggle("d-none");
       else showDetail(btn.dataset.chain, btn.dataset.ean, box);
+    });
+
+    // Lightbox: klick på en produktbild visar den i full storlek (granska förpackningen).
+    function openLightbox(src) {
+      let lb = document.getElementById("lightbox");
+      if (!lb) {
+        lb = document.createElement("div");
+        lb.id = "lightbox"; lb.className = "lb-overlay"; lb.hidden = true;
+        lb.innerHTML = '<img class="lb-img" alt="">';
+        lb.addEventListener("click", () => { lb.hidden = true; });
+        document.body.appendChild(lb);
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") lb.hidden = true; });
+      }
+      lb.querySelector(".lb-img").src = src;
+      lb.hidden = false;
+    }
+    document.addEventListener("click", (e) => {
+      const img = e.target.closest("img.lb"); if (!img) return;
+      openLightbox(img.dataset.full || img.getAttribute("src"));
     });
 
     // ---- API-nycklar (externa integratörer) ----
