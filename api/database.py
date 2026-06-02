@@ -13,6 +13,7 @@ from .tags import build_tag
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=3000")  # vänta i st. f. att fela vid samtidig skrivning (apilog)
     return conn
 
 
@@ -116,6 +117,15 @@ def init_db():
     if not conn.execute("SELECT 1 FROM providers LIMIT 1").fetchone():
         conn.executemany("INSERT INTO providers (name) VALUES (?)", [(p,) for p in DEFAULT_PROVIDERS])
     conn.execute("CREATE TABLE IF NOT EXISTS provider_map (label TEXT PRIMARY KEY, provider TEXT)")
+    # Persistent anropslogg: ring-buffer (feed, beskärs) + kumulativ statistik per host.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS api_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, "
+        "method TEXT, host TEXT, path TEXT, status INTEGER, ms REAL, chain TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS api_call_stats (host TEXT PRIMARY KEY, chain TEXT, "
+        "count INTEGER DEFAULT 0, errors INTEGER DEFAULT 0, total_ms REAL DEFAULT 0)"
+    )
     # Konton + favoriter + nyckel/värde-settings.
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
     conn.execute(

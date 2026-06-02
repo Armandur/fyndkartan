@@ -181,7 +181,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     Synk-knapp + status flyttade till konsolens Översikt-flik. Konsolkontot seedas
     vid uppstart (`ensure_admin`) från `ADMIN_EMAIL` (generisk default i koden,
     sätts per instans via env/`.env`) + `ADMIN_PASSWORD` (annars genererat + loggat).
-    - [ ] Persistent anropslogg (nu in-memory).
+    - [x] **Persistent anropslogg BYGGT.** apilog skriver nu till SQLite i stället för
+      in-memory: `api_calls` (ring-buffer för feeden, beskärs till de 2000 senaste) +
+      `api_call_stats` (kumulativ per host, överlever omstart). Egen autocommit-connection
+      med `busy_timeout` (get_conn fick också busy_timeout) så apilog + synk-skrivningar
+      inte krockar. `recent()`/`stats()` läser från DB. Samma svarsform -> frontend orört.
     - [x] **API-anrop-fliken: egna inkommande anrop + filter BYGGT.** Middleware loggar
       inkommande /v1-requests (`apilog.record_incoming`, källa "egen", inkl. status/ms;
       hoppar över anropslogg-pollern). Fliken filtrerar "senaste anrop" på källa

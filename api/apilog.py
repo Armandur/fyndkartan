@@ -1,17 +1,19 @@
-"""Instrumentering av utgående HTTP-anrop (mot kedjornas API:er).
+"""Instrumentering av HTTP-anrop (utgående mot kedjornas API:er + inkommande mot vårt
+eget /v1). En httpx-event-hook + middleware loggar varje anrop till SQLite: en ring-
+buffer (`api_calls`, beskärs) för feeden och kumulativ statistik per host
+(`api_call_stats`). Persistent - överlever omstart. Loggning får aldrig fälla anropet."""
 
-En httpx-event-hook loggar varje anrop till en ring-buffer i minnet + aggregerad
-statistik per host. Används av admin-dashboarden. Återställs vid omstart."""
-
+import sqlite3
 import time
-from collections import defaultdict, deque
 
 import httpx
 
-_MAX_CALLS = 500
-CALLS = deque(maxlen=_MAX_CALLS)
-STATS = defaultdict(lambda: {"count": 0, "errors": 0, "total_ms": 0.0, "chain": "other"})
+from .config import DB_PATH
+
+_MAX_CALLS = 2000  # ring-storlek för feeden (statistiken är kumulativ, beskärs ej)
 _starts = {}
+_conn = None
+_since_prune = 0
 
 # host-fragment -> vilken kedja/källa anropet hör till
 _SOURCE_HOSTS = [
@@ -38,6 +40,38 @@ def classify_source(host):
     return "other"
 
 
+def _db():
+    global _conn
+    if _conn is None:
+        _conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)  # autocommit
+        _conn.row_factory = sqlite3.Row
+        _conn.execute("PRAGMA busy_timeout=3000")
+    return _conn
+
+
+def _record(ts, method, host, path, status, ms, chain):
+    """Skriv ett anrop till feeden + uppdatera kumulativ statistik. Sväljer fel."""
+    global _since_prune
+    try:
+        c = _db()
+        c.execute(
+            "INSERT INTO api_calls (ts, method, host, path, status, ms, chain) VALUES (?,?,?,?,?,?,?)",
+            (ts, method, host, path, status, ms, chain),
+        )
+        c.execute(
+            "INSERT INTO api_call_stats (host, chain, count, errors, total_ms) VALUES (?,?,1,?,?) "
+            "ON CONFLICT(host) DO UPDATE SET count=count+1, chain=excluded.chain, "
+            "errors=errors+excluded.errors, total_ms=total_ms+excluded.total_ms",
+            (host, chain, 1 if status and status >= 400 else 0, ms or 0),
+        )
+        _since_prune += 1
+        if _since_prune >= 250:  # beskär feeden då och då (behåll de _MAX_CALLS senaste)
+            _since_prune = 0
+            c.execute("DELETE FROM api_calls WHERE id <= (SELECT MAX(id) FROM api_calls) - ?", (_MAX_CALLS,))
+    except Exception:  # noqa: BLE001 - loggning får aldrig fälla anropet
+        pass
+
+
 async def _on_request(request):
     _starts[id(request)] = time.perf_counter()
     if len(_starts) > 2000:  # läckage-skydd om svar uteblir
@@ -49,42 +83,15 @@ async def _on_response(resp):
         start = _starts.pop(id(resp.request), None)
         ms = round((time.perf_counter() - start) * 1000, 1) if start else None
         host = resp.request.url.host
-        chain = classify_source(host)
-        CALLS.appendleft(
-            {
-                "ts": time.time(),
-                "method": resp.request.method,
-                "host": host,
-                "path": resp.request.url.path,
-                "status": resp.status_code,
-                "ms": ms,
-                "chain": chain,
-            }
-        )
-        s = STATS[host]
-        s["count"] += 1
-        s["chain"] = chain
-        if resp.status_code >= 400:
-            s["errors"] += 1
-        if ms:
-            s["total_ms"] += ms
-    except Exception:  # noqa: BLE001 - loggning får aldrig fälla anropet
+        _record(time.time(), resp.request.method, host, resp.request.url.path,
+                resp.status_code, ms, classify_source(host))
+    except Exception:  # noqa: BLE001
         pass
 
 
 def record_incoming(method, path, status, ms):
     """Logga ett inkommande anrop mot vårt EGET API (källa 'egen') i samma feed."""
-    CALLS.appendleft({
-        "ts": time.time(), "method": method, "host": "(egen)", "path": path,
-        "status": status, "ms": ms, "chain": "egen",
-    })
-    s = STATS["(egen)"]
-    s["count"] += 1
-    s["chain"] = "egen"
-    if status >= 400:
-        s["errors"] += 1
-    if ms:
-        s["total_ms"] += ms
+    _record(time.time(), method, "(egen)", path, status, ms, "egen")
 
 
 def make_client(**kwargs):
@@ -100,19 +107,30 @@ def make_client(**kwargs):
 
 
 def recent(limit=120):
-    return list(CALLS)[:limit]
+    try:
+        rows = _db().execute(
+            "SELECT ts, method, host, path, status, ms, chain FROM api_calls ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def stats():
+    try:
+        rows = _db().execute("SELECT host, chain, count, errors, total_ms FROM api_call_stats").fetchall()
+    except Exception:  # noqa: BLE001
+        return []
     out = [
         {
-            "host": host,
-            "chain": s["chain"],
-            "count": s["count"],
-            "errors": s["errors"],
-            "avg_ms": round(s["total_ms"] / s["count"], 1) if s["count"] else None,
+            "host": r["host"],
+            "chain": r["chain"],
+            "count": r["count"],
+            "errors": r["errors"],
+            "avg_ms": round(r["total_ms"] / r["count"], 1) if r["count"] else None,
         }
-        for host, s in STATS.items()
+        for r in rows
     ]
     out.sort(key=lambda x: -x["count"])
     return out
