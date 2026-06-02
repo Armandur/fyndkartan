@@ -529,7 +529,7 @@
 
     // ---- Märkesvaror (cross-chain-paring av private label, EAN-centrerat) ----
     const marq = { products: [], selected: null, picks: new Map() };
-    const mqUnit = (p) => p.comparison_value != null ? `${p.comparison_value} kr/${p.comparison_unit || "st"}` : "-";
+    const mqUnit = (p) => p.comparison_value != null ? `${p.comparison_derived ? "≈ " : ""}${p.comparison_value} kr/${p.comparison_unit || "st"}` : "-";
     const mqThumb = (p, cls = "mq-thumb") => {
       const full = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=full` : (p.image || "");
       const src = p.image || full;

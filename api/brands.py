@@ -161,15 +161,15 @@ def _products(conn, brands, chain=None, q=None):
             continue
         if ch in _AXFOOD:
             rows = conn.execute(
-                "SELECT o.name, o.brand, o.package, o.comparison_value, o.comparison_unit, "
-                "o.category_raw, o.image, e.ean FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
+                "SELECT o.name, o.brand, o.package, o.comparison_value, o.comparison_unit, o.price, "
+                "o.price_text, o.category_raw, o.image, e.ean FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
                 "WHERE o.chain=? AND e.ean!=''", (ch,)
             ).fetchall()
             inline = False
         else:
             rows = conn.execute(
-                "SELECT name, brand, package, comparison_value, comparison_unit, category_raw, image, eans "
-                "FROM offers WHERE chain=?", (ch,)
+                "SELECT name, brand, package, comparison_value, comparison_unit, price, price_text, "
+                "category_raw, image, eans FROM offers WHERE chain=?", (ch,)
             ).fetchall()
             inline = True
         for r in rows:
@@ -183,12 +183,17 @@ def _products(conn, brands, chain=None, q=None):
                 continue
             e = out.get(ean)
             if e is None:
+                cv, cu, der = r["comparison_value"], _norm_unit(r["comparison_unit"]), False
+                if cv is None and db._deal_type(r["price_text"])[0] == "flat":
+                    _, pv, pu, _ = db._clean_package(r["package"])
+                    dv, du = db.derived_comparison(r["price"], pv, pu)
+                    if dv is not None:
+                        cv, cu, der = dv, du, True
                 out[ean] = {
                     "ean": ean, "chains": [ch], "name": r["name"], "brand": r["brand"],
                     "package": db.normalized_package(r["package"]),
-                    "comparison_value": r["comparison_value"],
-                    "comparison_unit": _norm_unit(r["comparison_unit"]), "category": r["category_raw"],
-                    "image": r["image"], "group_id": members.get(ean),
+                    "comparison_value": cv, "comparison_unit": cu, "comparison_derived": der,
+                    "category": r["category_raw"], "image": r["image"], "group_id": members.get(ean),
                 }
             elif ch not in e["chains"]:
                 e["chains"].append(ch)

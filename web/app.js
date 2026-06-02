@@ -253,7 +253,7 @@ function dealBadge(o) {
 
 function offerCard(o) {
   const cmp = o.comparison_value
-    ? `<span class="o-cmp">${o.comparison_value} kr/${esc(o.comparison_unit || "")}</span>`
+    ? `<span class="o-cmp"${o.comparison_derived ? ' title="Beräknat ur pris/storlek – ungefärligt"' : ""}>${o.comparison_derived ? "≈ " : ""}${o.comparison_value} kr/${esc(o.comparison_unit || "")}</span>`
     : "";
   const imgEan = o.eans && o.eans[0];
   const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image?size=thumb` : o.image;
@@ -483,12 +483,13 @@ function compareCard(p) {
   const img = cmpSrc
     ? `<img class="o-img" src="${esc(cmpSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
+  const anyDerived = p.compare_by === "unit_price" && p.offers.some(o => o.comparison_derived);
   const spreadLabel = p.compare_by === "unit_price"
-    ? `${p.spread} kr/${esc(p.unit)}` : `${p.spread} kr`;
+    ? `${anyDerived ? "≈ " : ""}${p.spread} kr/${esc(p.unit)}` : `${p.spread} kr`;
   const rows = p.offers.map((o, i) => {
     const meta = state.chains[o.chain] || {};
     const big = p.compare_by === "unit_price"
-      ? (o.comparison_value != null ? `${o.comparison_value} kr/${esc(o.comparison_unit || "")}` : "–")
+      ? (o.comparison_value != null ? `${o.comparison_derived ? "≈ " : ""}${o.comparison_value} kr/${esc(o.comparison_unit || "")}` : "–")
       : (o.price != null ? `${o.price} kr` : "–");
     const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
     return `<div class="cmp-row${i === 0 ? " cmp-best" : ""}">

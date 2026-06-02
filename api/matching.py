@@ -21,6 +21,7 @@ _OFFER_KEYS = (
     "price_text",
     "comparison_value",
     "comparison_unit",
+    "comparison_derived",
     "member_price",
     "mechanic_type",
     "deal_type",

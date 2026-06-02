@@ -618,6 +618,26 @@ def _clean_package(pkg):
     return s or None, value, unit, approx
 
 
+# Förpackningsenhet -> (jämför-basenhet, faktor till basen). För härlett jämförpris.
+_PKG_TO_BASE = {
+    "g": ("kg", 0.001), "kg": ("kg", 1.0), "hg": ("kg", 0.1),
+    "ml": ("l", 0.001), "cl": ("l", 0.01), "dl": ("l", 0.1), "l": ("l", 1.0),
+    "st": ("st", 1.0), "p": ("st", 1.0),
+}
+
+
+def derived_comparison(price, value, unit):
+    """(jämförvärde, basenhet) ur pris/storlek (basenhet kg/l/st), annars (None, None).
+    UNGEFÄRLIGT - använd bara som fallback för flat-pris när kedjans jämförpris saknas; kedjan
+    räknar ofta på avrunnen vikt/faktiskt innehåll, så detta kan skilja 10-30%."""
+    conv = _PKG_TO_BASE.get((unit or "").lower())
+    if not (price and value and conv) or value <= 0:
+        return None, None
+    base, fac = conv
+    size = value * fac
+    return (round(price / size, 2), base) if size > 0 else (None, None)
+
+
 def normalized_package(pkg):
     """Ren, skal-normaliserad förpacknings-sträng för visning: brand-prefix bort, ordenheter
     -> symbol (`_clean_package`), och ml->l / g->kg när det blir ett helt tal ('1000 Milliliter'
@@ -680,6 +700,13 @@ def get_store_offers(chain, store_id):
         d["deal_type"], d["multibuy_qty"] = _deal_type(d.get("price_text"))
         d["package_size"], d["package_value"], d["package_unit"], d["package_approx"] = _clean_package(d.get("package"))
         d["brand"], d["origin"] = _split_brand_origin(chain, d.get("brand"))
+        d["comparison_derived"] = False
+        # Härlett jämförpris (UNGEFÄRLIGT): fyll bara när kedjans saknas, dealen är flat och
+        # storleken är parsbar. Markeras så UI/compare vet att det är en uppskattning.
+        if d.get("comparison_value") is None and d["deal_type"] == "flat":
+            dv, du = derived_comparison(d.get("price"), d["package_value"], d["package_unit"])
+            if dv is not None:
+                d["comparison_value"], d["comparison_unit"], d["comparison_derived"] = dv, du, True
         out.append(d)
     # Axfood: fyll saknad offer-kategori (särskilt Willys) från förvärmad ean_cache
     # (googleAnalyticsCategory per code). category_for hanterar pipe-pathens första segment.
