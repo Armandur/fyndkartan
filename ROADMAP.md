@@ -188,10 +188,31 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     (City Gross `Loop54/search/quick?SearchQuery=`, Axfood-sök, ev. ICA/Coop) som täcker
     hela sortimentet - bygg ett unified sök ovanpå dem (live eller cachat). Närbesläktat
     med Fulla sortiment men lättare (sök on-demand, ingen full spegling).
-  - [ ] **Dokumentera alla kedjors produktsök-/katalog-API:er** (om ej redan gjort för alla)
-    - endpoint, params, EAN/pris/jämförpris-tillgång - i `UNIFIED-API.md`/`CLAUDE.md` så
-    unified-söket kan byggas. City Gross Loop54 kartlagt (search/quick + products/{id} +
-    category/{id}/products); Axfood `/search` + `/p/{code}` känt; ICA/Coop behöver kollas.
+  - [ ] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
+    EAN/pris/jämförpris-tillgång (för unified-söket). Kartlagt hittills:
+    - **City Gross** (Loop54): `GET .../Loop54/search/quick?SearchQuery=` (+ `products/{id}`,
+      `category/{id}/products`). EAN (`gtin`) + pris + jämförpris inline.
+    - **Coop** (personalization): `POST external.api.coop.se/personalization/search/global`
+      `?api-version=v1&store={ledger}&groups=CUSTOMER_PRIVATE&direct=true`, header perso-nyckel
+      (skrapas), body `{query, resultsOptions:{skip,take}}` -> `results.items[]` (`count` total).
+      Varje item = samma entitet som `entities/by-id` (vi parsar redan i `_parse_coop_item`):
+      `ean`, `name`, `manufacturerName`, `salesPriceData.b2cPrice` (hyllpris), `comparativePriceData`
+      + `comparativePriceUnit`, `packageSize`, `navCategories`, `listOfIngredients`/`nutrientLinks`,
+      `imageUrl`. EAN + jämförpris inline.
+      - [ ] **Utforska Coops `b2bPrice`.** `salesPriceData`/`comparativePriceData`/`piecePriceData`
+        bär både `b2cPrice` (51,58 - konsumentpris) och `b2bPrice` (48,66 - lägre, ~5-6% under).
+        Vad är b2b-priset? Företags-/storkundspris, exkl. moms, eller medlemspris? Avgör om vi
+        ska exponera/använda det (t.ex. som "pris exkl. moms" eller ignorera).
+    - **ICA** (BEKRÄFTAT nåbart server-side): `POST apimgw-pub.ica.se/sverige/digx/globalsearch/
+      v1/search/quicksearch` med public-access-token (Bearer, vi hämtar redan) + `accountNumber`.
+      `products.documents[]`: `gtin`, `displayName`, `price` (sträng), `image` (resizebar
+      cloudinary), `mainCategoryName`. INGET jämförpris. Via API-gatewayen, inte WAF-blockade
+      ehandeln -> ICA:s katalog är sökbar (bara produktDETALJEN är WAF-skyddad).
+    - **Axfood** (Willys/Hemköp): `/search/campaigns` (kampanjer) + `/axfood/rest/p/{code}`
+      (detalj). Kvar: rent katalog-sök (inte bara kampanjer)?
+    - **Slutsats:** alla utom Axfood-fullkatalog har sökbara katalog-API:er med EAN+pris
+      (Coop+City Gross har även jämförpris; ICA saknar jämförpris men har per-butik-pris).
+      Unified produktsök är därmed klart genomförbart.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
     ev. LLM/embeddings som domare).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)

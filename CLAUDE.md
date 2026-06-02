@@ -215,6 +215,20 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   medlemspris i `priceInformation.isMemberPrice`. `channelCodes:DR` = reklambladet.
 - **Coop step-1-metadata:** butiksdetalj `/external/store/stores/{ledger}`
   (butiks-nyckeln) ger `services` (-> tags) + `concept` (-> brand).
+- **Coop produktsök (fullkatalog):** `POST external.api.coop.se/personalization/search/global`
+  `?api-version=v1&store={ledger}&groups=CUSTOMER_PRIVATE&direct=true` (perso-nyckeln), body
+  `{query, resultsOptions:{skip,take}}` -> `results.items[]` (`count` total). Item = samma
+  entitet som `entities/by-id` (`_parse_coop_item`): ean, namn, `manufacturerName`,
+  `salesPriceData.b2cPrice`/`b2bPrice`, `comparativePriceData`+`comparativePriceUnit`,
+  `packageSize`, `navCategories`, ingredienser/näring, `imageUrl`. EAN + jämförpris inline.
+- **ICA produktsök (NÅBART server-side, bekräftat):** `POST apimgw-pub.ica.se/sverige/digx/
+  globalsearch/v1/search/quicksearch` med **public-access-token (Bearer, vi hämtar redan)** +
+  `accountNumber` (butikens, ur native), body `{queryString, take, offset, accountNumber,
+  searchDomain:"All", sessionId}` -> `products.documents[]` (`stats` har total). Item: `gtin`
+  (EAN), `displayName`/`title`, `price` (sträng, per butik), `image` (resizebar cloudinary),
+  `mainCategoryName`, `countryOfOriginName`. INGET jämförpris i söket. Via API-gatewayen, INTE
+  den WAF-blockade ehandeln - så ICA:s katalog ÄR sökbar server-side (till skillnad från
+  produktdetaljen som är WAF-skyddad).
 - **Willys/Hemköp step-1-tjänster:** CMS-komponenten `.../axfoodcommercewebservices/v2/
   {catalog}/cms/components?componentIds={Component}&storeId={id}` -> `storeFeatures`
   ({id: label}) -> tags. Component: `WillysDefaultRightColumnStoreInfoComponent` /
