@@ -166,6 +166,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         ev. finputs av vokabulären (plant-milk-falskpositiv).
     - [ ] **ICA native detalj** är bot-skyddat (AWS WAF, bekräftat via curl + obscura) -
       täcks tills vidare av Coop-fallback för branded varor; ICA:s egna märken går ej.
+    - [ ] **Utvärdera vad ICA:s upptäckta katalog-sök kan förbättra i befintligt** (söket är
+      nåbart server-side, till skillnad från detaljen). Kandidater: (a) **ICA finare kategorier**
+      via sökets `mainCategoryName`/`categoryName` (löser ev. caveaten om bara 9 `articleGroupId`);
+      (b) **ICA produktinfo/bild för egna märken** som Coop-fallbacken missar (söket har gtin->
+      namn/kategori/bild, dock ej ingredienser/näring); (c) ICA-bilder ur söket (resizebar
+      cloudinary) i bild-resolvern. Avgör vilka som är värda en faktisk integration.
     - [ ] (övervägt) Bredare semantisk uppdelning av API:t (butiker/erbjudanden/produkter/
       compare i egna routrar) - EJ gjort: bara `products` bröts ut (ny konsument krävde
       det); resten är redan modulärt internt, reorg = churn utan vinst på single-container.
