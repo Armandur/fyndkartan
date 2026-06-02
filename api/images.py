@@ -1,7 +1,6 @@
-"""Unified produktbild per EAN: hittar en bild-URL (ur cachade offers, annars ICA:s
-EAN-nyckade bild-CDN), laddar ner och cachar bytes lokalt -> CDN-oberoende + snabbt.
-
-v1: en storlek per EAN. Variant-/storleksval (thumb/full) är nästa steg.
+"""Unified produktbild per EAN: väljer bästa bild-URL (resizebar cloudinary ur cachade
+offers, annars ICA:s EAN-nyckade bild-CDN), resizar via Cloudinary-transform och cachar
+bytes lokalt per (ean, storlek) -> CDN-oberoende + snabbt. Storlekar: thumb/default/full.
 """
 
 import logging
@@ -29,22 +28,32 @@ def _sized(url, px=400):
     return url
 
 
+# Bildkälle-preferens per kedja (lägre = bättre): Coop/Axfood är resizebara cloudinary
+# (`/image/upload/`); ICA:s offer-bilder är 200px lpad och ej resizebara -> hellre ICA:s
+# EAN-CDN (400px) för dem. Coops rena upload föredras (Axfood har ofta en t_200-transform).
+_CHAIN_IMG_PREF = {"coop": 0, "willys": 1, "hemkop": 1, "lidl": 3}
+
+
 def _resolve_url(ean):
-    """En bild-URL för EAN:en: först ur cachade offers (kedjornas egna bilder, matchar
-    vår data), annars ICA:s EAN-CDN."""
+    """Bästa bild-URL:en för EAN:en: en resizebar cloudinary-bild ur cachade offers
+    (föredras, Coop före Axfood), annars ICA:s EAN-CDN (400px, bättre än ICA:s 200px
+    offer-bild)."""
     conn = db.get_conn()
-    row = conn.execute(
-        "SELECT image FROM offers WHERE image IS NOT NULL AND image!='' AND eans LIKE ? LIMIT 1",
+    rows = conn.execute(
+        "SELECT chain, image FROM offers WHERE image IS NOT NULL AND image!='' AND eans LIKE ?",
         (f'%"{ean}"%',),
-    ).fetchone()
-    if not row:
-        row = conn.execute(
-            "SELECT o.image FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
-            "WHERE e.ean=? AND o.image IS NOT NULL AND o.image!='' LIMIT 1",
-            (ean,),
-        ).fetchone()
+    ).fetchall()
+    rows += conn.execute(
+        "SELECT o.chain, o.image FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
+        "WHERE e.ean=? AND o.image IS NOT NULL AND o.image!=''",
+        (ean,),
+    ).fetchall()
     conn.close()
-    return row["image"] if row else _ICA_CDN.format(ean=ean)
+    resizable = [r for r in rows if "/image/upload/" in (r["image"] or "")]
+    if resizable:
+        resizable.sort(key=lambda r: _CHAIN_IMG_PREF.get(r["chain"], 5))
+        return resizable[0]["image"]
+    return _ICA_CDN.format(ean=ean)
 
 
 # Valbara storleksvarianter (max-dimension i px, begränsas via Cloudinary-transform).

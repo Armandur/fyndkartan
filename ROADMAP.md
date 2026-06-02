@@ -159,7 +159,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       - [x] **Storleksvarianter BYGGT.** `?size=thumb|default|full` (150/400/800px via
         Cloudinary-transform), cachat separat per (ean, size). Erbjudande-/jämförelsekort
         använder `thumb`. Ogiltig size -> default.
-        - [ ] Kvalitetsval av bästa källa per EAN (nu första träffen).
+        - [x] **Kvalitetsval av bästa bildkälla per EAN BYGGT.** `_resolve_url` väljer nu en
+          resizebar cloudinary-bild (Coop före Axfood) framför ICA:s offer-bild (200px, ej
+          resizebar); för ICA-produkter används EAN-CDN:n (400px) i stället. Tidigare togs
+          första träffen (LIMIT 1). Bildcachen rensad så det slår igenom.
   - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
     produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
