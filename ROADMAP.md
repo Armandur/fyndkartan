@@ -230,11 +230,7 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       Varje item = samma entitet som `entities/by-id` (vi parsar redan i `_parse_coop_item`):
       `ean`, `name`, `manufacturerName`, `salesPriceData.b2cPrice` (hyllpris), `comparativePriceData`
       + `comparativePriceUnit`, `packageSize`, `navCategories`, `listOfIngredients`/`nutrientLinks`,
-      `imageUrl`. EAN + jämförpris inline.
-      - [ ] **Utforska Coops `b2bPrice`.** `salesPriceData`/`comparativePriceData`/`piecePriceData`
-        bär både `b2cPrice` (51,58 - konsumentpris) och `b2bPrice` (48,66 - lägre, ~5-6% under).
-        Vad är b2b-priset? Företags-/storkundspris, exkl. moms, eller medlemspris? Avgör om vi
-        ska exponera/använda det (t.ex. som "pris exkl. moms" eller ignorera).
+      `imageUrl`. EAN + jämförpris inline. (Vi använder `b2cPrice`; `b2bPrice` ignoreras.)
     - **ICA** (BEKRÄFTAT nåbart server-side): `POST apimgw-pub.ica.se/sverige/digx/globalsearch/
       v1/search/quicksearch` med public-access-token (Bearer, vi hämtar redan) + `accountNumber`.
       `products.documents[]`: `gtin`, `displayName`, `price` (sträng), `image` (resizebar
