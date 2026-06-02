@@ -487,3 +487,20 @@ domäner:
 Tidsserie (`offer_observations`) per produkt/EAN för prisutveckling. Endast
 meningsfull för nivå-2-matchade märkesvaror. ToS/juridik känsligare vid nationell
 aggregering - stäm av innan skarp drift.
+
+**Grund som redan finns (medvetet bevarad):**
+- **EAN-nycklad modell + persistent `ean_cache`** (code->EAN/kategori/ursprung, rensas aldrig)
+  ger den stabila identiteten att spåra pris över tid och kedjor - särskilt för Axfood, vars
+  offers saknar inline-EAN och måste resolvas via `ean_cache`. Att vi inte rensar den är alltså
+  en förutsättning för historiken, inte slarv.
+- **`product_matches`** (manuella paringar, EAN-nyckade, rensas aldrig automatiskt) länkar
+  cross-chain-märkesvaror så historiken kan jämföra olika kedjors private labels över tid.
+- `product_info` (TTL-uppdaterad) + `product_images` (permanent) ger namn/näring/bild att hänga
+  historiken på.
+
+**Vad som saknas / måste byggas:**
+- **Arkivering av offers.** Idag kastas en butiks offers vid varje synk (`replace_store_offers`
+  gör DELETE + re-insert), så ingen historik sparas. Steg 4 = skriv i stället varje observation
+  (chain, store_id, ean, price, comparison_value, valid_to, observed_at) till en append-only
+  `offer_observations`-tabell parallellt med replace.
+- Avvägning: spara per butik (stort) vs aggregerat per kedja/nationellt (juridiskt känsligare).
