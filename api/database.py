@@ -79,6 +79,19 @@ def init_db():
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_offers_store ON offers(chain, store_id)")
+    # Prishistorik (steg 4): append-only observationer av offers. offers churnar vid varje synk
+    # (replace), så historiken måste skrivas separat. En rad per offer NÄR priset/jämförpriset/
+    # valid_to ändrats sedan senaste observationen (dedup) -> en kompakt prisförändrings-logg.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS offer_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chain TEXT NOT NULL, store_id TEXT NOT NULL, offer_id TEXT NOT NULL,
+            ean TEXT, name TEXT, price REAL, comparison_value REAL, comparison_unit TEXT,
+            valid_to TEXT, observed_at TEXT
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_offer ON offer_observations(chain, store_id, offer_id, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_ean ON offer_observations(ean)")
     # Axfood code -> EAN, butiksoberoende och persistent (överlever offers-refresh).
     # ean = "" markerar "resolvad, ingen EAN" så vi slipper hämta om.
     conn.execute(
@@ -544,8 +557,60 @@ _OFFER_COLS = (
 _OFFER_PH = ",".join(f":{c}" for c in _OFFER_COLS.split(","))
 
 
+def archive_offers(chain, store_id, offers):
+    """Prishistorik: skriv en observation per offer NÄR (price, comparison_value, valid_to)
+    ändrats sedan senaste observationen för (chain, store_id, offer_id). Append-only, deduppat
+    -> upprepade synkar med oförändrade priser ger inga nya rader."""
+    if not offers:
+        return
+    conn = get_conn()
+    try:
+        latest = {
+            r["offer_id"]: (r["price"], r["comparison_value"], r["valid_to"])
+            for r in conn.execute(
+                "SELECT offer_id, price, comparison_value, valid_to FROM offer_observations "
+                "WHERE chain=? AND store_id=? AND id IN (SELECT MAX(id) FROM offer_observations "
+                "WHERE chain=? AND store_id=? GROUP BY offer_id)",
+                (chain, str(store_id), chain, str(store_id)),
+            )
+        }
+        now = _now()
+        rows = []
+        for o in offers:
+            oid = str(o.get("offer_id"))
+            cur = (o.get("price"), o.get("comparison_value"), o.get("valid_to"))
+            if latest.get(oid) == cur:
+                continue
+            eans = o.get("eans") or []
+            rows.append((chain, str(store_id), oid, eans[0] if eans else None, o.get("name"),
+                         o.get("price"), o.get("comparison_value"), o.get("comparison_unit"),
+                         o.get("valid_to"), now))
+        if rows:
+            conn.executemany(
+                "INSERT INTO offer_observations (chain, store_id, offer_id, ean, name, price, "
+                "comparison_value, comparison_unit, valid_to, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                rows,
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def offer_observations_stats():
+    """(antal rader, distinkta produkter, äldsta observation) för prishistorik-tabellen."""
+    conn = get_conn()
+    r = conn.execute(
+        "SELECT COUNT(*) c, COUNT(DISTINCT chain||store_id||offer_id) p, MIN(observed_at) o "
+        "FROM offer_observations"
+    ).fetchone()
+    conn.close()
+    return {"rows": r["c"], "products": r["p"], "since": r["o"]}
+
+
 def replace_store_offers(chain, store_id, offers):
-    """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON."""
+    """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON.
+    Arkiverar prisförändringar (prishistorik) innan replace."""
+    archive_offers(chain, store_id, offers)
     rows = []
     for o in offers:
         r = dict(o)
