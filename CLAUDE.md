@@ -229,6 +229,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   `mainCategoryName`, `countryOfOriginName`. INGET jämförpris i söket. Via API-gatewayen, INTE
   den WAF-blockade ehandeln - så ICA:s katalog ÄR sökbar server-side (till skillnad från
   produktdetaljen som är WAF-skyddad).
+- **Willys/Hemköp produktsök (fullkatalog):** `GET {willys|hemkop}.se/search?q=&page=&size=`
+  (ingen auth) -> `results[]` + `pagination.totalNumberOfResults`. Item: `code` (Axfood-
+  artikelkod - EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,
+  `priceValue`, `comparePrice`+`comparePriceUnit`, `googleAnalyticsCategory`, `image`. EAN ej
+  inline (enda kedjan som kräver resolve även i sök).
 - **Willys/Hemköp step-1-tjänster:** CMS-komponenten `.../axfoodcommercewebservices/v2/
   {catalog}/cms/components?componentIds={Component}&storeId={id}` -> `storeFeatures`
   ({id: label}) -> tags. Component: `WillysDefaultRightColumnStoreInfoComponent` /

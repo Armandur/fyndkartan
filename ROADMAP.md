@@ -214,11 +214,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       `products.documents[]`: `gtin`, `displayName`, `price` (sträng), `image` (resizebar
       cloudinary), `mainCategoryName`. INGET jämförpris. Via API-gatewayen, inte WAF-blockade
       ehandeln -> ICA:s katalog är sökbar (bara produktDETALJEN är WAF-skyddad).
-    - **Axfood** (Willys/Hemköp): `/search/campaigns` (kampanjer) + `/axfood/rest/p/{code}`
-      (detalj). Kvar: rent katalog-sök (inte bara kampanjer)?
-    - **Slutsats:** alla utom Axfood-fullkatalog har sökbara katalog-API:er med EAN+pris
-      (Coop+City Gross har även jämförpris; ICA saknar jämförpris men har per-butik-pris).
-      Unified produktsök är därmed klart genomförbart.
+    - **Axfood** (Willys/Hemköp): fullkatalog-sök `GET {willys|hemkop}.se/search?q=&page=&size=`
+      (ingen auth) -> `results[]` + `pagination.totalNumberOfResults`. Item: `code` (Axfood-
+      artikelkod, EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,
+      `priceValue`, `comparePrice`+`comparePriceUnit` (jämförpris), `googleAnalyticsCategory`,
+      `image` (axfood cloudinary). EAN EJ inline (enda kedjan som kräver resolve i sök).
+    - **Slutsats:** ALLA kedjor har sökbara katalog-API:er med pris. EAN inline för City Gross
+      (`gtin`), Coop (`ean`), ICA (`gtin`); Axfood kräver code->EAN-resolve. Jämförpris: alla
+      utom ICA. Unified produktsök är klart genomförbart för hela sortimentet.
   - [ ] **Smart auto-förslag** kan förbättras (nu namn-token + förpackningsstorlek;
     ev. LLM/embeddings som domare).
 - [x] **Tagg-normalisering BYGGD.** Kanonisk vokabulär (`config.CANONICAL_TAG_TYPES`)
