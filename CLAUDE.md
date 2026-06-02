@@ -48,7 +48,7 @@ api/                 # Python-paketet (importeras som `api`)
   sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories() (kategori-förvärmning). STATE per kedja
   adapters/
     base.py          # make_store(), tags_from_services(), normalize_hours() + week/exceptions (expand_sv_label, enrich_exceptions via holidays), _norm_phone (phonenumbers)
-    ica.py coop.py willys.py hemkop.py lidl.py   # butiks-adaptrar, fetch_all() -> UnifiedStore[]
+    ica.py coop.py willys.py hemkop.py lidl.py citygross.py   # butiks-adaptrar, fetch_all() -> UnifiedStore[]
     axfood_common.py # fetch_features() (CMS -> tags) + parse_week/parse_exceptions (Axfood-öppettider)
     ica_token.py keys.py     # token/nyckel-hämtning (auto-förnyelse, scrape-on-401)
     ica_offers.py axfood_offers.py coop_offers.py   # erbjudande-adaptrar
