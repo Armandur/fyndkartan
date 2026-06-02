@@ -47,6 +47,7 @@ class CatalogPrice(BaseModel):
     price: float | None = Field(None, description="Hyllpris i kr (nationellt/representativt)")
     comparison_value: float | None = Field(None, description="Jämförpris-värde eller null")
     comparison_unit: str | None = Field(None, description="Jämförpris-enhet (kg/l/st...) eller null")
+    comparison_derived: bool | None = Field(None, description="True = beräknat jämförpris (pris/storlek), ungefärligt")
 
 
 class CatalogProduct(BaseModel):

@@ -354,6 +354,7 @@ async def catalog_private(q: str = Query(..., min_length=2), exclude: str | None
                 "ean": ean, "chains": [it["chain"]], "name": it.get("name"), "brand": it.get("brand"),
                 "package": it.get("package_size"), "image": it.get("image"),
                 "comparison_value": it.get("comparison_value"), "comparison_unit": it.get("comparison_unit"),
+                "comparison_derived": it.get("comparison_derived", False),
                 "group_id": members.get(ean),
             })
     out.sort(key=lambda p: (p["group_id"] is not None, p["chains"][0], (p["name"] or "").lower()))

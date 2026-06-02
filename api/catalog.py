@@ -73,6 +73,22 @@ def _origin_list(s):
     return parts or None
 
 
+# Storlek inbäddad i namnet ('Bearnaise 400g ICA' -> 400 g). ICA-söket saknar förpacknings-
+# fält, så storleken får hämtas ur namnet. % saknar enhet -> matchas inte (t.ex. "2,8%").
+_NAME_SIZE_RX = re.compile(r"(?<![,.\d])(\d+(?:[.,]\d+)?)\s*(kg|hg|g|l|dl|cl|ml|st|pack|p)\b", re.I)
+
+
+def _size_from_name(name):
+    """(storlekssträng, value, unit) ur namnet, annars (None, None, None)."""
+    m = _NAME_SIZE_RX.search(name or "")
+    if not m:
+        return None, None, None
+    unit = m.group(2).lower()
+    if unit == "pack":
+        unit = "p"
+    return f"{m.group(1)} {unit}", float(m.group(1).replace(",", ".")), unit
+
+
 # --- City Gross (Loop54 search/quick, ingen auth) -----------------------------------------
 _CG_UNITS = {"KGM": "kg", "LTR": "l", "GRM": "g", "PCE": "st", "MTR": "m"}
 _CG_IMG_BASE = "https://www.citygross.se/images/products/"
@@ -100,6 +116,7 @@ def _norm_citygross(it):
         "price": price,
         "comparison_value": cur.get("comparativePrice"),
         "comparison_unit": _CG_UNITS.get(cur.get("comparativePriceUnit")),
+        "comparison_derived": False,
     }
 
 
@@ -140,6 +157,7 @@ def _norm_coop(it):
         "price": sp.get("b2cPrice"),
         "comparison_value": cp.get("b2cPrice"),
         "comparison_unit": (cu.get("unit") or None),
+        "comparison_derived": False,
     }
 
 
@@ -168,20 +186,26 @@ async def _coop_search_req(client, q, limit, key):
 
 # --- ICA (globalsearch quicksearch, token + accountNumber) --------------------------------
 def _norm_ica(it):
+    name = it.get("displayName") or it.get("title")
+    ps, pv, pu = _size_from_name(name)  # ICA-söket saknar förpackningsfält -> ur namnet
+    price = _price_num(it.get("price"))
+    # ICA-söket saknar jämförpris -> härled ur pris/storlek (UNGEFÄRLIGT, markeras).
+    cv, cu = db.derived_comparison(price, pv, pu)
     return {
         "chain": "ica",
         "ean": matching.normalize_ean(it.get("gtin")),
-        "name": it.get("displayName") or it.get("title"),
+        "name": name,
         "brand": None,  # ICA-söket bär inget separat varumärke
         "origin": _origin_list(it.get("countryOfOriginName")),
         "image": it.get("image"),
         "category": categories.category_for("ica", it.get("mainCategoryName")),
-        "package_size": None,
-        "package_value": None,
-        "package_unit": None,
-        "price": _price_num(it.get("price")),
-        "comparison_value": None,  # inget jämförpris i ICA-söket
-        "comparison_unit": None,
+        "package_size": ps,
+        "package_value": pv,
+        "package_unit": pu,
+        "price": price,
+        "comparison_value": cv,
+        "comparison_unit": cu,
+        "comparison_derived": cv is not None,
     }
 
 
@@ -219,6 +243,7 @@ def _norm_axfood(it, chain, ean, cat_raw, origin):
         "price": _price_num(it.get("priceValue") if it.get("priceValue") is not None else it.get("price")),
         "comparison_value": _price_num(it.get("comparePrice")),
         "comparison_unit": (it.get("comparePriceUnit") or None),
+        "comparison_derived": False,
     }
 
 
@@ -301,7 +326,8 @@ def _build_product(group):
     """Slå ihop en EAN-grupp (en eller flera kedjor) till CatalogProduct-formen."""
     rep = group[0]
     prices = [{"chain": g["chain"], "price": g["price"],
-               "comparison_value": g["comparison_value"], "comparison_unit": g["comparison_unit"]}
+               "comparison_value": g["comparison_value"], "comparison_unit": g["comparison_unit"],
+               "comparison_derived": g.get("comparison_derived", False)}
               for g in group if g.get("price") is not None]
     pv = [p["price"] for p in prices]
     # Representativa fält: föredra ett item som har det satt.
