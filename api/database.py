@@ -87,7 +87,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             chain TEXT NOT NULL, store_id TEXT NOT NULL, offer_id TEXT NOT NULL,
             ean TEXT, name TEXT, price REAL, comparison_value REAL, comparison_unit TEXT,
-            valid_to TEXT, observed_at TEXT
+            savings REAL, member_price INTEGER, valid_to TEXT, observed_at TEXT
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_offer ON offer_observations(chain, store_id, offer_id, id)")
@@ -231,6 +231,8 @@ def init_db():
     _ensure_column(conn, "offers", "savings", "REAL")
     _ensure_column(conn, "ean_cache", "category", "TEXT")  # Axfood googleAnalyticsCategory (förvärmd)
     _ensure_column(conn, "ean_cache", "origin", "TEXT")  # Axfood ursprungsland (svenska, förvärmt)
+    _ensure_column(conn, "offer_observations", "savings", "REAL")  # för att spåra ordinarie pris
+    _ensure_column(conn, "offer_observations", "member_price", "INTEGER")
     _ensure_column(conn, "stores", "hours", "TEXT")  # JSON {week, exceptions} - normaliserad veckoöppettid
     conn.commit()
     conn.close()
@@ -558,17 +560,18 @@ _OFFER_PH = ",".join(f":{c}" for c in _OFFER_COLS.split(","))
 
 
 def archive_offers(chain, store_id, offers):
-    """Prishistorik: skriv en observation per offer NÄR (price, comparison_value, valid_to)
-    ändrats sedan senaste observationen för (chain, store_id, offer_id). Append-only, deduppat
-    -> upprepade synkar med oförändrade priser ger inga nya rader."""
+    """Prishistorik: skriv en observation per offer NÄR (price, comparison_value, savings,
+    valid_to) ändrats sedan senaste observationen för (chain, store_id, offer_id). `savings`
+    låter ordinarie pris (≈ price + savings för flat) spåras. Append-only, deduppat -> upprepade
+    synkar med oförändrade priser ger inga nya rader."""
     if not offers:
         return
     conn = get_conn()
     try:
         latest = {
-            r["offer_id"]: (r["price"], r["comparison_value"], r["valid_to"])
+            r["offer_id"]: (r["price"], r["comparison_value"], r["savings"], r["valid_to"])
             for r in conn.execute(
-                "SELECT offer_id, price, comparison_value, valid_to FROM offer_observations "
+                "SELECT offer_id, price, comparison_value, savings, valid_to FROM offer_observations "
                 "WHERE chain=? AND store_id=? AND id IN (SELECT MAX(id) FROM offer_observations "
                 "WHERE chain=? AND store_id=? GROUP BY offer_id)",
                 (chain, str(store_id), chain, str(store_id)),
@@ -578,17 +581,18 @@ def archive_offers(chain, store_id, offers):
         rows = []
         for o in offers:
             oid = str(o.get("offer_id"))
-            cur = (o.get("price"), o.get("comparison_value"), o.get("valid_to"))
+            cur = (o.get("price"), o.get("comparison_value"), o.get("savings"), o.get("valid_to"))
             if latest.get(oid) == cur:
                 continue
             eans = o.get("eans") or []
             rows.append((chain, str(store_id), oid, eans[0] if eans else None, o.get("name"),
                          o.get("price"), o.get("comparison_value"), o.get("comparison_unit"),
-                         o.get("valid_to"), now))
+                         o.get("savings"), o.get("member_price"), o.get("valid_to"), now))
         if rows:
             conn.executemany(
                 "INSERT INTO offer_observations (chain, store_id, offer_id, ean, name, price, "
-                "comparison_value, comparison_unit, valid_to, observed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "comparison_value, comparison_unit, savings, member_price, valid_to, observed_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 rows,
             )
             conn.commit()
