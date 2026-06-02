@@ -274,7 +274,7 @@ function offerCard(o) {
     : "";
   const ean = o.eans && o.eans[0];
   const info = ean
-    ? `<button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Innehåll &amp; näring</button>`
+    ? `<button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Visa information</button>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -765,7 +765,7 @@ function productCard(p) {
     : "";
   const stores = p.offer_count ? `<span class="o-stores">${p.offer_count} butik${p.offer_count === 1 ? "" : "er"}</span>` : "";
   const info = p.ean
-    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Innehåll &amp; näring</button>`
+    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -774,6 +774,43 @@ function productCard(p) {
       <div class="o-meta">${meta}</div>
       <div class="o-price-row"><span class="o-price">${esc(price)}</span>${dealBadge(p)}</div>
       <div class="o-foot">${catChip}${chains}${stores}</div>
+      ${info}
+    </div>
+  </div>`;
+}
+
+// Katalog-kort: hela sortimentet, nationellt HYLLPRIS per kedja (ej erbjudanden -> ingen
+// deal-badge/offer_count). Jämförpris kan vara beräknat (≈) när kedjan inte gav det.
+function catalogCard(p) {
+  const imgSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
+  const img = imgSrc
+    ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
+    : `<div class="o-img o-img--ph"></div>`;
+  const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
+  const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
+  const catChip = p.category ? `<span class="o-cat">${esc(catLabels[p.category] || p.category)}</span>` : "";
+  const prices = (p.prices || []).map((pr) => {
+    const m = state.chains[pr.chain] || {};
+    const cmp = pr.comparison_value != null
+      ? ` <span class="text-muted">(${pr.comparison_value}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")})</span>`
+      : "";
+    const px = pr.price != null ? `${pr.price} kr` : "-";
+    return `<div class="o-shelf-row"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span><span>${px}${cmp}</span></div>`;
+  }).join("");
+  const range = p.price_min != null
+    ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
+    : "";
+  const info = p.ean
+    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button>`
+    : "";
+  return `<div class="offer-card">
+    ${img}
+    <div class="o-body">
+      <div class="o-name">${esc(p.name || "")}</div>
+      <div class="o-meta">${meta}</div>
+      <div class="o-price-row"><span class="o-price">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span></div>
+      <div class="o-shelf">${prices}</div>
+      <div class="o-foot">${catChip}</div>
       ${info}
     </div>
   </div>`;
@@ -795,11 +832,35 @@ function openProductsPanel() {
   openNav();
 }
 
+let productsMode = "offers";   // "offers" (cache, snabb) | "catalog" (live fan-out, hyllpris)
+let productsToken = 0;          // race-guard: bara senaste sökningen får skriva resultat
+
 async function loadProducts() {
   const q = document.getElementById("productsFilter").value.trim();
   const cat = document.getElementById("productsCategory").value;
   const list = document.getElementById("productsList");
   const title = document.getElementById("productsTitle");
+  const token = ++productsToken;
+  if (productsMode === "catalog") {
+    if (q.length < 2) {
+      title.textContent = "Hela sortimentet";
+      list.innerHTML = `<div class="text-muted small p-2">Skriv minst 2 tecken. Söker hela sortimentet (hyllpris, inte erbjudanden).</div>`;
+      return;
+    }
+    list.innerHTML = `<div class="text-muted small p-2">Söker hela sortimentet&hellip;</div>`;
+    try {
+      const d = await (await fetch(`/v1/products/catalog?q=${encodeURIComponent(q)}&limit=60`)).json();
+      if (token !== productsToken) return;  // en nyare sökning har redan tagit över
+      const products = d.products || [];
+      title.textContent = `Hela sortimentet (${products.length})`;
+      list.innerHTML = products.length
+        ? `<div class="text-muted xsmall px-2 pb-1">Nationellt/representativt hyllpris per kedja - inte butikens erbjudanden.</div>` + products.map(catalogCard).join("")
+        : `<div class="text-muted small p-2">Inga träffar i sortimentet.</div>`;
+    } catch (e) {
+      if (token === productsToken) list.innerHTML = `<div class="text-danger small p-2">Kunde inte söka sortimentet.</div>`;
+    }
+    return;
+  }
   let url;
   if (cat) url = `/v1/products/by-category?category=${encodeURIComponent(cat)}&limit=100`;
   else if (q.length >= 2) url = `/v1/products/search?q=${encodeURIComponent(q)}&limit=60`;
@@ -811,6 +872,7 @@ async function loadProducts() {
   list.innerHTML = `<div class="text-muted small p-2">Söker&hellip;</div>`;
   try {
     const d = await (await fetch(url)).json();
+    if (token !== productsToken) return;
     let products = d.products || [];
     if (cat && q) {
       const ql = q.toLowerCase();
@@ -821,21 +883,31 @@ async function loadProducts() {
       ? products.map(productCard).join("")
       : `<div class="text-muted small p-2">Inga produkter.</div>`;
   } catch (e) {
-    list.innerHTML = `<div class="text-danger small p-2">Kunde inte hämta produkter.</div>`;
+    if (token === productsToken) list.innerHTML = `<div class="text-danger small p-2">Kunde inte hämta produkter.</div>`;
   }
 }
 
 let productsTimer = null;
+function scheduleProducts() {
+  clearTimeout(productsTimer);
+  productsTimer = setTimeout(loadProducts, productsMode === "catalog" ? 450 : 250);  // fan-out = längre debounce
+}
+function setProductsMode(mode) {
+  if (mode === productsMode) return;
+  productsMode = mode;
+  document.getElementById("prodModeOffers").classList.toggle("active", mode === "offers");
+  document.getElementById("prodModeCatalog").classList.toggle("active", mode === "catalog");
+  document.getElementById("productsCategory").classList.toggle("d-none", mode === "catalog");  // katalogen saknar kategori-bläddring
+  loadProducts();
+}
+document.getElementById("prodModeOffers").addEventListener("click", () => setProductsMode("offers"));
+document.getElementById("prodModeCatalog").addEventListener("click", () => setProductsMode("catalog"));
 document.getElementById("productSearch").addEventListener("input", (e) => {
   document.getElementById("productsFilter").value = e.target.value.trim();
   openProductsPanel();
-  clearTimeout(productsTimer);
-  productsTimer = setTimeout(loadProducts, 250);
+  scheduleProducts();
 });
-document.getElementById("productsFilter").addEventListener("input", () => {
-  clearTimeout(productsTimer);
-  productsTimer = setTimeout(loadProducts, 250);
-});
+document.getElementById("productsFilter").addEventListener("input", scheduleProducts);
 document.getElementById("productsCategory").addEventListener("change", loadProducts);
 document.getElementById("productsBack").addEventListener("click", () => {
   document.getElementById("productsPanel").classList.add("d-none");

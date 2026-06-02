@@ -218,7 +218,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     Per-query-cache (in-process, 90s TTL, cachar full lista + limit-slicar) skyddar typeahead.
     Axfood-EAN-resolve: koder utan EAN i `ean_cache` resolvas via `/p/{code}` (capat `AXFOOD_RESOLVE_CAP`
     /kedja+sök, ger även kategori, persisteras -> warmar) - lyfte cross-chain-träffarna kraftigt
-    (t.ex. "yoghurt" 4-kedjes-matchningar med alla hyllpriser). Kvar: frontend-läge.
+    (t.ex. "yoghurt" 4-kedjes-matchningar med alla hyllpriser).
+    - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
+      snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
+      nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
+      längre debounce (450ms) + race-guard (`productsToken`) så ett segt fan-out-svar för en äldre
+      söksträng inte skriver över en nyare. Kategori-dropdownen döljs i katalog-läget (ingen
+      by-category där). "Visa information" öppnar samma produktmodal (info + prishistorik).
   - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
     EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
     ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):
@@ -396,7 +402,10 @@ domäner:
   - [x] **Frontend-produktsök BYGGT.** Sökruta i sidopanelen + egen produktpanel som gör
     både namnsök och kategori-bläddring (dropdown med kanoniska kategorier). Produktkort:
     bild, märke/förpackning/ursprung, kategori-chip, kedje-chips, prisintervall, deal-badge,
-    "Innehåll & näring"-knapp + "N butiker". Ej webbläsartestad.
+    "Visa information"-knapp + "N butiker". Ej webbläsartestad.
+    - [x] **Knappen "Innehåll & näring" -> "Visa information"** (offer-/produkt-/katalog-kort).
+      Modalen visar nu mer än bara innehåll/näring (prishistorik, ev. mer framåt), så namnet
+      generaliserades. Ren textändring.
   - [ ] **Filtrera kartan på en vald produkt** ("visa butiker som har varan"). BEROR PÅ
     bredare offer-täckning / fulla sortiment: med lazy-cachen blir filtret antingen
     missvisande (precist = döljer de flesta butiker som faktiskt har varan, vi har bara en
