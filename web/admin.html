@@ -600,8 +600,8 @@
             ${mqThumb(p)}${chains(p)}<span class="small fw-semibold text-truncate">${esc(p.name || "")}</span>
             <span class="small text-muted text-nowrap">${esc(p.package || "")} · ${mqUnit(p)}</span>
             ${p.score != null ? `<span class="badge bg-light text-dark ms-auto">${p.score}</span>` : ""}
-            ${p.group_id != null ? `<span class="badge bg-secondary">grupp ${p.group_id}</span>` : ""}
           </label>
+          ${p.group_id != null ? `<button class="btn btn-sm btn-link p-0 text-nowrap mq-addsrc" data-gid="${p.group_id}" title="Lägg källan i denna paring">→ grupp ${p.group_id}</button>` : ""}
           <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${detailChain(p)}" data-ean="${esc(p.ean)}">info</button>
         </div>
         <div class="dt-box d-none small ps-4 pt-1"></div></div>`;
@@ -641,6 +641,21 @@
         const p = findProduct(cb.dataset.key);
         if (cb.checked) marq.picks.set(cb.dataset.key, p); else marq.picks.delete(cb.dataset.key);
       }));
+      root.querySelectorAll(".mq-addsrc").forEach(b => b.addEventListener("click", () => addSourceToGroup(+b.dataset.gid)));
+    }
+
+    async function addSourceToGroup(gid) {
+      const s = marq.selected;
+      if (!s) return;
+      const body = { chain: detailChain(s), ean: s.ean, name: s.name, brand: s.brand, package: s.package };
+      const r = await api(`/v1/admin/matches/${gid}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) { alert((await r.json()).detail || "Kunde inte lägga till."); return; }
+      markRowMatched(s.ean, gid);
+      marq.selected = null; marq.picks.clear();
+      document.querySelectorAll("#mqList .marq-row.sel").forEach(rr => rr.classList.remove("sel"));
+      document.getElementById("mqPair").innerHTML = `<div class="text-success small mb-2">Lade till källan i grupp ${gid}.</div>
+        <div class="text-muted small">Välj nästa produkt till vänster.</div>`;
+      loadMqGroups();
     }
 
     function manualSearch(q) {
@@ -686,22 +701,106 @@
 
     async function loadMqGroups() {
       const d = await (await api("/v1/admin/matches")).json();
-      const groups = d.groups.map(g => `
-        <div class="mq-group">
+      marq.groups = d.groups;
+      if (!document.getElementById("mqGroupsList")) {
+        document.getElementById("mqGroups").innerHTML = `
+          <h6 class="mb-2">Befintliga paringar (<span id="mqGroupCount">0</span>)</h6>
+          <input id="mqGroupSearch" class="form-control form-control-sm mb-2" placeholder="Sök i paringar (namn/märke/grupp-id)…">
+          <div id="mqGroupsList"></div>`;
+        document.getElementById("mqGroupSearch").addEventListener("input", (e) => {
+          marq.groupQ = e.target.value.trim().toLowerCase(); renderMqGroups();
+        });
+      }
+      renderMqGroups();
+    }
+
+    function renderMqGroups() {
+      const q = marq.groupQ || "", all = marq.groups || [];
+      const groups = q
+        ? all.filter(g => String(g.group_id) === q ||
+            g.members.some(m => `${m.name || ""} ${m.brand || ""}`.toLowerCase().includes(q)))
+        : all;
+      document.getElementById("mqGroupCount").textContent = q ? `${groups.length}/${all.length}` : all.length;
+      document.getElementById("mqGroupsList").innerHTML = groups.map(g => `
+        <div class="mq-group" data-gid="${g.group_id}">
           <div class="d-flex align-items-center"><span class="small fw-semibold">Grupp ${g.group_id}</span>
-            <button class="btn btn-sm btn-link text-danger ms-auto p-0 grp-del" data-gid="${g.group_id}">Ta bort</button></div>
-          ${g.members.map(m => `<div class="dt-wrap">
-            <div class="small">${chip(m.chain)} ${esc(m.name || m.ean)}
-              <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${m.chain}" data-ean="${esc(m.ean)}">info</button></div>
-            <div class="dt-box d-none small ps-3"></div></div>`).join("")}
-        </div>`).join("") || '<div class="text-muted small">Inga paringar än.</div>';
-      document.getElementById("mqGroups").innerHTML = `<h6>Befintliga paringar (${d.count})</h6>${groups}`;
-      document.querySelectorAll(".grp-del").forEach(b => b.addEventListener("click", async () => {
+            <button class="btn btn-sm btn-link p-0 ms-auto grp-add" data-gid="${g.group_id}">+ Lägg till</button>
+            <button class="btn btn-sm btn-link text-danger p-0 ms-2 grp-del" data-gid="${g.group_id}">Ta bort</button></div>
+          ${g.members.map(m => { const fp = findProduct(m.ean) || {}; return `<div class="dt-wrap">
+            <div class="d-flex align-items-center gap-2 small py-1">
+              ${mqThumb(fp)}${chip(m.chain)}
+              <span class="text-truncate" style="min-width:0;flex:1">
+                <span class="fw-semibold">${esc(m.name || m.ean)}</span>
+                <span class="text-muted"> ${esc(fp.brand || m.brand || "")} · ${esc(fp.package || m.package || "")}${fp.comparison_value != null ? " · " + mqUnit(fp) : ""}</span>
+              </span>
+              <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${m.chain}" data-ean="${esc(m.ean)}">info</button>
+              <button class="btn btn-sm btn-link text-danger p-0 grp-memdel" data-chain="${m.chain}" data-ean="${esc(m.ean)}" title="Ta bort ur paring">✕</button></div>
+            <div class="dt-box d-none small ps-3"></div></div>`; }).join("")}
+          <div class="grp-addbox d-none mt-1" data-gid="${g.group_id}"></div>
+        </div>`).join("") || `<div class="text-muted small">${q ? "Inga paringar matchar." : "Inga paringar än."}</div>`;
+      document.querySelectorAll("#mqGroupsList .grp-del").forEach(b => b.addEventListener("click", async () => {
         if (!confirm("Ta bort paringen?")) return;
         await api("/v1/admin/matches/" + b.dataset.gid, { method: "DELETE" });
         marq.products.forEach(p => { if (String(p.group_id) === b.dataset.gid) p.group_id = null; });
         renderMqList(); loadMqGroups();
       }));
+      document.querySelectorAll("#mqGroupsList .grp-add").forEach(b => b.addEventListener("click", () => openAddToGroup(+b.dataset.gid)));
+      document.querySelectorAll("#mqGroupsList .grp-memdel").forEach(b => b.addEventListener("click", async () => {
+        if (!confirm("Ta bort produkten ur paringen?")) return;
+        await api(`/v1/admin/matches/${b.dataset.chain}/${encodeURIComponent(b.dataset.ean)}`, { method: "DELETE" });
+        const p = findProduct(b.dataset.ean); if (p) p.group_id = null;
+        renderMqList(); loadMqGroups();
+      }));
+    }
+
+    function groupCandRow(p, gid) {
+      return `<div class="dt-wrap">
+        <div class="d-flex align-items-center gap-2 small py-1">
+          ${mqThumb(p)}${chains(p)}
+          <span class="text-truncate" style="min-width:0;flex:1">
+            <span class="fw-semibold">${esc(p.name || "")}</span>
+            <span class="text-muted"> ${esc(p.brand || "")} · ${esc(p.package || "")} · ${mqUnit(p)}</span>
+          </span>
+          ${p.score != null ? `<span class="badge bg-light text-dark">${p.score}</span>` : ""}
+          <button class="btn btn-sm btn-link p-0 dt-btn" data-chain="${detailChain(p)}" data-ean="${esc(p.ean)}">info</button>
+          <button class="btn btn-sm btn-link p-0 grp-addbtn" data-gid="${gid}" data-ean="${esc(p.ean)}">lägg till</button>
+        </div>
+        <div class="dt-box d-none small ps-4 pt-1"></div>
+      </div>`;
+    }
+
+    function bindGroupAdd(root, gid) {
+      root.querySelectorAll(".grp-addbtn").forEach(b => b.addEventListener("click", async () => {
+        const p = findProduct(b.dataset.ean);
+        if (!p) return;
+        const body = { chain: detailChain(p), ean: p.ean, name: p.name, brand: p.brand, package: p.package };
+        const r = await api(`/v1/admin/matches/${gid}/members`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        if (!r.ok) { alert((await r.json()).detail || "Kunde inte lägga till."); return; }
+        markRowMatched(p.ean, gid);
+        loadMqGroups();
+      }));
+    }
+
+    async function openAddToGroup(gid) {
+      const box = document.querySelector(`.grp-addbox[data-gid="${gid}"]`);
+      if (!box.classList.contains("d-none")) { box.classList.add("d-none"); box.innerHTML = ""; return; }
+      box.classList.remove("d-none");
+      box.innerHTML = '<div class="text-muted small">Hämtar förslag…</div>';
+      const d = await (await api(`/v1/admin/match/group-suggestions?group_id=${gid}`)).json();
+      const sug = (d.suggestions || []).map(p => groupCandRow(p, gid)).join("") || '<div class="text-muted small">Inga förslag. Sök manuellt nedan.</div>';
+      box.innerHTML = `<div class="small text-uppercase text-muted mb-1">Lägg till i grupp ${gid}</div>${sug}
+        <input class="form-control form-control-sm mt-1 grp-manual" placeholder="Sök manuellt…">
+        <div class="grp-manualres mt-1"></div>`;
+      bindGroupAdd(box, gid);
+      let t; box.querySelector(".grp-manual").addEventListener("input", (e) => {
+        clearTimeout(t); t = setTimeout(() => {
+          const ql = e.target.value.trim().toLowerCase(), res = box.querySelector(".grp-manualres");
+          if (!ql) { res.innerHTML = ""; return; }
+          const items = marq.products.filter(p => p.group_id == null && (p.name || "").toLowerCase().includes(ql)).slice(0, 8);
+          res.innerHTML = items.map(p => groupCandRow(p, gid)).join("") || '<div class="text-muted small">Inga träffar.</div>';
+          bindGroupAdd(res, gid);
+        }, 220);
+      });
     }
 
     // ---- Produktdetalj (lazy, ingredienser/näring/ursprung) ----

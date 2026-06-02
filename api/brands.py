@@ -17,7 +17,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
 from . import auth, config, database as db, embeddings
-from .matching import normalize_ean
+from .matching import _norm_unit, normalize_ean
 
 router = APIRouter(prefix="/v1/admin", dependencies=[Depends(auth.require_admin)])
 
@@ -119,6 +119,31 @@ def rank_candidates(src, cands):
     return scored, "embeddings"
 
 
+def rank_for_group(members, cands):
+    """Ranka kandidater mot en HEL grupp: semantisk likhet mot gruppens centroid (medel av
+    medlemmarnas namn-embeddings) + förpacknings-bonus mot närmaste medlem. Lexikal fallback:
+    bästa `score` mot någon medlem. Returnerar (rankad_lista, metod)."""
+    sims = embeddings.group_cosines(
+        [_clean_for_embed(m.get("name"), m.get("brand")) for m in members],
+        [_clean_for_embed(c.get("name"), c.get("brand")) for c in cands],
+    )
+    if sims is None:
+        scored = []
+        for c in cands:
+            s = max((score(m, c) for m in members), default=0.0)
+            if s > 0:
+                scored.append({**c, "score": s})
+        scored.sort(key=lambda p: p["score"], reverse=True)
+        return scored, "lexical"
+    scored = []
+    for c, sem in zip(cands, sims):
+        if sem >= _SEM_FLOOR:
+            bonus = max((_package_bonus(m, c) for m in members), default=0.0)
+            scored.append({**c, "score": round(sem + bonus, 3)})
+    scored.sort(key=lambda p: p["score"], reverse=True)
+    return scored, "embeddings"
+
+
 # ---- Hämta private-label-produkter ur offers (kollapsade per EAN) ----
 def _is_private(brand, roots):
     b = (brand or "").lower()
@@ -160,8 +185,9 @@ def _products(conn, brands, chain=None, q=None):
             if e is None:
                 out[ean] = {
                     "ean": ean, "chains": [ch], "name": r["name"], "brand": r["brand"],
-                    "package": r["package"], "comparison_value": r["comparison_value"],
-                    "comparison_unit": r["comparison_unit"], "category": r["category_raw"],
+                    "package": db.normalized_package(r["package"]),
+                    "comparison_value": r["comparison_value"],
+                    "comparison_unit": _norm_unit(r["comparison_unit"]), "category": r["category_raw"],
                     "image": r["image"], "group_id": members.get(ean),
                 }
             elif ch not in e["chains"]:
@@ -232,6 +258,35 @@ async def suggestions(ean: str = Query(...), limit: int = 8):
     return {"source": src, "suggestions": ranked[:limit], "method": method}
 
 
+@router.get("/match/group-suggestions")
+async def group_suggestions(group_id: int = Query(...), limit: int = 8):
+    """Förslag på produkter att LÄGGA TILL i en befintlig grupp - rankade mot gruppens
+    medlemmar (centroid-likhet). Kandidater = ogrupperade private-label-produkter."""
+    members = [m for m in db.load_match_members() if m["group_id"] == group_id]
+    if not members:
+        return JSONResponse({"detail": "Gruppen finns inte."}, status_code=404)
+    conn = db.get_conn()
+    try:
+        cands = [p for p in _products(conn, db.load_private_brands()) if p.get("group_id") is None]
+    finally:
+        conn.close()
+    ranked, method = rank_for_group(members, cands)
+    return {"group_id": group_id, "members": members, "suggestions": ranked[:limit], "method": method}
+
+
+@router.post("/matches/{group_id}/members")
+async def add_to_group(group_id: int, payload: dict = Body(...)):
+    """Lägg en produkt i en befintlig grupp (flyttar den om den redan låg i en annan)."""
+    ean = normalize_ean(payload.get("ean"))
+    if payload.get("chain") not in config.CHAINS or not ean:
+        return JSONResponse({"detail": "Ogiltig produkt."}, status_code=400)
+    if not db.match_group_exists(group_id):
+        return JSONResponse({"detail": "Gruppen finns inte."}, status_code=404)
+    db.add_match_member(group_id, {"chain": payload["chain"], "ean": ean, "name": payload.get("name"),
+                                   "brand": payload.get("brand"), "package": payload.get("package")})
+    return {"group_id": group_id}
+
+
 @router.get("/matches")
 async def list_matches():
     groups = {}
@@ -267,5 +322,12 @@ async def delete_match(group_id: int):
 
 @router.delete("/matches/{chain}/{ean}")
 async def unlink_match_member(chain: str, ean: str):
+    """Ta bort en enskild produkt ur en paring. Faller gruppen under 2 medlemmar upplöses
+    den (en ensam medlem är ingen paring)."""
+    gid = db.member_group(chain, str(ean))
     db.unlink_member(chain, ean)
-    return {"removed": True}
+    dissolved = False
+    if gid is not None and db.match_group_size(gid) < 2:
+        db.delete_match_group(gid)
+        dissolved = True
+    return {"removed": True, "group_dissolved": dissolved}

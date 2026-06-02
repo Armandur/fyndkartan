@@ -54,3 +54,25 @@ def name_cosines(query, candidates):
     vecs = vecs / norms
     sims = vecs[1:] @ vecs[0]
     return [float(s) if (candidates[i] or "").strip() else 0.0 for i, s in enumerate(sims)]
+
+
+def group_cosines(members, candidates):
+    """Cosine mellan en GRUPPS centroid (medel av medlemmarnas embeddings, normaliserat) och
+    varje kandidat. None om embeddings ej tillgängliga; tomma kandidatnamn -> 0."""
+    members = [x for x in members if (x or "").strip()]
+    candidates = list(candidates)
+    if not candidates or not members:
+        return None if _get_model() is None else [0.0] * len(candidates)
+    m = _get_model()
+    if m is None:
+        return None
+    import numpy as np
+
+    vecs = m.encode(members + [c or "" for c in candidates])
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    vecs = vecs / norms
+    centroid = vecs[: len(members)].mean(axis=0)
+    centroid = centroid / (np.linalg.norm(centroid) or 1.0)
+    sims = vecs[len(members):] @ centroid
+    return [float(s) if (candidates[i] or "").strip() else 0.0 for i, s in enumerate(sims)]

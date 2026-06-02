@@ -618,6 +618,18 @@ def _clean_package(pkg):
     return s or None, value, unit, approx
 
 
+def normalized_package(pkg):
+    """Ren, skal-normaliserad förpacknings-sträng för visning: brand-prefix bort, ordenheter
+    -> symbol (`_clean_package`), och ml->l / g->kg när det blir ett helt tal ('1000 Milliliter'
+    -> '1 l', 'ELDORADO, 1l' -> '1 l'). Range/multipack (utan enkel value+unit) lämnas städad."""
+    s, value, unit, approx = _clean_package(pkg)
+    if value is not None and unit in ("ml", "g") and value >= 1000 and value % 1000 == 0:
+        value, unit = value / 1000, {"ml": "l", "g": "kg"}[unit]
+    if value is not None and unit:
+        return ("ca " if approx else "") + f"{value:g} {unit}"
+    return s
+
+
 def _origin_list(s):
     return [t.strip() for t in s.split("/") if t.strip()] or None
 
@@ -1013,6 +1025,45 @@ def unlink_member(chain, ean):
     conn.execute("DELETE FROM product_matches WHERE chain=? AND ean=?", (chain, str(ean)))
     conn.commit()
     conn.close()
+
+
+def add_match_member(group_id, member):
+    """Lägg en produkt i en befintlig grupp. PK (chain, ean) -> INSERT OR REPLACE flyttar den
+    om den redan låg i en annan grupp."""
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO product_matches (group_id, chain, ean, name, brand, package) VALUES (?,?,?,?,?,?)",
+        (group_id, member["chain"], str(member["ean"]), member.get("name"),
+         member.get("brand"), member.get("package")),
+    )
+    conn.commit()
+    conn.close()
+
+
+def match_group_exists(group_id):
+    conn = get_conn()
+    row = conn.execute("SELECT 1 FROM product_matches WHERE group_id=? LIMIT 1", (group_id,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def member_group(chain, ean):
+    """group_id för en medlem (chain, ean), eller None."""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT group_id FROM product_matches WHERE chain=? AND ean=?", (chain, str(ean))
+    ).fetchone()
+    conn.close()
+    return row["group_id"] if row else None
+
+
+def match_group_size(group_id):
+    conn = get_conn()
+    n = conn.execute(
+        "SELECT COUNT(*) AS c FROM product_matches WHERE group_id=?", (group_id,)
+    ).fetchone()["c"]
+    conn.close()
+    return n
 
 
 def delete_match_group(group_id):
