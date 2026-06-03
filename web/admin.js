@@ -974,7 +974,7 @@
     }
 
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
-    const CATALOG_IMPLEMENTED = ["citygross"];
+    const CATALOG_IMPLEMENTED = ["citygross", "ica"];
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
@@ -1068,7 +1068,7 @@
         const pct = s.categories_total ? Math.round((s.categories_done / s.categories_total) * 100) : 0;
         const bar = s.status === "running" || s.categories_total
           ? `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
-             <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} kategorier${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
+             <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} steg${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
           : "";
         return `<div class="card p-3 mb-2">
           <div class="d-flex align-items-center mb-1">${chip(c)}

@@ -10,7 +10,8 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from . import apilog, config, database, matching
+from . import apilog, catalog, config, database, matching
+from .adapters import ica_token
 
 log = logging.getLogger("matbutiker")
 
@@ -19,15 +20,19 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
-_IMPLEMENTED = ("citygross",)
+_IMPLEMENTED = ("citygross", "ica")
 _RECENT_MAX = 14  # live-feed: senast ingestade produkter
+
+
+def _blank_chain():
+    return {"status": "idle", "categories_done": 0, "categories_total": 0, "total": 0,
+            "products": 0, "new": 0, "known": 0, "changed": 0, "errors": 0,
+            "current_category": None, "last_errors": []}
+
 
 CRAWL_STATE = {
     "running": False, "started_at": None, "finished_at": None, "recent": [],
-    "chains": {c: {"status": "idle", "categories_done": 0, "categories_total": 0,
-                   "products": 0, "new": 0, "known": 0, "changed": 0, "errors": 0,
-                   "current_category": None, "last_errors": []}
-               for c in CATALOG_CHAINS},
+    "chains": {c: _blank_chain() for c in CATALOG_CHAINS},
 }
 
 _UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -94,9 +99,9 @@ async def _cg_categories(client):
     return out
 
 
-def _feed(rows):
+def _feed(chain, rows):
     """Lägg senaste ingestade produkter överst i live-feeden."""
-    items = [{"chain": "citygross", "name": r["name"], "ean": r["ean"]} for r in rows if r.get("name")]
+    items = [{"chain": chain, "name": r["name"], "ean": r["ean"]} for r in rows if r.get("name")]
     CRAWL_STATE["recent"] = (items[::-1] + CRAWL_STATE["recent"])[:_RECENT_MAX]
 
 
@@ -123,7 +128,7 @@ async def _cg_crawl_category(client, cid, st, seen):
             st["known"] += known
             st["changed"] += changed
             st["products"] += len(rows)
-            _feed(rows)
+            _feed("citygross", rows)
         skip += len(items)
         await asyncio.sleep(config.CATALOG_CRAWL_PACE)
         if skip >= total:
@@ -156,6 +161,75 @@ async def _crawl_citygross(client, limit_categories):
     st["status"] = "ok" if not st["errors"] else "ok_med_fel"
 
 
+# --- ICA (globalsearch quicksearch; wildcard '*' -> hela katalogen, offset-paginering) -------
+_ICA_URL = "https://apimgw-pub.ica.se/sverige/digx/globalsearch/v1/search/quicksearch"
+
+
+def _ica_row(doc):
+    # Återanvänd katalog-sökets normalisering; lägg product_id (gtin) + category_raw (mainCategoryName).
+    return {**catalog._norm_ica(doc), "product_id": str(doc.get("gtin") or ""),
+            "category_raw": doc.get("mainCategoryName")}
+
+
+async def _crawl_ica(client, limit_pages):
+    """ICA har inget kategoriträd som behövs - wildcard '*' + offset paginerar hela katalogen
+    (~20k produkter). `limit_pages` (=limit_categories) cappar antal sidor för snabbtest."""
+    st = CRAWL_STATE["chains"]["ica"]
+    st["status"] = "running"
+    started = _now()
+    try:
+        token = await ica_token.get_token(client)
+    except Exception as e:  # noqa: BLE001
+        st["status"] = "ok_med_fel"; st["last_errors"].append(f"token: {e}"); return
+    acct = (database.ica_resolve_accounts() or [None])[0]
+    if not acct:
+        st["status"] = "ok_med_fel"; st["last_errors"].append("ingen ICA-butiksprofil"); return
+    seen, offset, page, size = set(), 0, 0, config.CATALOG_CRAWL_PAGE
+    while True:
+        try:
+            r = await client.post(_ICA_URL, json={
+                "queryString": "*", "take": size, "offset": offset, "accountNumber": acct,
+                "searchDomain": "All", "sessionId": "catalog-crawl"},
+                headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"}, timeout=30)
+            r.raise_for_status()
+            prods = r.json().get("products") or {}
+        except Exception as e:  # noqa: BLE001
+            st["errors"] += 1
+            if len(st["last_errors"]) < 8:
+                st["last_errors"].append(f"offset {offset}: {e}")
+            break
+        docs = prods.get("documents") or []
+        total = (prods.get("stats") or {}).get("totalHits") or 0
+        st["total"] = total
+        st["categories_total"] = max(1, -(-total // size))  # = antal sidor
+        if not docs:
+            break
+        rows = []
+        for d in docs:
+            pid = str(d.get("gtin") or "")
+            if pid and pid not in seen:
+                seen.add(pid)
+                rows.append(_ica_row(d))
+        if rows:
+            new, known, changed = database.catalog_upsert("ica", rows)
+            st["new"] += new; st["known"] += known; st["changed"] += changed
+            st["products"] += len(rows)
+            _feed("ica", rows)
+        offset += len(docs)
+        page += 1
+        st["categories_done"] = page
+        st["current_category"] = f"{st['products']} / {total} produkter"
+        await asyncio.sleep(config.CATALOG_CRAWL_PACE)
+        if offset >= total or (limit_pages and page >= limit_pages):
+            break
+    st["current_category"] = None
+    if not limit_pages:
+        database.catalog_mark_unseen("ica", started)
+    if st["status"] == "running":
+        st["status"] = "ok" if not st["errors"] else "ok_med_fel"
+
+
 async def crawl_all(limit_categories=None):
     """Crawla alla implementerade kedjor sekventiellt (snällt + tydlig progress). `limit_categories`
     cappar antal kategorier per kedja (för snabb test av visualiseringen)."""
@@ -163,13 +237,12 @@ async def crawl_all(limit_categories=None):
         return CRAWL_STATE
     CRAWL_STATE.update(running=True, started_at=_now(), finished_at=None, recent=[])
     for c in CATALOG_CHAINS:
-        CRAWL_STATE["chains"][c].update(status="idle", categories_done=0, categories_total=0,
-                                        products=0, new=0, known=0, changed=0, errors=0,
-                                        current_category=None, last_errors=[])
+        CRAWL_STATE["chains"][c] = _blank_chain()
     try:
         async with apilog.make_client(follow_redirects=True) as client:
             await _crawl_citygross(client, limit_categories)
-            # TODO(steg 5): Coop/ICA/Axfood-crawlers här.
+            await _crawl_ica(client, limit_categories)
+            # TODO(steg 5): Coop/Axfood-crawlers här.
     finally:
         CRAWL_STATE.update(running=False, finished_at=_now())
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
