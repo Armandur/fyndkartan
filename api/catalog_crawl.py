@@ -25,7 +25,7 @@ _RECENT_MAX = 14  # live-feed: senast ingestade produkter
 CRAWL_STATE = {
     "running": False, "started_at": None, "finished_at": None, "recent": [],
     "chains": {c: {"status": "idle", "categories_done": 0, "categories_total": 0,
-                   "products": 0, "new": 0, "known": 0, "errors": 0,
+                   "products": 0, "new": 0, "known": 0, "changed": 0, "errors": 0,
                    "current_category": None, "last_errors": []}
                for c in CATALOG_CHAINS},
 }
@@ -118,9 +118,10 @@ async def _cg_crawl_category(client, cid, st, seen):
                 seen.add(pid)
                 rows.append(_cg_row(it))
         if rows:
-            new, known = database.catalog_upsert("citygross", rows)
+            new, known, changed = database.catalog_upsert("citygross", rows)
             st["new"] += new
             st["known"] += known
+            st["changed"] += changed
             st["products"] += len(rows)
             _feed(rows)
         skip += len(items)
@@ -132,7 +133,7 @@ async def _cg_crawl_category(client, cid, st, seen):
 async def _crawl_citygross(client, limit_categories):
     st = CRAWL_STATE["chains"]["citygross"]
     st.update(status="running", categories_done=0, categories_total=0, products=0,
-              new=0, known=0, errors=0, current_category=None, last_errors=[])
+              new=0, known=0, changed=0, errors=0, current_category=None, last_errors=[])
     started = _now()
     seen = set()  # distinkta produkt-id:n denna körning (kampanjkategorier överlappar)
     cats = await _cg_categories(client)
@@ -163,7 +164,7 @@ async def crawl_all(limit_categories=None):
     CRAWL_STATE.update(running=True, started_at=_now(), finished_at=None, recent=[])
     for c in CATALOG_CHAINS:
         CRAWL_STATE["chains"][c].update(status="idle", categories_done=0, categories_total=0,
-                                        products=0, new=0, known=0, errors=0,
+                                        products=0, new=0, known=0, changed=0, errors=0,
                                         current_category=None, last_errors=[])
     try:
         async with apilog.make_client(follow_redirects=True) as client:
@@ -172,5 +173,5 @@ async def crawl_all(limit_categories=None):
     finally:
         CRAWL_STATE.update(running=False, finished_at=_now())
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
-             for k in ("products", "new", "known", "errors")} for c in _IMPLEMENTED})
+             for k in ("products", "new", "known", "changed", "errors")} for c in _IMPLEMENTED})
     return CRAWL_STATE

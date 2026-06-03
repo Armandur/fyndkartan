@@ -9,22 +9,42 @@ _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "package_unit", "category_raw")
 
 
+def _diff(a, b):
+    """True om två pris/jämförvärden skiljer sig (tolerant; None hanteras)."""
+    if (a is None) != (b is None):
+        return True
+    return a is not None and abs(a - b) > 0.005
+
+
 def catalog_upsert(chain, rows):
     """Upserta en batch katalog-rader för en kedja. `origin` (lista) serialiseras till JSON.
-    Sätter last_seen/fetched_at=nu + available=1; first_seen bevaras. Returnerar (nya, befintliga)
-    där 'befintliga' = product_id fanns redan (raden skrevs om/omcachades - INTE nödvändigtvis
-    ändrad data; vi jämför inte värden)."""
+    Sätter last_seen/fetched_at=nu + available=1; first_seen bevaras. Returnerar (nya, befintliga,
+    ändrade): 'befintliga' = product_id fanns redan, 'ändrade' = befintliga vars pris/jämförpris
+    skiljer sig (-> en hyllpris-observation skrivs; nya får sin första). Hyllpris-historik append-only."""
     rows = [r for r in rows if r.get("product_id")]
     if not rows:
-        return 0, 0
+        return 0, 0, 0
     now = _now()
     conn = get_conn()
     try:
         ids = [str(r["product_id"]) for r in rows]
         ph = ",".join("?" * len(ids))
-        existing = {r["product_id"] for r in conn.execute(
-            f"SELECT product_id FROM catalog_products WHERE chain=? AND product_id IN ({ph})",
-            (chain, *ids))}
+        existing = {r["product_id"]: (r["price"], r["comparison_value"]) for r in conn.execute(
+            f"SELECT product_id, price, comparison_value FROM catalog_products "
+            f"WHERE chain=? AND product_id IN ({ph})", (chain, *ids))}
+        new = changed = 0
+        obs = []  # hyllpris-observationer: nya (första pris) + prisändringar
+        for r in rows:
+            pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
+            if pid not in existing:
+                new += 1
+                if price is not None:
+                    obs.append((chain, pid, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+            else:
+                op, ocv = existing[pid]
+                if price is not None and (_diff(op, price) or _diff(ocv, cv)):
+                    changed += 1
+                    obs.append((chain, pid, r.get("ean"), price, cv, r.get("comparison_unit"), now))
         params = []
         for r in rows:
             params.append((
@@ -49,11 +69,15 @@ def catalog_upsert(chain, rows):
             "fetched_at=excluded.fetched_at, available=1",
             params,
         )
+        if obs:
+            conn.executemany(
+                "INSERT INTO catalog_price_observations "
+                "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
+                "VALUES (?,?,?,?,?,?,?)", obs)
         conn.commit()
     finally:
         conn.close()
-    new = sum(1 for i in ids if i not in existing)
-    return new, len(ids) - new
+    return new, len(ids) - new, changed
 
 
 def catalog_mark_unseen(chain, before):

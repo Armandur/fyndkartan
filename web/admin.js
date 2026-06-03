@@ -1073,7 +1073,7 @@
         return `<div class="card p-3 mb-2">
           <div class="d-flex align-items-center mb-1">${chip(c)}
             <span class="ms-2 stat" style="font-size:1.2rem">${(s.products || 0).toLocaleString("sv-SE")}</span>
-            <span class="ms-2 small text-muted">produkter denna körning (${s.new || 0} nya, ${s.known || 0} befintliga)</span>
+            <span class="ms-2 small text-muted">produkter denna körning (${s.new || 0} nya, ${s.known || 0} befintliga${s.changed ? `, <span class="fw-semibold" style="color:#b8860b">${s.changed} prisändringar</span>` : ""})</span>
             <span class="ms-auto st-${s.status === "running" ? "running" : s.errors ? "error" : "ok"}">${esc(s.status || "idle")}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
           </div>
           ${bar}

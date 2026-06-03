@@ -123,6 +123,17 @@ def init_db():
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_ean ON catalog_products(ean)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_chain_cat ON catalog_products(chain, category_raw)")
+    # Hyllpris-historik: append-only observation NÄR ett katalog-pris ändras vid en crawl (speglar
+    # offer_observations men för hyllpris). En rad per (chain, product_id) vid prisändring + första pris.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS catalog_price_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chain TEXT, product_id TEXT, ean TEXT,
+            price REAL, comparison_value REAL, comparison_unit TEXT, observed_at TEXT
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_product ON catalog_price_observations(chain, product_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_ean ON catalog_price_observations(ean)")
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
