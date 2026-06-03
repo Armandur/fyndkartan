@@ -76,17 +76,15 @@
     .lb-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.85); cursor: zoom-out; }
     .lb-overlay[hidden] { display: none; }
     .lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
-    /* Live crawl-feed: kontinuerligt nedåtflöde. Ny rad expanderar överst (trycker ner listan -
-       "creep nedåt"); raderna flödar nedåt och tonar ut under en gradient-mask i nederkanten
-       (ingen kollaps -> inget hopp). Understa raden tas bort tyst under masken. En i taget via
-       klient-kö (admin.js). Fast höjd + overflow:hidden så nederkanten står still. */
+    /* Live crawl-feed: kontinuerligt nedåtflöde via transform-scroll på inner-wrappern (admin.js):
+       ny rad läggs in i full höjd, listan hoppar upp en rad och animerar ner -> allt glider nedåt
+       mjukt utan layout-reflow. Raderna tonar ut under gradient-masken i nederkanten; understa tas
+       bort tyst. Fast höjd + overflow:hidden så nederkanten står still. */
     #catalogFeed { height: 432px; overflow: hidden;
       -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
       mask-image: linear-gradient(to bottom, #000 68%, transparent 100%); }
-    .feed-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; overflow: hidden;
-      max-height: 44px; opacity: 1; padding: .28rem .25rem; border-bottom: 1px solid #eef1f4;
-      transition: max-height .4s ease, opacity .4s ease, padding .4s ease; }
-    .feed-item.entering { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+    .feed-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem;
+      padding: .28rem .25rem; border-bottom: 1px solid #eef1f4; }
   </style>
 </head>
 <body>

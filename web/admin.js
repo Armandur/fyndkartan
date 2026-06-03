@@ -983,19 +983,25 @@
     function stopFeedPump() { clearInterval(feedPump); feedPump = null; }
 
     function pumpFeed() {
-      const box = document.getElementById("catalogFeed");
-      if (!box || active !== "catalog") { stopFeedPump(); return; }
+      const inner = document.getElementById("catalogFeedInner");
+      if (!inner || active !== "catalog") { stopFeedPump(); return; }
       const p = feedQueue.shift();
       if (!p) { if (!feedRunning) stopFeedPump(); return; }
-      const ph = box.querySelector(".feed-ph"); if (ph) ph.remove();
+      const ph = inner.querySelector(".feed-ph"); if (ph) ph.remove();
       const el = document.createElement("div");
-      el.className = "feed-item entering";
+      el.className = "feed-item";
       el.innerHTML = `${chip(p.chain)}<span class="text-truncate flex-grow-1">${esc(p.name || "")}</span><span class="mono text-muted">${esc(p.ean || "")}</span>`;
-      box.prepend(el);
-      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("entering")));
-      // Ingen kollaps-utgång (det blev hoppigt). Raderna flödar nedåt och tonar ut under
-      // gradient-masken; understa raden (under fold/mask) tas bort tyst.
-      const items = box.querySelectorAll(".feed-item");
+      inner.prepend(el);
+      // Ren transform-scroll: full höjd direkt, hoppa upp en rad (osynligt) och animera ner ->
+      // hela listan glider nedåt mjukt utan max-height-reflow.
+      const rowH = el.offsetHeight || 32;
+      inner.style.transition = "none";
+      inner.style.transform = `translateY(-${rowH}px)`;
+      void inner.offsetHeight;  // tvinga reflow innan vi animerar tillbaka
+      inner.style.transition = "transform .4s ease";
+      inner.style.transform = "translateY(0)";
+      // Understa raden (under fold/mask) tas bort tyst.
+      const items = inner.querySelectorAll(".feed-item");
       if (items.length > FEED_MAX) items[items.length - 1].remove();
     }
 
@@ -1027,7 +1033,7 @@
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5"><div class="card p-3">
             <h6 class="mb-2">Senast inlästa produkter <span id="catalogLive"></span></h6>
-            <div id="catalogFeed"></div>
+            <div id="catalogFeed"><div id="catalogFeedInner"><div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div></div></div>
           </div></div>
         </div>`;
       document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));
@@ -1041,8 +1047,11 @@
       if (d.started_at !== feedStartedAt) {
         feedStartedAt = d.started_at;
         feedSeen = new Set(); feedQueue = [];
-        const box = document.getElementById("catalogFeed");
-        if (box) box.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
+        const inner = document.getElementById("catalogFeedInner");
+        if (inner) {
+          inner.style.transition = "none"; inner.style.transform = "translateY(0)";
+          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
+        }
       }
       feedRunning = !!d.running;
       enqueueFeed(d.recent || []);
