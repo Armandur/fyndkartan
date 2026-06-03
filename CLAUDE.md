@@ -118,6 +118,10 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   grupperar per kedja och kollapsar lika prisnivå (butiker med samma pris -> en punkt, `stores`
   räknar). Konsument-appens produktmodal ritar en inline-SVG stegfunktion (lucka vid utgånget
   erbjudande - fyndspårning, inte prisindex). Stats i konsolens Översikt (`offer_observations_stats`).
+  **Axfood-observationer saknar inline-EAN** (offers bär `eans=[]` vid arkivering): `archive_offers`
+  fyller därför EAN ur `ean_cache` (code=offer_id) vid skrivning, OCH `price_history` reverse-resolvar
+  Axfood-koder för EAN:en read-time - så Willys/Hemköp-historik kommer med cross-chain även för rader
+  arkiverade innan koden warmades.
 - **Coop-berikning:** `coop.py` gör ett detalj-anrop per butik (bunden
   parallellism) för `services` -> tags och `concept` -> brand. Tyngre synk men
   ger samma metadata som ICA.

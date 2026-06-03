@@ -581,6 +581,11 @@ def archive_offers(chain, store_id, offers):
     synkar med oförändrade priser ger inga nya rader."""
     if not offers:
         return
+    # Axfood-offers bär ingen inline-EAN (eans=[]) -> resolva code->EAN ur ean_cache så
+    # observationen blir EAN-nyckad (annars går prishistoriken inte att slå upp på EAN för
+    # Willys/Hemköp). Koder som ännu inte warmats fångas i stället read-time i price_history.
+    code_eans = (get_cached_eans([str(o.get("offer_id")) for o in offers])
+                 if chain in ("willys", "hemkop") else {})
     conn = get_conn()
     try:
         latest = {
@@ -600,7 +605,8 @@ def archive_offers(chain, store_id, offers):
             if latest.get(oid) == cur:
                 continue
             eans = o.get("eans") or []
-            rows.append((chain, str(store_id), oid, eans[0] if eans else None, o.get("name"),
+            ean = eans[0] if eans else (code_eans.get(oid) or None)
+            rows.append((chain, str(store_id), oid, ean, o.get("name"),
                          o.get("price"), o.get("comparison_value"), o.get("comparison_unit"),
                          o.get("savings"), o.get("member_price"), o.get("valid_to"), now))
         if rows:
@@ -630,13 +636,22 @@ def price_history(ean):
     """Prishistorik för en EAN ur `offer_observations`, grupperad per kedja och kollapsad på
     på varandra följande lika prisnivå (butiker med samma pris/period vid samma synk -> EN punkt,
     `stores` räknar dem). Varje punkt: pris + jämförpris + medlemspris-flagga + `valid_to`
-    (när erbjudandet går ut, för stegfunktion/gap-rendering klient-sida). Tidsordnat per kedja."""
+    (när erbjudandet går ut, för stegfunktion/gap-rendering klient-sida). Tidsordnat per kedja.
+
+    Axfood-observationer (Willys/Hemköp) saknar inline-EAN och nyckas på Axfood-koden (offer_id);
+    vi reverse-resolvar därför koderna för denna EAN ur ean_cache och tar med dem - så historiken
+    blir komplett även för Axfood (inkl. äldre rader arkiverade innan koden warmades)."""
     conn = get_conn()
+    codes = [r["code"] for r in conn.execute("SELECT code FROM ean_cache WHERE ean=?", (ean,)).fetchall()]
+    where, params = "ean=?", [ean]
+    if codes:
+        where += f" OR (chain IN ('willys','hemkop') AND offer_id IN ({','.join('?' * len(codes))}))"
+        params.extend(codes)
     rows = conn.execute(
         "SELECT chain, store_id, name, price, comparison_value, comparison_unit, member_price, "
-        "valid_to, observed_at FROM offer_observations WHERE ean=? "
+        f"valid_to, observed_at FROM offer_observations WHERE {where} "
         "ORDER BY chain, observed_at, store_id",
-        (ean,),
+        params,
     ).fetchall()
     conn.close()
     name = None
