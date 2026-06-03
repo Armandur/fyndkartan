@@ -3,8 +3,8 @@ import re
 import sqlite3
 
 from .config import (
-    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_PROVIDERS,
-    DEFAULT_TAG_TYPES, ORIGIN_COUNTRIES,
+    AXFOOD_CHAINS, BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS,
+    DEFAULT_PROVIDERS, DEFAULT_TAG_TYPES, ORIGIN_COUNTRIES,
 )
 from .categories import category_for, category_from_detail, category_from_name, raw_key
 from .tags import build_tag
@@ -97,6 +97,25 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS ean_cache (code TEXT PRIMARY KEY, ean TEXT, fetched_at TEXT)"
     )
+    # Normaliserat offer -> EAN-index (inline för ICA/Coop/CG, Axfood-kod resolvat ur ean_cache).
+    # Fylls write-path i replace_store_offers; ersätter json_each-scans + Axfood-reverse-resolve i
+    # läsvägarna (stores_with_offer/offers_for_eans). Indexerat på ean.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS offer_eans (chain TEXT, store_id TEXT, offer_id TEXT, ean TEXT, "
+        "PRIMARY KEY (chain, store_id, offer_id, ean))"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_offer_eans_ean ON offer_eans(ean)")
+    # Engångs-backfill ur befintliga offers (inline + Axfood via ean_cache) om tomt.
+    if conn.execute("SELECT COUNT(*) FROM offer_eans").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT OR IGNORE INTO offer_eans SELECT o.chain, o.store_id, o.offer_id, je.value "
+            "FROM offers o, json_each(o.eans) je WHERE o.eans NOT IN ('','[]')"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO offer_eans SELECT o.chain, o.store_id, o.offer_id, e.ean "
+            "FROM offers o JOIN ean_cache e ON o.offer_id=e.code "
+            "WHERE o.chain IN ('willys','hemkop') AND e.ean!=''"
+        )
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
@@ -684,21 +703,17 @@ def price_history(ean):
 
 def stores_with_offer(ean):
     """Butiker (chain, store_id) som just nu har ett erbjudande på EAN:en, med billigaste
-    erbjudandet per butik (pris/jämförpris/valid_to/medlemspris). EAN matchas inline i
-    `offers.eans` (ICA/Coop/CG, via json_each) ELLER via Axfood-koden (Willys/Hemköp: offer_id
-    reverse-resolvat ur ean_cache). OBS: bara butiker med ERBJUDANDE - inte hyllsortiment."""
+    erbjudandet per butik (pris/jämförpris/valid_to/medlemspris). Slår upp i det normaliserade
+    `offer_eans`-indexet (inline + Axfood redan resolvat). OBS: bara butiker med ERBJUDANDE -
+    inte hyllsortiment."""
     conn = get_conn()
-    codes = [r["code"] for r in conn.execute("SELECT code FROM ean_cache WHERE ean=?", (ean,)).fetchall()]
-    cols = ("o.chain, o.store_id, o.name, o.price, o.comparison_value, o.comparison_unit, "
-            "o.valid_to, o.member_price")
-    sql = f"SELECT {cols} FROM offers o, json_each(o.eans) je WHERE je.value=?"
-    params = [ean]
-    if codes:
-        ph = ",".join("?" * len(codes))
-        sql += (f" UNION ALL SELECT {cols} FROM offers o "
-                f"WHERE o.chain IN ('willys','hemkop') AND o.offer_id IN ({ph})")
-        params.extend(codes)
-    rows = conn.execute(sql, params).fetchall()
+    rows = conn.execute(
+        "SELECT o.chain, o.store_id, o.name, o.price, o.comparison_value, o.comparison_unit, "
+        "o.valid_to, o.member_price FROM offer_eans oe "
+        "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+        "WHERE oe.ean=?",
+        (ean,),
+    ).fetchall()
     conn.close()
     best = {}
     for r in rows:
@@ -714,42 +729,28 @@ def stores_with_offer(ean):
 
 def offers_for_eans(eans):
     """Bästa (lägsta) aktuella erbjudandepris per (EAN, kedja) ur offers-cachen, för en lista EAN.
-    {ean: {chain: {price, comparison_value, comparison_unit, valid_to, member_price}}}. Matchar
-    inline (ICA/Coop/CG via json_each) + Axfood-koder reverse-resolvat ur ean_cache. Används för
-    att överlagra aktuella erbjudanden på katalog-sökets nationella hyllpriser."""
+    {ean: {chain: {price, comparison_value, comparison_unit, valid_to, member_price}}}. Slår upp i
+    det normaliserade `offer_eans`-indexet (inline + Axfood redan resolvat). Används för att
+    överlagra aktuella erbjudanden på katalog-sökets nationella hyllpriser."""
     eans = list({e for e in eans if e})
     if not eans:
         return {}
     out = {}
-
-    def acc(ean, chain, r):
-        slot = out.setdefault(ean, {})
-        cur = slot.get(chain)
-        if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
-            slot[chain] = {"price": r["price"], "comparison_value": r["comparison_value"],
-                           "comparison_unit": r["comparison_unit"], "valid_to": r["valid_to"],
-                           "member_price": bool(r["member_price"])}
-
     conn = get_conn()
     ph = ",".join("?" * len(eans))
     for r in conn.execute(
-        f"SELECT je.value AS ean, o.chain, o.price, o.comparison_value, o.comparison_unit, "
-        f"o.valid_to, o.member_price FROM offers o, json_each(o.eans) je WHERE je.value IN ({ph})",
+        f"SELECT oe.ean, o.chain, o.price, o.comparison_value, o.comparison_unit, o.valid_to, "
+        f"o.member_price FROM offer_eans oe "
+        f"JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+        f"WHERE oe.ean IN ({ph})",
         eans,
     ):
-        acc(r["ean"], r["chain"], r)
-    code_to_ean = {r["code"]: r["ean"]
-                   for r in conn.execute(f"SELECT code, ean FROM ean_cache WHERE ean IN ({ph})", eans)}
-    if code_to_ean:
-        cph = ",".join("?" * len(code_to_ean))
-        for r in conn.execute(
-            f"SELECT o.offer_id, o.chain, o.price, o.comparison_value, o.comparison_unit, "
-            f"o.valid_to, o.member_price FROM offers o WHERE o.chain IN ('willys','hemkop') "
-            f"AND o.offer_id IN ({cph})", list(code_to_ean),
-        ):
-            ean = code_to_ean.get(r["offer_id"])
-            if ean:
-                acc(ean, r["chain"], r)
+        slot = out.setdefault(r["ean"], {})
+        cur = slot.get(r["chain"])
+        if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
+            slot[r["chain"]] = {"price": r["price"], "comparison_value": r["comparison_value"],
+                                "comparison_unit": r["comparison_unit"], "valid_to": r["valid_to"],
+                                "member_price": bool(r["member_price"])}
     conn.close()
     return out
 
@@ -763,13 +764,29 @@ def replace_store_offers(chain, store_id, offers):
         r = dict(o)
         r["eans"] = json.dumps(o.get("eans") or [], ensure_ascii=False)
         rows.append(r)
+    # offer_eans-index: inline-EAN + Axfood-kod resolvat ur ean_cache (NU; ev. ej-warmade koder
+    # fylls vid nästa replace när ean_cache hunnit fyllas - självläkande över sweepar).
+    code_eans = (get_cached_eans([str(o.get("offer_id")) for o in offers])
+                 if chain in AXFOOD_CHAINS else {})
+    oe_rows = []
+    for o in offers:
+        oid = str(o.get("offer_id"))
+        eans = o.get("eans") or []
+        if not eans and code_eans.get(oid):
+            eans = [code_eans[oid]]
+        for e in eans:
+            if e:
+                oe_rows.append((chain, str(store_id), oid, e))
     conn = get_conn()
     try:
         conn.execute("DELETE FROM offers WHERE chain=? AND store_id=?", (chain, str(store_id)))
+        conn.execute("DELETE FROM offer_eans WHERE chain=? AND store_id=?", (chain, str(store_id)))
         if rows:
             conn.executemany(
                 f"INSERT OR REPLACE INTO offers ({_OFFER_COLS}) VALUES ({_OFFER_PH})", rows
             )
+        if oe_rows:
+            conn.executemany("INSERT OR IGNORE INTO offer_eans VALUES (?,?,?,?)", oe_rows)
         conn.commit()
     finally:
         conn.close()

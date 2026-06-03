@@ -57,6 +57,8 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 CHAINS = ["ica", "coop", "willys", "hemkop", "lidl", "citygross"]
+# Axfood-kedjorna: erbjudandena bär ingen inline-EAN (resolvas via ean_cache code->EAN).
+AXFOOD_CHAINS = ("willys", "hemkop")
 
 # Kanonisk kategori-vokabulär (platt) för att normalisera kedjornas olika taxonomier.
 # Platt och grov (~ICA-nivå) - taket datan tillåter (Coop har bara 3 kategorier,
