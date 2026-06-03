@@ -102,6 +102,32 @@ def catalog_stats():
                          "eans": r["eans"], "last_crawl": r["last"]} for r in rows}
 
 
+def catalog_summary(chain=None):
+    """Översikt av den persisterade katalogen (available=1): antal distinkta produkter
+    (EAN-grupperat cross-chain) per kanonisk kategori, totalsumma, samt råa produktantal
+    per kedja (cross-chain-delade EAN räknas i varje kedja -> summan kan vara > total)."""
+    conn = get_conn()
+    sql = "SELECT chain, ean, name, category_raw FROM catalog_products WHERE available=1"
+    params = []
+    if chain:
+        sql += " AND chain=?"
+        params.append(chain)
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    by_chain = {}
+    groups = {}
+    for r in rows:
+        by_chain[r["chain"]] = by_chain.get(r["chain"], 0) + 1
+        key = r["ean"] or f"{r['chain']}:{(r['name'] or '').lower()}"
+        groups.setdefault(key, []).append(r)
+    cats = {}
+    for g in groups.values():
+        cat = _cat_canonical(g)
+        cats[cat] = cats.get(cat, 0) + 1
+    return {"categories": cats, "total": len(groups),
+            "by_chain": dict(sorted(by_chain.items(), key=lambda kv: -kv[1]))}
+
+
 def _cat_canonical(members):
     """Kanonisk kategori (derive-at-read) ur medlemmarnas råkategorier; första mappbara, annars
     'ovrigt'. Coop/ICA via category_from_detail (nav-namn), övriga via category_for."""

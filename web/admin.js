@@ -66,7 +66,7 @@
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Synk pågår</div><div class="stat">${d.syncing ? "Ja" : "Nej"}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa erbjudande-sweep</div><div class="fw-bold mt-1">${esc(sw.next_run || "-")}</div><div class="small mono text-muted">${esc(sw.cron || "")}</div></div></div>
         </div>
@@ -981,6 +981,13 @@
       if (sec < 60) return `${sec}s`;
       const m = Math.floor(sec / 60);
       return m < 60 ? `${m}m ${sec % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+    }
+    function fmtBytes(n) {
+      if (!n) return "0 B";
+      const u = ["B", "kB", "MB", "GB", "TB"];
+      let i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
     }
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.

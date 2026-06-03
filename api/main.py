@@ -444,6 +444,27 @@ async def admin_overview(_=Depends(require_admin)):
 
     next_run = _next_cron(config.SYNC_CRON)
 
+    def _file_size(p):
+        try:
+            return p.stat().st_size
+        except OSError:
+            return 0
+
+    db_bytes = sum(_file_size(config.DB_PATH.with_name(config.DB_PATH.name + suf))
+                   for suf in ("", "-wal", "-shm"))  # inkl. WAL/SHM-sidofiler
+    img_bytes = img_count = 0
+    if images.IMG_DIR.exists():
+        for f in images.IMG_DIR.iterdir():
+            if f.is_file():
+                img_bytes += _file_size(f)
+                img_count += 1
+    storage = {
+        "db_bytes": db_bytes,
+        "image_bytes": img_bytes,
+        "image_count": img_count,
+        "total_bytes": db_bytes + img_bytes,
+    }
+
     return {
         "chains": [
             {
@@ -456,6 +477,7 @@ async def admin_overview(_=Depends(require_admin)):
             for c in config.CHAINS
         ],
         "offers": {"rows": offers_rows, "stores_cached": offers_stores},
+        "storage": storage,
         "ean_stats": ean_stats,
         "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
@@ -1024,6 +1046,13 @@ async def products_catalog_browse(
                                        limit=max(1, min(limit, 100)))
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "products": products}
+
+
+@app.get("/v1/products/catalog/summary")
+async def products_catalog_summary(chain: str | None = None, _auth=Depends(require_consumer)):
+    """Översikt av den persisterade katalogen: antal distinkta produkter per kanonisk kategori,
+    total, samt produktantal per kedja. Driver bläddra-vyns kategori-räknare och totaler."""
+    return database.catalog_summary(chain=chain)
 
 
 @app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})

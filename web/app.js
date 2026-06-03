@@ -1006,7 +1006,7 @@ function applyBrowseHash() {
   browseState.q = rest.startsWith("s/") ? decodeURIComponent(rest.slice(2)) : "";
   browseState.limit = 60;
   document.getElementById("browseSearch").value = browseState.q;
-  renderBrowseCats();
+  loadBrowseSummary();  // räknare per kategori + totaler (renderar chips)
   loadBrowse();
 }
 // Navigera: sätt hash OCH rendera direkt (vänta inte på hashchange, som kan vara opålitlig).
@@ -1034,12 +1034,42 @@ function populateBrowseChain() {
     Object.entries(state.chains).map(([c, m]) => `<option value="${esc(c)}">${esc(m.label || c)}</option>`).join("");
 }
 
+let browseSummary = null, _summaryChain = " ";  // sentinel: ingen summary hämtad än
+async function loadBrowseSummary() {
+  if (_summaryChain === browseState.chain && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
+  _summaryChain = browseState.chain;
+  try {
+    const p = new URLSearchParams();
+    if (browseState.chain) p.set("chain", browseState.chain);
+    browseSummary = await (await fetch(`/v1/products/catalog/summary?${p}`)).json();
+  } catch (e) { browseSummary = null; }
+  renderBrowseCats();
+  renderBrowseSummary();
+}
+
+function renderBrowseSummary() {
+  const el = document.getElementById("browseSummary");
+  if (!el) return;
+  if (!browseSummary || !browseSummary.total) { el.innerHTML = ""; return; }
+  const chains = Object.entries(browseSummary.by_chain || {}).map(([c, n]) => {
+    const m = state.chains[c] || {};
+    return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)} ${n}</span>`;
+  }).join("");
+  el.innerHTML = `<strong>${browseSummary.total}</strong> produkter i katalogen` +
+    (chains ? `<span class="browse-summary-chains">${chains}</span>` : "");
+}
+
 function renderBrowseCats() {
   const box = document.getElementById("browseCats");
   if (!box) return;
-  box.innerHTML = Object.entries(catLabels)
-    .sort((a, b) => a[1].localeCompare(b[1], "sv"))
-    .map(([k, label]) => `<span class="browse-cat${browseState.category === k ? " on" : ""}" data-cat="${esc(k)}">${esc(label)}</span>`).join("");
+  const counts = (browseSummary && browseSummary.categories) || {};
+  const entries = Object.entries(catLabels)
+    .map(([k, label]) => ({ k, label, n: counts[k] }))
+    .filter((e) => !browseSummary || e.n)  // göm tomma kategorier när antalen är kända
+    .sort((a, b) => (b.n || 0) - (a.n || 0) || a.label.localeCompare(b.label, "sv"));
+  box.innerHTML = entries.map((e) =>
+    `<span class="browse-cat${browseState.category === e.k ? " on" : ""}" data-cat="${esc(e.k)}">${esc(e.label)}` +
+    `${e.n != null ? ` <span class="browse-cat-n">${e.n}</span>` : ""}</span>`).join("");
 }
 
 function renderBrowseGrid() {
@@ -1093,6 +1123,7 @@ document.getElementById("browseSearch").addEventListener("input", (e) => {
 document.getElementById("browseChain").addEventListener("change", (e) => {
   browseState.chain = e.target.value;
   browseState.limit = 60;
+  loadBrowseSummary();  // räknare/totaler för vald kedja
   loadBrowse();
 });
 document.getElementById("browseOffers").addEventListener("change", (e) => {

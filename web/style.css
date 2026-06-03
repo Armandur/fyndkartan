@@ -368,7 +368,12 @@ body.browse-mode .sidebar { display: none; }
 .browse-head { display: flex; gap: .5rem; align-items: center; max-width: 720px; margin: 0 auto .8rem; }
 .browse-head #browseSearch { flex: 1 1 auto; }
 .browse-cats { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: center;
-  max-width: 900px; margin: 0 auto .9rem; }
+  max-width: 900px; margin: 0 auto .5rem; }
+.browse-summary { max-width: 900px; margin: 0 auto .9rem; text-align: center; }
+.browse-summary-chains { display: inline-flex; flex-wrap: wrap; gap: .3rem; justify-content: center;
+  vertical-align: middle; margin-left: .5rem; }
+.browse-cat-n { opacity: .6; font-weight: 600; margin-left: 2px; }
+.browse-cat.on .browse-cat-n { opacity: .85; }
 .browse-cat { font-size: .76rem; padding: 3px 11px; border-radius: 16px; cursor: pointer;
   background: #fff; border: 1px solid #dfe4ea; color: #46505c; user-select: none; }
 .browse-cat:hover { background: #eef1f4; }
