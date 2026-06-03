@@ -317,6 +317,12 @@ OWN_APIS = [
              "hyllpris - ej offers). EAN-grupperat cross-chain. Lidl saknas.",
      "params": [{"name": "q", "desc": "Söktext mot kedjornas katalog (min 2 tecken)"}, _P_LIMIT],
      "returns": schemas.fields_doc(schemas.CatalogSearchResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/browse?q=kaffe",
+     "desc": "Sök/bläddra den PERSISTERADE katalogen (crawlad, hela sortimentet + hyllpris, EAN-"
+             "grupperat) med aktuella erbjudanden överlagrade. Snabbare än live-/catalog.",
+     "params": [{"name": "q", "desc": "Namn-filter (min 2 tecken)"},
+                {"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_CHAIN, _P_LIMIT],
+     "returns": schemas.fields_doc(schemas.CatalogSearchResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
      "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor.",
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},

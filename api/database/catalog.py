@@ -1,8 +1,9 @@
 """Fulla sortiment (steg 5): persistent produktkatalog per kedja (`catalog_products`).
-Crawlen (api/catalog_crawl.py) upsertar hit; läsvägen grupperar på EAN cross-chain (kommer)."""
+Crawlen (api/catalog_crawl.py) upsertar hit; `catalog_browse` läser EAN-grupperat cross-chain."""
 import json
 
 from ._conn import _now, get_conn
+from ..categories import category_for, category_from_detail
 
 _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
@@ -99,3 +100,73 @@ def catalog_stats():
     conn.close()
     return {r["chain"]: {"total": r["total"], "available": r["avail"] or 0,
                          "eans": r["eans"], "last_crawl": r["last"]} for r in rows}
+
+
+def _cat_canonical(members):
+    """Kanonisk kategori (derive-at-read) ur medlemmarnas råkategorier; första mappbara, annars
+    'ovrigt'. Coop/ICA via category_from_detail (nav-namn), övriga via category_for."""
+    for m in members:
+        raw, ch = m["category_raw"], m["chain"]
+        if not raw:
+            continue
+        c = category_from_detail(ch, raw) if ch in ("coop", "ica") else category_for(ch, raw)
+        if c and c != "ovrigt":
+            return c
+    return "ovrigt"
+
+
+def _cat_pick(members, field):
+    return next((m[field] for m in members if m.get(field)), None)
+
+
+def catalog_browse(q=None, category=None, chain=None, limit=60):
+    """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
+    grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
+    kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
+    frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`."""
+    ql = (q or "").strip()
+    if q is not None and len(ql) < 2:
+        return []
+    conn = get_conn()
+    sql = ("SELECT chain, ean, name, brand, image, origin, price, comparison_value, comparison_unit, "
+           "package_size, package_value, package_unit, category_raw FROM catalog_products WHERE available=1")
+    params = []
+    if chain:
+        sql += " AND chain=?"
+        params.append(chain)
+    if ql:
+        sql += " AND name LIKE ?"
+        params.append(f"%{ql}%")
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    groups = {}
+    for r in rows:
+        key = r["ean"] or f"{r['chain']}:{(r['name'] or '').lower()}"
+        groups.setdefault(key, []).append(r)
+    out = []
+    for g in groups.values():
+        cat = _cat_canonical(g)
+        if category and cat != category:
+            continue
+        rep = next((m for m in g if m.get("name")), g[0])
+        prices = [{"chain": m["chain"], "price": m["price"], "comparison_value": m["comparison_value"],
+                   "comparison_unit": m["comparison_unit"], "comparison_derived": False}
+                  for m in g if m["price"] is not None]
+        pv = [p["price"] for p in prices]
+        origin = None
+        if rep.get("origin"):
+            try:
+                origin = json.loads(rep["origin"])
+            except (json.JSONDecodeError, TypeError):
+                origin = None
+        out.append({
+            "ean": rep["ean"], "name": rep["name"], "brand": _cat_pick(g, "brand"),
+            "origin": origin, "image": _cat_pick(g, "image"), "category": cat,
+            "package_size": _cat_pick(g, "package_size"), "package_value": rep["package_value"],
+            "package_unit": rep["package_unit"], "chains": sorted({m["chain"] for m in g}),
+            "prices": sorted(prices, key=lambda p: p["price"]),
+            "price_min": min(pv) if pv else None, "price_max": max(pv) if pv else None,
+        })
+    out.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
+                            (p["name"] or "").lower()))
+    return out[:limit]

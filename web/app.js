@@ -897,12 +897,12 @@ async function loadProducts() {
     }
     list.innerHTML = `<div class="text-muted small p-2">Söker hela sortimentet&hellip;</div>`;
     try {
-      const d = await (await fetch(`/v1/products/catalog?q=${encodeURIComponent(q)}&limit=60`)).json();
+      const d = await (await fetch(`/v1/products/catalog/browse?q=${encodeURIComponent(q)}&limit=60`)).json();
       if (token !== productsToken) return;  // en nyare sökning har redan tagit över
       const products = d.products || [];
       title.textContent = `Hela sortimentet (${products.length})`;
       list.innerHTML = products.length
-        ? `<div class="text-muted xsmall px-2 pb-1">Nationellt/representativt hyllpris per kedja - inte butikens erbjudanden.</div>` + products.map(catalogCard).join("")
+        ? `<div class="text-muted xsmall px-2 pb-1">Hyllpris per kedja ur sortiment-katalogen, med aktuella erbjudanden markerade.</div>` + products.map(catalogCard).join("")
         : `<div class="text-muted small p-2">Inga träffar i sortimentet.</div>`;
     } catch (e) {
       if (token === productsToken) list.innerHTML = `<div class="text-danger small p-2">Kunde inte söka sortimentet.</div>`;
@@ -938,7 +938,7 @@ async function loadProducts() {
 let productsTimer = null;
 function scheduleProducts() {
   clearTimeout(productsTimer);
-  productsTimer = setTimeout(loadProducts, productsMode === "catalog" ? 450 : 250);  // fan-out = längre debounce
+  productsTimer = setTimeout(loadProducts, 250);  // katalogen läses nu ur lokal DB (snabb)
 }
 function setProductsMode(mode) {
   if (mode === productsMode) return;

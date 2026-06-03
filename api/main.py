@@ -1009,6 +1009,23 @@ async def products_catalog(
     return {"query": q.strip(), "count": len(products), "products": products}
 
 
+@app.get("/v1/products/catalog/browse", responses={200: {"model": schemas.CatalogSearchResponse}})
+async def products_catalog_browse(
+    q: str | None = Query(None, min_length=2, description="Namn-filter (min 2 tecken)"),
+    category: str | None = None,
+    chain: str | None = None,
+    limit: int = 60,
+    _auth=Depends(require_consumer),
+):
+    """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
+    sortimentet med hyllpris, EAN-grupperat cross-chain, + aktuella erbjudanden överlagrade.
+    Snabbare än live-`/catalog` (ingen fan-out) och täcker crawlade kedjor. q ELLER category krävs."""
+    products = database.catalog_browse(q=q, category=category, chain=chain,
+                                       limit=max(1, min(limit, 100)))
+    catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
+    return {"query": q or category or "", "count": len(products), "products": products}
+
+
 @app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})
 async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
     """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.
