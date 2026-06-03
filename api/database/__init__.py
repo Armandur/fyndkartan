@@ -8,4 +8,5 @@ from .products import *  # noqa: F401,F403
 from .stores import *  # noqa: F401,F403
 from .meta import *  # noqa: F401,F403
 from .offers import *  # noqa: F401,F403
+from .offers import _clean_package, _deal_type  # privata, men brands.py använder dem externt
 from .catalog import *  # noqa: F401,F403
