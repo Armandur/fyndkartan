@@ -943,6 +943,24 @@ def offers_fetched_at(chain, store_id):
     return row["t"] if row else None
 
 
+def ean_stats():
+    """Distinkta EAN vi känner till, union över källorna: inline i offers (ICA/Coop/CG, via
+    json_each), Axfood code->EAN-cachen, product_info och product_images. Plus delsiffror för
+    Axfood-resolve-cachen och hur många som har hämtad produktinfo."""
+    conn = get_conn()
+    distinct = conn.execute(
+        "SELECT COUNT(*) FROM ("
+        "SELECT je.value AS ean FROM offers, json_each(offers.eans) je WHERE offers.eans NOT IN ('','[]') "
+        "UNION SELECT ean FROM ean_cache WHERE ean!='' "
+        "UNION SELECT ean FROM product_info WHERE ean IS NOT NULL "
+        "UNION SELECT ean FROM product_images WHERE ean IS NOT NULL)"
+    ).fetchone()[0]
+    axfood = conn.execute("SELECT COUNT(*) FROM ean_cache WHERE ean!=''").fetchone()[0]
+    with_info = conn.execute("SELECT COUNT(*) FROM product_info WHERE ean IS NOT NULL").fetchone()[0]
+    conn.close()
+    return {"distinct": distinct, "axfood_cache": axfood, "with_info": with_info}
+
+
 def offers_coverage():
     """Per kedja: antal butiker med cachade erbjudanden + totalt antal cachade erbjudanden.
     Visar hur komplett offers-cachen är per kedja (det bulk-sweepen fyller)."""

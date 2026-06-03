@@ -430,8 +430,8 @@ async def admin_overview(_=Depends(require_admin)):
     offers_stores = conn.execute(
         "SELECT COUNT(*) c FROM (SELECT 1 FROM offers GROUP BY chain, store_id)"
     ).fetchone()["c"]
-    ean_n = conn.execute("SELECT COUNT(*) c FROM ean_cache WHERE ean!=''").fetchone()["c"]
     conn.close()
+    ean_stats = database.ean_stats()
 
     def _next_cron(expr):
         try:
@@ -459,7 +459,7 @@ async def admin_overview(_=Depends(require_admin)):
             for c in config.CHAINS
         ],
         "offers": {"rows": offers_rows, "stores_cached": offers_stores},
-        "ean_cache": ean_n,
+        "ean_stats": ean_stats,
         "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
         "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
