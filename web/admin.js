@@ -64,6 +64,15 @@
         </div>
         <div class="row g-3 mb-3">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
+          ${(() => {
+            const cat = d.catalog || {};
+            const ents = Object.entries(cat);
+            const tot = ents.reduce((a, [, s]) => a + (s.total || 0), 0);
+            const avail = ents.reduce((a, [, s]) => a + (s.available || 0), 0);
+            const per = ents.sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
+              .map(([c, s]) => `${chip(c)} ${s.total}`).join(" ");
+            return `<div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${tot}</div><div class="small text-muted">${avail} tillgängliga${per ? ` &middot; ${per}` : ""}</div></div></div>`;
+          })()}
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>

@@ -477,6 +477,7 @@ async def admin_overview(_=Depends(require_admin)):
             for c in config.CHAINS
         ],
         "offers": {"rows": offers_rows, "stores_cached": offers_stores},
+        "catalog": database.catalog_stats(),  # fulla sortiment per kedja (steg 5)
         "storage": storage,
         "ean_stats": ean_stats,
         "price_history": database.offer_observations_stats(),

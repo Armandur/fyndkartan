@@ -25,9 +25,10 @@ def set_map(mapping):
 
 
 def raw_key(chain, raw):
-    """Normaliserings-nyckeln för en råkategori (Axfood: första pipe-segmentet)."""
+    """Normaliserings-nyckeln för en råkategori (Axfood: första pipe-segmentet, gemener -
+    offers ger gemen googleAnalyticsCategory men crawlens avdelnings-fallback kan vara versal)."""
     if chain in _AXFOOD:
-        return "axfood", (raw.split("|")[0] if raw else "")
+        return "axfood", (raw.split("|")[0].lower() if raw else "")
     return chain, (raw or "")
 
 
@@ -45,7 +46,7 @@ def category_from_detail(source, raw):
     if not raw:
         return None
     if source in _AXFOOD:
-        return CATEGORY_MAP.get(("axfood", raw.split("|")[0]))
+        return CATEGORY_MAP.get(("axfood", raw.split("|")[0].lower()))
     if source == "coop":
         return CATEGORY_MAP.get(("coop_nav", raw))
     if source == "ica":
