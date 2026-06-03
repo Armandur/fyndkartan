@@ -11,8 +11,9 @@ _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
 
 def catalog_upsert(chain, rows):
     """Upserta en batch katalog-rader för en kedja. `origin` (lista) serialiseras till JSON.
-    Sätter last_seen/fetched_at=nu + available=1; first_seen bevaras vid uppdatering. Returnerar
-    (nya, uppdaterade) för live-räknaren."""
+    Sätter last_seen/fetched_at=nu + available=1; first_seen bevaras. Returnerar (nya, befintliga)
+    där 'befintliga' = product_id fanns redan (raden skrevs om/omcachades - INTE nödvändigtvis
+    ändrad data; vi jämför inte värden)."""
     rows = [r for r in rows if r.get("product_id")]
     if not rows:
         return 0, 0
