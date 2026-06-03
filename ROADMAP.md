@@ -243,6 +243,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     Axfood-EAN-resolve: koder utan EAN i `ean_cache` resolvas via `/p/{code}` (capat `AXFOOD_RESOLVE_CAP`
     /kedja+sök, ger även kategori, persisteras -> warmar) - lyfte cross-chain-träffarna kraftigt
     (t.ex. "yoghurt" 4-kedjes-matchningar med alla hyllpriser).
+    - [ ] **Se över produktkort-layouten (`catalogCard`/`offerCard`/`productCard`).** Korten har
+      vuxit organiskt (bild, märke, per-kedje-hyllpris+rea-rader, jämförpris, badges, knappar) och
+      behöver en designgenomgång - särskilt i bläddra-vyns rutnät där de visas tätt. Konsekvent
+      hierarki/spacing, tydligare rea-vs-hyllpris, ev. kompakt vs detaljerat läge.
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
