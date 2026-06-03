@@ -76,6 +76,12 @@
     .lb-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.85); cursor: zoom-out; }
     .lb-overlay[hidden] { display: none; }
     .lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
+    /* Live crawl-feed: mjuk in-/utgång av inlästa produkter. */
+    .feed-item { display: flex; align-items: center; gap: .5rem; padding: .28rem 0; font-size: .8rem;
+      border-bottom: 1px solid #eef1f4; overflow: hidden;
+      transition: opacity .35s ease, transform .35s ease; }
+    .feed-item.entering { opacity: 0; transform: translateY(-10px); }
+    .feed-item.leaving { opacity: 0; transform: translateX(16px); }
   </style>
 </head>
 <body>

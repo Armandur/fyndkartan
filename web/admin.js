@@ -976,15 +976,79 @@
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
     const CATALOG_IMPLEMENTED = ["citygross"];
 
+    // Bygg den statiska layouten EN gång; pollen uppdaterar bara delar (så feeden inte byts ut
+    // hårt utan kan animera in/ut).
+    function ensureCatalogSkeleton() {
+      if (document.getElementById("catalogFeed")) return;
+      document.getElementById("catalog").innerHTML = `
+        <div class="d-flex align-items-center mb-3">
+          <h5 class="mb-0">Fulla sortiment</h5>
+          <span id="catalogStatus" class="ms-3 small text-muted"></span>
+          <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto">Testa (2 kategorier)</button>
+          <button id="crawlNow" class="btn btn-sm btn-dark ms-2">Crawla hela sortimentet</button>
+        </div>
+        <div class="text-muted small mb-3">Walk:ar kedjornas kategoriträd och persistar hela sortimentet (ej bara erbjudanden). Rate-limitat - hela körningen tar några minuter. Just nu: City Gross (övriga kedjor kommer).</div>
+        <div class="row g-3">
+          <div class="col-12 col-lg-7" id="catalogChains"></div>
+          <div class="col-12 col-lg-5"><div class="card p-3">
+            <h6 class="mb-2">Senast inlästa produkter <span id="catalogLive"></span></h6>
+            <div id="catalogFeed" style="min-height:200px"></div>
+          </div></div>
+        </div>`;
+      document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));
+      document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2));
+    }
+
+    function renderCatalogFeed(recent) {
+      const box = document.getElementById("catalogFeed");
+      const ph = box.querySelector(".feed-ph");
+      if (!recent.length) {
+        if (!box.querySelector(".feed-item") && !ph)
+          box.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
+        return;
+      }
+      if (ph) ph.remove();
+      const keys = new Set(recent.map((p) => `${p.ean}|${p.name}`));
+      // Ut: rader som inte längre finns i feeden tonar ut.
+      box.querySelectorAll(".feed-item").forEach((el) => {
+        if (!keys.has(el.dataset.key) && !el.classList.contains("leaving")) {
+          el.classList.add("leaving");
+          setTimeout(() => el.remove(), 350);
+        }
+      });
+      const have = new Set([...box.querySelectorAll(".feed-item:not(.leaving)")].map((el) => el.dataset.key));
+      // In: nya rader glider in överst (äldst-ny först så ordningen blir nyast överst).
+      let stagger = 0;
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const p = recent[i], key = `${p.ean}|${p.name}`;
+        if (have.has(key)) continue;
+        have.add(key);
+        const el = document.createElement("div");
+        el.className = "feed-item entering";
+        el.dataset.key = key;
+        el.style.transitionDelay = (stagger++ * 35) + "ms";
+        el.innerHTML = `${chip(p.chain)}<span class="text-truncate flex-grow-1">${esc(p.name || "")}</span><span class="mono text-muted">${esc(p.ean || "")}</span>`;
+        box.prepend(el);
+        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("entering")));
+      }
+    }
+
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
+      ensureCatalogSkeleton();
       const stats = d.stats || {};
-      const chainRows = CATALOG_IMPLEMENTED.map((c) => {
+      document.getElementById("catalogStatus").innerHTML = d.running
+        ? '<span class="st-running">● crawlar…</span>'
+        : `senast: ${esc(d.finished_at || "-")}`;
+      document.getElementById("catalogLive").innerHTML = d.running ? '<span class="st-running small">● live</span>' : "";
+      document.getElementById("crawlNow").disabled = d.running;
+      document.getElementById("crawlTest").disabled = d.running;
+      document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
         const s = (d.chains || {})[c] || {};
         const st = stats[c] || {};
         const pct = s.categories_total ? Math.round((s.categories_done / s.categories_total) * 100) : 0;
         const bar = s.status === "running" || s.categories_total
-          ? `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%"></div></div>
+          ? `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
              <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} kategorier${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
           : "";
         return `<div class="card p-3 mb-2">
@@ -999,27 +1063,7 @@
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
       }).join("");
-      const feed = (d.recent || []).map((p) =>
-        `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:.8rem">
-          ${chip(p.chain)}<span class="text-truncate">${esc(p.name || "")}</span>
-          <span class="ms-auto mono text-muted">${esc(p.ean || "")}</span></div>`).join("");
-      document.getElementById("catalog").innerHTML = `
-        <div class="d-flex align-items-center mb-3">
-          <h5 class="mb-0">Fulla sortiment</h5>
-          <span class="ms-3 small ${d.running ? "st-running" : "text-muted"}">${d.running ? "● crawlar…" : `senast: ${esc(d.finished_at || "-")}`}</span>
-          <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto" ${d.running ? "disabled" : ""}>Testa (2 kategorier)</button>
-          <button id="crawlNow" class="btn btn-sm btn-dark ms-2" ${d.running ? "disabled" : ""}>Crawla hela sortimentet</button>
-        </div>
-        <div class="text-muted small mb-3">Walk:ar kedjornas kategoriträd och persistar hela sortimentet (ej bara erbjudanden). Rate-limitat - hela körningen tar några minuter. Just nu: City Gross (övriga kedjor kommer).</div>
-        <div class="row g-3">
-          <div class="col-12 col-lg-7">${chainRows}</div>
-          <div class="col-12 col-lg-5"><div class="card p-3">
-            <h6 class="mb-2">Senast inlästa produkter ${d.running ? '<span class="st-running small">● live</span>' : ""}</h6>
-            <div style="min-height:200px">${feed || '<div class="text-muted small">Starta en crawl för att se produkter strömma in.</div>'}</div>
-          </div></div>
-        </div>`;
-      document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));
-      document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2));
+      renderCatalogFeed(d.recent || []);
       clearTimeout(catalogTimer);
       if (d.running && active === "catalog") catalogTimer = setTimeout(loadCatalog, 1500);
     }
