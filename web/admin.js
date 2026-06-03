@@ -1025,10 +1025,10 @@
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Fulla sortiment</h5>
           <span id="catalogStatus" class="ms-3 small text-muted"></span>
-          <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto">Testa (2 kategorier)</button>
-          <button id="crawlNow" class="btn btn-sm btn-dark ms-2">Crawla hela sortimentet</button>
+          <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto">Testa alla (2 steg/kedja)</button>
+          <button id="crawlNow" class="btn btn-sm btn-dark ms-2">Crawla alla kedjor</button>
         </div>
-        <div class="text-muted small mb-3">Walk:ar kedjornas kategoriträd och persistar hela sortimentet (ej bara erbjudanden). Rate-limitat - hela körningen tar några minuter. Just nu: City Gross (övriga kedjor kommer).</div>
+        <div class="text-muted small mb-3">Walk:ar kedjornas sortiment och persistar hela katalogen med hyllpris (ej bara erbjudanden) - prisändringar fångas över tid. Rate-limitat; en hel kedja tar några minuter. Knapparna uppe till höger kör <strong>alla</strong> implementerade kedjor; varje kedja har egna <em>Testa</em>/<em>Crawla</em>-knappar. Implementerat: City Gross, ICA (Coop + Willys/Hemköp kommer).</div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5"><div class="card p-3">
@@ -1036,8 +1036,13 @@
             <div id="catalogFeed"><div id="catalogFeedInner"><div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div></div></div>
           </div></div>
         </div>`;
-      document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));
-      document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2));
+      document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null, null));
+      document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2, null));
+      // Per-kedja-knappar (korten re-renderas varje poll -> delegerad lyssnare på containern).
+      document.getElementById("catalogChains").addEventListener("click", (e) => {
+        const b = e.target.closest(".catalog-chain-btn");
+        if (b && !b.disabled) triggerCrawl(b.dataset.limit ? Number(b.dataset.limit) : null, b.dataset.chain);
+      });
     }
 
     async function loadCatalog() {
@@ -1075,6 +1080,10 @@
             <span class="ms-2 stat" style="font-size:1.2rem">${(s.products || 0).toLocaleString("sv-SE")}</span>
             <span class="ms-2 small text-muted">produkter denna körning (${s.new || 0} nya, ${s.known || 0} befintliga${s.changed ? `, <span class="fw-semibold" style="color:#b8860b">${s.changed} prisändringar</span>` : ""})</span>
             <span class="ms-auto st-${s.status === "running" ? "running" : s.errors ? "error" : "ok"}">${esc(s.status || "idle")}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
+            <span class="ms-2">
+              <button class="btn btn-sm btn-outline-secondary py-0 catalog-chain-btn" data-chain="${c}" data-limit="2" ${d.running ? "disabled" : ""}>Testa</button>
+              <button class="btn btn-sm btn-outline-dark py-0 catalog-chain-btn" data-chain="${c}" ${d.running ? "disabled" : ""}>Crawla</button>
+            </span>
           </div>
           ${bar}
           <div class="small text-muted mt-2">Cachat totalt: <strong>${(st.total || 0).toLocaleString("sv-SE")}</strong> produkter
@@ -1086,9 +1095,12 @@
       if (d.running && active === "catalog") catalogTimer = setTimeout(loadCatalog, 1500);
     }
 
-    async function triggerCrawl(limit) {
-      const q = limit ? `?limit_categories=${limit}` : "";
-      await api(`/v1/admin/catalog/crawl${q}`, { method: "POST" });
+    async function triggerCrawl(limit, chain) {
+      const p = new URLSearchParams();
+      if (limit) p.set("limit_categories", limit);
+      if (chain) p.set("chains", chain);
+      const qs = p.toString();
+      await api(`/v1/admin/catalog/crawl${qs ? "?" + qs : ""}`, { method: "POST" });
       loadCatalog();
     }
 

@@ -1139,13 +1139,16 @@ async def offers_sweep_status(_=Depends(require_admin)):
 
 
 @app.post("/v1/admin/catalog/crawl")
-async def trigger_catalog_crawl(limit_categories: int | None = None, _=Depends(require_admin)):
+async def trigger_catalog_crawl(limit_categories: int | None = None, chains: str | None = None,
+                                _=Depends(require_admin)):
     """Starta en katalog-crawl (fulla sortiment) i bakgrunden. `limit_categories` cappar antal
-    kategorier per kedja - för snabb test av live-visualiseringen utan att vänta på hela sortimentet."""
+    kategorier/sidor per kedja (snabbtest). `chains` (komma-separerad) begränsar till vissa kedjor
+    (default alla implementerade)."""
     if catalog_crawl.CRAWL_STATE["running"]:
         return {"status": "running", "detail": "En crawl pågår redan."}
-    asyncio.create_task(catalog_crawl.crawl_all(limit_categories=limit_categories))
-    return {"status": "started", "limit_categories": limit_categories}
+    chain_list = [c.strip() for c in chains.split(",")] if chains else None
+    asyncio.create_task(catalog_crawl.crawl_all(limit_categories=limit_categories, chains=chain_list))
+    return {"status": "started", "limit_categories": limit_categories, "chains": chain_list}
 
 
 @app.get("/v1/admin/catalog/crawl/status")

@@ -230,21 +230,27 @@ async def _crawl_ica(client, limit_pages):
         st["status"] = "ok" if not st["errors"] else "ok_med_fel"
 
 
-async def crawl_all(limit_categories=None):
-    """Crawla alla implementerade kedjor sekventiellt (snällt + tydlig progress). `limit_categories`
-    cappar antal kategorier per kedja (för snabb test av visualiseringen)."""
+_CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica}
+
+
+async def crawl_all(limit_categories=None, chains=None):
+    """Crawla implementerade kedjor sekventiellt (snällt + tydlig progress). `chains` = delmängd
+    att crawla (default alla implementerade). `limit_categories` cappar antal kategorier/sidor per
+    kedja (snabbtest av visualiseringen)."""
     if CRAWL_STATE["running"]:
         return CRAWL_STATE
+    targets = [c for c in _IMPLEMENTED if not chains or c in chains]
+    if not targets:
+        return CRAWL_STATE
     CRAWL_STATE.update(running=True, started_at=_now(), finished_at=None, recent=[])
-    for c in CATALOG_CHAINS:
+    for c in targets:
         CRAWL_STATE["chains"][c] = _blank_chain()
     try:
         async with apilog.make_client(follow_redirects=True) as client:
-            await _crawl_citygross(client, limit_categories)
-            await _crawl_ica(client, limit_categories)
-            # TODO(steg 5): Coop/Axfood-crawlers här.
+            for c in targets:
+                await _CRAWLERS[c](client, limit_categories)
     finally:
         CRAWL_STATE.update(running=False, finished_at=_now())
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
-             for k in ("products", "new", "known", "changed", "errors")} for c in _IMPLEMENTED})
+             for k in ("products", "new", "known", "changed", "errors")} for c in targets})
     return CRAWL_STATE
