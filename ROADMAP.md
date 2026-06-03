@@ -569,7 +569,9 @@ aggregering - stäm av innan skarp drift.
   bara faktiska prisändringar lagras. **Per butik** (medvetet: vi vill alltid kunna se
   avvikelser per butik). Ordinarie pris spåras via `savings` + `member_price`.
   `offer_observations_stats()` för konsolen.
-- [ ] **UI/grafer för prishistorik** - endpoint + vy som visar tidsserien per EAN/produkt
-  (pris över tid, per kedja/butik). Ej byggt.
+- [x] **UI/grafer för prishistorik BYGGT** - `GET /v1/products/{ean}/history`
+  (`database.price_history`, grupperad per kedja, Axfood via ean_cache reverse-resolve) + inline-SVG
+  stegfunktion i konsument-appens produktmodal (lucka vid utgånget erbjudande, medlemspris som ring).
+  Stats i konsolens Översikt. Kvar: ev. djupare vy (per butik, längre tidsspann) när datan vuxit.
 - Avvägning kvarstår: per butik (nu, stort) vs aggregerat per kedja/nationellt (juridiskt
   känsligare) - stäm av ToS innan ev. nationell aggregering.
