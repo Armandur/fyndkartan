@@ -682,6 +682,36 @@ def price_history(ean):
     return {"ean": ean, "name": name, "chains": out}
 
 
+def stores_with_offer(ean):
+    """Butiker (chain, store_id) som just nu har ett erbjudande på EAN:en, med billigaste
+    erbjudandet per butik (pris/jämförpris/valid_to/medlemspris). EAN matchas inline i
+    `offers.eans` (ICA/Coop/CG, via json_each) ELLER via Axfood-koden (Willys/Hemköp: offer_id
+    reverse-resolvat ur ean_cache). OBS: bara butiker med ERBJUDANDE - inte hyllsortiment."""
+    conn = get_conn()
+    codes = [r["code"] for r in conn.execute("SELECT code FROM ean_cache WHERE ean=?", (ean,)).fetchall()]
+    cols = ("o.chain, o.store_id, o.name, o.price, o.comparison_value, o.comparison_unit, "
+            "o.valid_to, o.member_price")
+    sql = f"SELECT {cols} FROM offers o, json_each(o.eans) je WHERE je.value=?"
+    params = [ean]
+    if codes:
+        ph = ",".join("?" * len(codes))
+        sql += (f" UNION ALL SELECT {cols} FROM offers o "
+                f"WHERE o.chain IN ('willys','hemkop') AND o.offer_id IN ({ph})")
+        params.extend(codes)
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    best = {}
+    for r in rows:
+        key = (r["chain"], r["store_id"])
+        cur = best.get(key)
+        if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
+            best[key] = {"chain": r["chain"], "store_id": r["store_id"], "name": r["name"],
+                         "price": r["price"], "comparison_value": r["comparison_value"],
+                         "comparison_unit": r["comparison_unit"], "valid_to": r["valid_to"],
+                         "member_price": bool(r["member_price"])}
+    return list(best.values())
+
+
 def replace_store_offers(chain, store_id, offers):
     """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON.
     Arkiverar prisförändringar (prishistorik) innan replace."""

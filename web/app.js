@@ -16,6 +16,7 @@ const state = {
   onlyFavorites: false,
   favorites: new Set(),
   user: null,
+  productFilter: null,  // {ean, name, stores: Set("chain:store_id"), count} - kartfilter på en vara
 };
 
 const COMPARE_CHAINS = ["ica", "coop", "willys", "hemkop", "citygross"];
@@ -118,8 +119,10 @@ function popupHtml(s) {
 
 function visibleStores() {
   const q = state.query.toLowerCase();
+  const pf = state.productFilter;
   return state.stores.filter((s) => {
     if (!state.enabled.has(s.chain)) return false;
+    if (pf && !pf.stores.has(`${s.chain}:${s.store_id}`)) return false;
     if (state.onlyFavorites && !isFav(s)) return false;
     if (state.onlyOffers && !(s.links && s.links.offers)) return false;
     if (q) {
@@ -225,6 +228,43 @@ async function loadStores() {
   renderChainFilters();
   render();
 }
+
+// Filtrera kartan till butiker som har ETT ERBJUDANDE på en vald vara (EAN). Bygger på
+// offers-cachen -> "med erbjudande", inte hyllsortiment (det vet vi inte).
+async function filterMapByProduct(ean, name) {
+  if (!ean) return;
+  const bar = document.getElementById("productFilterBar");
+  const txt = document.getElementById("productFilterText");
+  bar.classList.remove("d-none");
+  txt.textContent = `Laddar butiker med erbjudande på ${name || ean}…`;
+  try {
+    const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/stores`)).json();
+    const stores = new Set((d.stores || []).map((s) => `${s.chain}:${s.store_id}`));
+    state.productFilter = { ean, name: name || ean, stores, count: d.count || stores.size };
+    txt.textContent = state.productFilter.count
+      ? `Butiker med erbjudande på: ${state.productFilter.name} (${state.productFilter.count})`
+      : `Ingen butik har just nu ${state.productFilter.name} på erbjudande`;
+    document.getElementById("productsPanel").classList.add("d-none");
+    closeNav();
+    render();
+    if (state.productFilter.count) fitToVisible();
+  } catch (e) {
+    txt.textContent = "Kunde inte filtrera på varan.";
+  }
+}
+
+function clearProductFilter() {
+  state.productFilter = null;
+  document.getElementById("productFilterBar").classList.add("d-none");
+  render();
+}
+
+function fitToVisible() {
+  const pts = visibleStores().filter((s) => s.location).map((s) => [s.location.lat, s.location.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+}
+
+document.getElementById("productFilterClear").addEventListener("click", clearProductFilter);
 
 document.getElementById("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();
@@ -764,8 +804,8 @@ function productCard(p) {
     ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
     : "";
   const stores = p.offer_count ? `<span class="o-stores">${p.offer_count} butik${p.offer_count === 1 ? "" : "er"}</span>` : "";
-  const info = p.ean
-    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button>`
+  const actions = p.ean
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -774,7 +814,7 @@ function productCard(p) {
       <div class="o-meta">${meta}</div>
       <div class="o-price-row"><span class="o-price">${esc(price)}</span>${dealBadge(p)}</div>
       <div class="o-foot">${catChip}${chains}${stores}</div>
-      ${info}
+      ${actions}
     </div>
   </div>`;
 }
@@ -800,8 +840,8 @@ function catalogCard(p) {
   const range = p.price_min != null
     ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
     : "";
-  const info = p.ean
-    ? `<button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button>`
+  const actions = p.ean
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -811,7 +851,7 @@ function catalogCard(p) {
       <div class="o-price-row"><span class="o-price">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span></div>
       <div class="o-shelf">${prices}</div>
       <div class="o-foot">${catChip}</div>
-      ${info}
+      ${actions}
     </div>
   </div>`;
 }
@@ -913,8 +953,10 @@ document.getElementById("productsBack").addEventListener("click", () => {
   document.getElementById("productsPanel").classList.add("d-none");
 });
 document.getElementById("productsList").addEventListener("click", (e) => {
-  const b = e.target.closest(".o-info");
-  if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
+  const info = e.target.closest(".o-info");
+  if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
+  const mapBtn = e.target.closest(".o-map");
+  if (mapBtn) filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
 
 // ---- Mobil: sidopanel som overlay ----

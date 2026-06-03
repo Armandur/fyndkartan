@@ -93,9 +93,27 @@ def test_price_history_matches_model():
     return len(eans)
 
 
+def test_product_stores_matches_model():
+    """stores_with_offer-svar ska validera mot ProductStoresResponse, för EAN:er som har
+    erbjudanden i cachen. Tom om inga offers -> hoppas."""
+    conn = database.get_conn()
+    eans = [r["ean"] for r in conn.execute(
+        "SELECT je.value AS ean FROM offers, json_each(offers.eans) je "
+        "WHERE offers.eans NOT IN ('','[]') GROUP BY je.value LIMIT 5"
+    ).fetchall()]
+    conn.close()
+    if not eans:
+        return 0
+    for e in eans:
+        stores = database.stores_with_offer(e)
+        schemas.ProductStoresResponse.model_validate({"ean": e, "count": len(stores), "stores": stores})
+    return len(eans)
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
     print(f"OK: {test_store_matches_model()} butiker validerade mot Store")
     print(f"OK: {test_offer_matches_model()} erbjudanden validerade mot Offer")
     print(f"OK: {test_price_history_matches_model()} prishistorik-EAN validerade mot PriceHistoryResponse")
+    print(f"OK: {test_product_stores_matches_model()} EAN validerade mot ProductStoresResponse")

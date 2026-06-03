@@ -316,3 +316,20 @@ class PriceHistoryResponse(BaseModel):
     ean: str = Field(..., description="Normaliserad EAN/GTIN")
     name: str | None = Field(None, description="Produktnamn (representativt)")
     chains: list[PriceHistoryChain] = Field(..., description="Prishistorik per kedja")
+
+
+class ProductStore(BaseModel):
+    chain: str = Field(..., description="Kedjenyckel")
+    store_id: str = Field(..., description="Butikens id (samma som i /v1/stores)")
+    name: str | None = Field(None, description="Erbjudandets/produktens namn i butiken")
+    price: float | None = Field(None, description="Erbjudandepris (kr), billigaste i butiken")
+    comparison_value: float | None = Field(None, description="Jämförpris (per enhet)")
+    comparison_unit: str | None = Field(None, description="Jämförprisets enhet (kg/l/st)")
+    valid_to: str | None = Field(None, description="Erbjudandet gäller t.o.m. (ISO-datum)")
+    member_price: bool = Field(False, description="Om priset är medlems-/klubbpris")
+
+
+class ProductStoresResponse(BaseModel):
+    ean: str = Field(..., description="Normaliserad EAN/GTIN")
+    count: int = Field(..., description="Antal butiker med erbjudande på varan")
+    stores: list[ProductStore] = Field(..., description="Butiker med erbjudande (ej hyllsortiment)")

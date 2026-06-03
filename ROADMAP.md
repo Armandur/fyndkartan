@@ -430,11 +430,14 @@ domäner:
     - [x] **Knappen "Innehåll & näring" -> "Visa information"** (offer-/produkt-/katalog-kort).
       Modalen visar nu mer än bara innehåll/näring (prishistorik, ev. mer framåt), så namnet
       generaliserades. Ren textändring.
-  - [ ] **Filtrera kartan på en vald produkt** ("visa butiker som har varan"). BEROR PÅ
-    bredare offer-täckning / fulla sortiment: med lazy-cachen blir filtret antingen
-    missvisande (precist = döljer de flesta butiker som faktiskt har varan, vi har bara en
-    bråkdel cachad) eller meningslöst (per kedja = nästan hela kartan). Bygg när täckningen
-    finns. "N butiker" på produktkortet har samma brasklapp (= cachade butiker, inte totalt).
+  - [x] **Filtrera kartan på en vald produkt BYGGT** ("Visa på karta" på produkt-/katalog-kort).
+    Upplåst av bulk-sweepen (full offers-täckning - tidigare blockerat av gles lazy-cache).
+    `GET /v1/products/{ean}/stores` (`database.stores_with_offer`, json_each-match inline +
+    Axfood-kod reverse-resolvat ur ean_cache, billigaste erbjudandet per butik) -> frontend
+    sätter `state.productFilter` (Set av `chain:store_id`), `visibleStores` filtrerar markörerna,
+    flytande banner överst på kartan visar varan + antal + rensa-knapp, kartan zoomar till träffen.
+    **Ärlig semantik:** "butiker med ERBJUDANDE på varan" (offers-cachen), inte hyllsortiment.
+    Latens ~350ms/klick på 382k offers-rader (acceptabelt; ingen indexering än).
 - [x] **Kategori-endpoint BYGGT** (`GET /v1/products/by-category?category=&chain=&limit=`).
   Bläddrar distinkta produkter i en kanonisk kategori ur erbjudande-cachen, samma form som
   produktsöket (delar `database.list_products`). Okänd kategori -> 400.

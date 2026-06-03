@@ -1220,6 +1220,18 @@ async def product_price_history(ean: str, _auth=Depends(require_consumer)):
     return database.price_history(e)
 
 
+@app.get("/v1/products/{ean}/stores", responses={200: {"model": schemas.ProductStoresResponse}})
+async def product_stores(ean: str, _auth=Depends(require_consumer)):
+    """Butiker som just nu har ett ERBJUDANDE på EAN:en (billigaste per butik), för kartfilter.
+    OBS: bygger på erbjudande-cachen - visar butiker med ett erbjudande, inte hyllsortiment.
+    EAN matchas inline (ICA/Coop/CG) eller via Axfood-koden (Willys/Hemköp, reverse-resolvat)."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    stores = database.stores_with_offer(e)
+    return {"ean": e, "count": len(stores), "stores": stores}
+
+
 @app.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})
 async def categories_list(_auth=Depends(require_consumer)):
     """Kanonisk kategori-vokabulär (för filtrering i erbjudande-vyer)."""

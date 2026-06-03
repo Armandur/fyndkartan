@@ -323,6 +323,11 @@ OWN_APIS = [
              "varan inte varit nedsatt.",
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"}],
      "returns": schemas.fields_doc(schemas.PriceHistoryResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970/stores",
+     "desc": "Butiker som just nu har ett ERBJUDANDE på EAN:en (billigaste per butik) - för "
+             "kartfilter. Bara erbjudande-cachen, inte hyllsortiment.",
+     "params": [{"name": "ean", "desc": "Path: EAN/GTIN"}],
+     "returns": schemas.fields_doc(schemas.ProductStoresResponse)},
     {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5",
      "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt.",
      "params": [{"name": "lat, lng, radius_km", "desc": "Område runt punkt"},
