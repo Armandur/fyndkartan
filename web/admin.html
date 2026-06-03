@@ -76,12 +76,13 @@
     .lb-overlay { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.85); cursor: zoom-out; }
     .lb-overlay[hidden] { display: none; }
     .lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
-    /* Live crawl-feed: mjuk in-/utgång av inlästa produkter. */
-    .feed-item { display: flex; align-items: center; gap: .5rem; padding: .28rem 0; font-size: .8rem;
-      border-bottom: 1px solid #eef1f4; overflow: hidden;
-      transition: opacity .35s ease, transform .35s ease; }
-    .feed-item.entering { opacity: 0; transform: translateY(-10px); }
-    .feed-item.leaving { opacity: 0; transform: translateX(16px); }
+    /* Live crawl-feed: kontinuerligt nedåtflöde. Ny rad expanderar överst (trycker ner listan -
+       "creep nedåt"), borttagen kollapsar + tonar ut. En i taget via klient-kö (admin.js). */
+    .feed-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; overflow: hidden;
+      max-height: 44px; opacity: 1; padding: .28rem .25rem; border-bottom: 1px solid #eef1f4;
+      transition: max-height .4s ease, opacity .45s ease, padding .4s ease; }
+    .feed-item.entering { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+    .feed-item.leaving { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
   </style>
 </head>
 <body>

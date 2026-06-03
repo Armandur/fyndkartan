@@ -975,6 +975,43 @@
 
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
     const CATALOG_IMPLEMENTED = ["citygross"];
+    // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
+    // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
+    let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
+    const FEED_RELEASE_MS = 240, FEED_MAX = 12, FEED_QUEUE_CAP = 40;
+
+    function stopFeedPump() { clearInterval(feedPump); feedPump = null; }
+
+    function pumpFeed() {
+      const box = document.getElementById("catalogFeed");
+      if (!box || active !== "catalog") { stopFeedPump(); return; }
+      const p = feedQueue.shift();
+      if (!p) { if (!feedRunning) stopFeedPump(); return; }
+      const ph = box.querySelector(".feed-ph"); if (ph) ph.remove();
+      const el = document.createElement("div");
+      el.className = "feed-item entering";
+      el.innerHTML = `${chip(p.chain)}<span class="text-truncate flex-grow-1">${esc(p.name || "")}</span><span class="mono text-muted">${esc(p.ean || "")}</span>`;
+      box.prepend(el);
+      requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("entering")));
+      const items = box.querySelectorAll(".feed-item:not(.leaving)");
+      if (items.length > FEED_MAX) {
+        const last = items[items.length - 1];
+        last.classList.add("leaving");
+        setTimeout(() => last.remove(), 450);
+      }
+    }
+
+    function enqueueFeed(recent) {
+      // recent = nyast-först; köa kronologiskt (äldst-ny först) de vi inte redan sett.
+      for (let i = recent.length - 1; i >= 0; i--) {
+        const p = recent[i], key = `${p.ean}|${p.name}`;
+        if (feedSeen.has(key)) continue;
+        feedSeen.add(key);
+        feedQueue.push(p);
+      }
+      if (feedQueue.length > FEED_QUEUE_CAP) feedQueue = feedQueue.slice(-FEED_QUEUE_CAP);
+      if (!feedPump && (feedQueue.length || feedRunning)) feedPump = setInterval(pumpFeed, FEED_RELEASE_MS);
+    }
 
     // Bygg den statiska layouten EN gång; pollen uppdaterar bara delar (så feeden inte byts ut
     // hårt utan kan animera in/ut).
@@ -999,43 +1036,18 @@
       document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2));
     }
 
-    function renderCatalogFeed(recent) {
-      const box = document.getElementById("catalogFeed");
-      const ph = box.querySelector(".feed-ph");
-      if (!recent.length) {
-        if (!box.querySelector(".feed-item") && !ph)
-          box.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
-        return;
-      }
-      if (ph) ph.remove();
-      const keys = new Set(recent.map((p) => `${p.ean}|${p.name}`));
-      // Ut: rader som inte längre finns i feeden tonar ut.
-      box.querySelectorAll(".feed-item").forEach((el) => {
-        if (!keys.has(el.dataset.key) && !el.classList.contains("leaving")) {
-          el.classList.add("leaving");
-          setTimeout(() => el.remove(), 350);
-        }
-      });
-      const have = new Set([...box.querySelectorAll(".feed-item:not(.leaving)")].map((el) => el.dataset.key));
-      // In: nya rader glider in överst (äldst-ny först så ordningen blir nyast överst).
-      let stagger = 0;
-      for (let i = recent.length - 1; i >= 0; i--) {
-        const p = recent[i], key = `${p.ean}|${p.name}`;
-        if (have.has(key)) continue;
-        have.add(key);
-        const el = document.createElement("div");
-        el.className = "feed-item entering";
-        el.dataset.key = key;
-        el.style.transitionDelay = (stagger++ * 35) + "ms";
-        el.innerHTML = `${chip(p.chain)}<span class="text-truncate flex-grow-1">${esc(p.name || "")}</span><span class="mono text-muted">${esc(p.ean || "")}</span>`;
-        box.prepend(el);
-        requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("entering")));
-      }
-    }
-
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       ensureCatalogSkeleton();
+      // Ny crawl (started_at ändrad) -> nollställ feeden så produkterna flödar in på nytt.
+      if (d.started_at !== feedStartedAt) {
+        feedStartedAt = d.started_at;
+        feedSeen = new Set(); feedQueue = [];
+        const box = document.getElementById("catalogFeed");
+        if (box) box.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
+      }
+      feedRunning = !!d.running;
+      enqueueFeed(d.recent || []);
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'
@@ -1063,7 +1075,6 @@
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
       }).join("");
-      renderCatalogFeed(d.recent || []);
       clearTimeout(catalogTimer);
       if (d.running && active === "catalog") catalogTimer = setTimeout(loadCatalog, 1500);
     }
@@ -1084,6 +1095,7 @@
       clearInterval(callsTimer);
       clearTimeout(syncTimer);
       clearTimeout(catalogTimer);
+      if (tab !== "catalog") stopFeedPump();
       LOADERS[tab]().catch(() => {});
       if (tab === "calls") callsTimer = setInterval(refreshCalls, 5000);
     }
@@ -1095,7 +1107,7 @@
 
     // ---- Auth (konsol) ----
     function showGate() {
-      clearInterval(callsTimer); clearTimeout(syncTimer); clearTimeout(catalogTimer);
+      clearInterval(callsTimer); clearTimeout(syncTimer); clearTimeout(catalogTimer); stopFeedPump();
       consoleEl.classList.add("d-none");
       document.getElementById("consoleAuth").innerHTML = "";
       gate.classList.remove("d-none");
