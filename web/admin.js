@@ -7,7 +7,7 @@
 
     const gate = document.getElementById("loginGate");
     const consoleEl = document.getElementById("console");
-    let active = "overview", callsTimer = null, syncTimer = null, catalogTimer = null;
+    let active = "overview", callsTimer = null, syncTimer = null, catalogTimer = null, sweepTimer = null;
     let callsData = null, callsFilter = { source: "", status: "" };
 
     // Alla konsol-anrop går via api(): 403 => sessionen är borta, visa login.
@@ -19,6 +19,35 @@
 
     async function loadOverview() {
       const d = await (await api("/v1/admin/overview")).json();
+      const storeTot = d.chains.reduce((a, c) => a + (c.store_count || 0), 0);
+      const storePer = d.chains.filter(c => c.store_count).sort((a, b) => b.store_count - a.store_count)
+        .map(c => `${chip(c.chain)} ${c.store_count}`).join(" ");
+      const sw = d.offers_sweep || {};  // bara nästa-körning-kortet kvar i översikten; resten i Erbjudanden-fliken
+      document.getElementById("overview").innerHTML = `
+        <h5 class="mb-3">Översikt</h5>
+        <div class="row g-3 mb-3">
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${storeTot}</div><div class="small text-muted">${storePer || "-"}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
+          ${(() => {
+            const cat = d.catalog || {};
+            const ents = Object.entries(cat);
+            const tot = ents.reduce((a, [, s]) => a + (s.total || 0), 0);
+            const avail = ents.reduce((a, [, s]) => a + (s.available || 0), 0);
+            const per = ents.sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
+              .map(([c, s]) => `${chip(c)} ${s.total}`).join(" ");
+            return `<div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${tot}</div><div class="small text-muted">${avail} tillgängliga${per ? ` &middot; ${per}` : ""}</div></div></div>`;
+          })()}
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa erbjudande-sweep</div><div class="fw-bold mt-1">${esc(sw.next_run || "-")}</div><div class="small mono text-muted">${esc(sw.cron || "")}</div></div></div>
+        </div>
+        </div>`;
+    }
+
+    async function loadKedjor() {
+      const d = await (await api("/v1/admin/overview")).json();
       const rows = d.chains.map(c => `<tr>
         <td>${chip(c.chain)}</td><td>${c.store_count}</td>
         <td class="st-${c.status}">${esc(c.status)}</td>
@@ -28,6 +57,24 @@
       const syncState = d.syncing
         ? `<span class="st-running">● synkar… (${done}/${d.chains.length} klara)</span>`
         : `<span class="text-muted">senast: ${esc(d.chains.map(c=>c.last_sync).filter(Boolean).sort().pop() || "-")}</span>`;
+      document.getElementById("kedjor").innerHTML = `
+        <div class="d-flex align-items-center mb-3">
+          <h5 class="mb-0">Kedjor</h5>
+          <span class="ms-3 small">${syncState}</span>
+          <button id="syncNow" class="btn btn-sm btn-dark ms-auto" ${d.syncing ? "disabled" : ""}>Synka om</button>
+        </div>
+        <div class="text-muted small mb-2">Synkar butiksbeståndet (steg 1) för alla kedjor. Rör inte erbjudanden eller sortiment.</div>
+        <div class="card p-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Kedja</th><th>Butiker</th><th>Synkstatus</th><th>Senast synk</th><th>Fel</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
+      document.getElementById("syncNow").addEventListener("click", triggerSync);
+      clearTimeout(syncTimer);
+      if (d.syncing && active === "kedjor") syncTimer = setTimeout(loadKedjor, 2500);
+    }
+
+    async function loadSweep() {
+      const d = await (await api("/v1/admin/overview")).json();
       const sw = d.offers_sweep || { chains: {}, running: false };
       const swCov = sw.coverage || {}, swStores = sw.store_counts || {};
       const swList = sw.supported_chains || Object.keys(sw.chains || {});
@@ -56,61 +103,37 @@
       const swState = sw.running
         ? `<span class="st-running">● hämtar erbjudanden… (${swTotals.fetched} hämtade, ${swTotals.skipped} hoppade${swTotals.errors ? `, ${swTotals.errors} fel` : ""})</span>`
         : `<span class="text-muted">senast: ${esc(sw.finished_at || "-")}</span>`;
-      document.getElementById("overview").innerHTML = `
+      document.getElementById("sweep").innerHTML = `
         <div class="d-flex align-items-center mb-3">
-          <h5 class="mb-0">Översikt</h5>
-          <span class="ms-3 small">${syncState}</span>
-          <button id="syncNow" class="btn btn-sm btn-dark ms-auto" ${d.syncing ? "disabled" : ""}>Synka om</button>
+          <h5 class="mb-0">Erbjudanden</h5>
+          <span class="ms-3 small">${swState}</span>
+          <div class="form-check form-check-inline ms-auto mb-0"><input class="form-check-input" type="checkbox" id="sweepForce"><label class="form-check-label small" for="sweepForce">Tvinga om allt</label></div>
+          <button id="sweepNow" class="btn btn-sm btn-dark" ${sw.running ? "disabled" : ""}>Hämta alla erbjudanden</button>
         </div>
         <div class="row g-3 mb-3">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
-          ${(() => {
-            const cat = d.catalog || {};
-            const ents = Object.entries(cat);
-            const tot = ents.reduce((a, [, s]) => a + (s.total || 0), 0);
-            const avail = ents.reduce((a, [, s]) => a + (s.available || 0), 0);
-            const per = ents.sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
-              .map(([c, s]) => `${chip(c)} ${s.total}`).join(" ");
-            return `<div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${tot}</div><div class="small text-muted">${avail} tillgängliga${per ? ` &middot; ${per}` : ""}</div></div></div>`;
-          })()}
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda synk</div><div class="fw-bold mt-1">${esc(d.scheduler.next_run || "-")}</div><div class="small mono text-muted">${esc(d.scheduler.cron)} (${esc(d.scheduler.tz)})</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa erbjudande-sweep</div><div class="fw-bold mt-1">${esc(sw.next_run || "-")}</div><div class="small mono text-muted">${esc(sw.cron || "")}</div></div></div>
         </div>
-        <div class="card p-3 mb-3"><h6>Kedjor</h6>
-          <table class="table table-sm align-middle mb-0">
-            <thead><tr><th>Kedja</th><th>Butiker</th><th>Synkstatus</th><th>Senast synk</th><th>Fel</th></tr></thead>
-            <tbody>${rows}</tbody></table></div>
         <div class="card p-3">
-          <div class="d-flex align-items-center mb-2">
-            <h6 class="mb-0">Erbjudande-sweep</h6>
-            <span class="ms-3 small">${swState}</span>
-            <div class="form-check form-check-inline ms-auto mb-0"><input class="form-check-input" type="checkbox" id="sweepForce"><label class="form-check-label small" for="sweepForce">Tvinga om allt</label></div>
-            <button id="sweepNow" class="btn btn-sm btn-dark" ${sw.running ? "disabled" : ""}>Hämta alla erbjudanden</button>
-          </div>
           <div class="text-muted small mb-2">Förhämtar erbjudanden för alla butiker (hoppar färska om inte "tvinga"). Rate-limitat - första körningen tar några minuter. "Med erbjudanden" = nuvarande täckning i cachen; resten är senaste sweep-körningen.</div>
           <table class="table table-sm align-middle mb-0">
             <thead><tr><th>Kedja</th><th>Butiker</th><th>Med erbjudanden</th><th>Erbjudanden</th><th>Hämtade</th><th>Hoppade</th><th>Fel</th><th>Status</th></tr></thead>
             <tbody>${swRows}</tbody></table>
           ${swErrLines.length ? `<div class="small text-muted mt-2"><div class="fw-bold">Fel (senaste sweep):</div>${swErrLines.join("")}</div>` : ""}</div>`;
-      document.getElementById("syncNow").addEventListener("click", triggerSync);
       document.getElementById("sweepNow").addEventListener("click", triggerSweep);
-      // Polla vidare medan en synk ELLER sweep pågår (oavsett vem som startade den).
-      clearTimeout(syncTimer);
-      if ((d.syncing || sw.running) && active === "overview") syncTimer = setTimeout(loadOverview, 2500);
+      clearTimeout(sweepTimer);
+      if (sw.running && active === "sweep") sweepTimer = setTimeout(loadSweep, 2500);
     }
 
     async function triggerSync() {
       await api("/v1/sync", { method: "POST" });
-      loadOverview();
+      loadKedjor();
     }
 
     async function triggerSweep() {
       const force = document.getElementById("sweepForce").checked;
       await api(`/v1/offers/sweep?force=${force}`, { method: "POST" });
-      loadOverview();
+      loadSweep();
     }
 
     async function loadCalls() {
@@ -1141,7 +1164,7 @@
       loadCatalog();
     }
 
-    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys };
+    const LOADERS = { overview: loadOverview, kedjor: loadKedjor, sweep: loadSweep, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys };
 
     function show(tab) {
       active = tab;
@@ -1150,6 +1173,7 @@
       document.querySelectorAll(".tab").forEach(s => s.classList.toggle("d-none", s.id !== tab));
       clearInterval(callsTimer);
       clearTimeout(syncTimer);
+      clearTimeout(sweepTimer);
       clearTimeout(catalogTimer);
       if (tab !== "catalog") stopFeedPump();
       LOADERS[tab]().catch(() => {});
@@ -1163,7 +1187,7 @@
 
     // ---- Auth (konsol) ----
     function showGate() {
-      clearInterval(callsTimer); clearTimeout(syncTimer); clearTimeout(catalogTimer); stopFeedPump();
+      clearInterval(callsTimer); clearTimeout(syncTimer); clearTimeout(sweepTimer); clearTimeout(catalogTimer); stopFeedPump();
       consoleEl.classList.add("d-none");
       document.getElementById("consoleAuth").innerHTML = "";
       gate.classList.remove("d-none");
