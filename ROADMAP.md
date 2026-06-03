@@ -648,6 +648,19 @@ Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:
   (projektets kontrakt-regel). Konsol-status (rader/kedja, senaste crawl, available-andel) i Översikt,
   som offers-sweepen (`offers_coverage`-mönstret).
 
+### Live crawl-visualisering i /admin (UTTRYCKLIGT KRAV)
+En dynamisk vy i konsolen som visar produkter strömma in medan crawlen kör - en fin visualisering, inte
+bara en slutsiffra. Bygg ovanpå sweep-mönstret men rikare:
+- `CRAWL_STATE` (in-memory, som `SWEEP_STATE`): per kedja status + kategorier klara/totalt + produkter
+  ingestade (ny/uppdaterad) + aktuell kategori som crawlas + rate (produkter/s) + ev. ETA + last_errors.
+- Egen flik eller panel i konsolen som pollar `GET /v1/admin/catalog/crawl/status` (~1-2s medan
+  `running`), med: progress-bar per kedja (kategorier), löpande total-räknare som tickar upp, och en
+  live-feed av de senast ingestade produkterna (namn + kedja + EAN + bild-thumb) som strömmar förbi.
+  "Starta crawl"-knapp (+ev. force/per-kedja) som `POST /v1/admin/catalog/crawl`, speglar sweep-knappen.
+- Implementations-not: enklast via polling (som sweepen) - räcker gott. SSE/WebSocket bara om pollingen
+  känns trög; håll det till polling i v1. CRAWL_STATE måste uppdateras inkrementellt under crawlen
+  (per ingestad batch) så feeden/räknaren rör sig, inte bara vid slutet.
+
 ### Avgörande beslut (ta UPP innan bygge)
 - **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",
   inte "BUTIKEN för varan". Per-butiks-sortiment skulle kräva crawl × 2500 butiker × hela katalogen =
