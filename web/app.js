@@ -49,6 +49,13 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// Avrunda pris till max 2 decimaler (strippar avrundnings-artefakter som 8.333333... -> 8.33).
+function kr(v) {
+  if (v == null || v === "") return v ?? "";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : v;
+}
+
 function chainColor(chain) {
   return (state.chains[chain] && state.chains[chain].color) || "#666";
 }
@@ -293,7 +300,7 @@ function dealBadge(o) {
 
 function offerCard(o) {
   const cmp = o.comparison_value
-    ? `<span class="o-cmp"${o.comparison_derived ? ' title="Beräknat ur pris/storlek – ungefärligt"' : ""}>${o.comparison_derived ? "≈ " : ""}${o.comparison_value} kr/${esc(o.comparison_unit || "")}</span>`
+    ? `<span class="o-cmp"${o.comparison_derived ? ' title="Beräknat ur pris/storlek – ungefärligt"' : ""}>${o.comparison_derived ? "≈ " : ""}${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")}</span>`
     : "";
   const imgEan = o.eans && o.eans[0];
   const imgSrc = imgEan ? `/v1/products/${encodeURIComponent(imgEan)}/image?size=thumb` : o.image;
@@ -392,7 +399,7 @@ function priceHistorySvg(chains) {
   // y-axel: två referenslinjer (min/max-pris)
   for (const pv of [pmin, pmax]) {
     parts.push(`<line x1="${ML}" y1="${y(pv).toFixed(1)}" x2="${W - MR}" y2="${y(pv).toFixed(1)}" stroke="#eee"/>`);
-    parts.push(`<text x="${ML - 4}" y="${(y(pv) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#999">${pv}</text>`);
+    parts.push(`<text x="${ML - 4}" y="${(y(pv) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#999">${kr(pv)}</text>`);
   }
   for (const c of chains) {
     const col = (state.chains[c.chain] || {}).color || "#666";
@@ -408,7 +415,7 @@ function priceHistorySvg(chains) {
         if (no <= v + DAY) parts.push(`<line x1="${x(Math.min(v, no)).toFixed(1)}" y1="${yp.toFixed(1)}" x2="${x(no).toFixed(1)}" y2="${y(n.price).toFixed(1)}" stroke="${col}" stroke-width="2"/>`);
       }
       const ring = p.member_price ? `<circle cx="${x(o).toFixed(1)}" cy="${yp.toFixed(1)}" r="5" fill="none" stroke="${col}" stroke-width="1"/>` : "";
-      const tip = `${lab} ${fmtPHDate(p.observed_at)}: ${p.price} kr${p.member_price ? " (medlem)" : ""}${p.comparison_value ? ` · ${p.comparison_value} kr/${p.comparison_unit || ""}` : ""}${p.stores > 1 ? ` · ${p.stores} butiker` : ""}`;
+      const tip = `${lab} ${fmtPHDate(p.observed_at)}: ${kr(p.price)} kr${p.member_price ? " (medlem)" : ""}${p.comparison_value ? ` · ${kr(p.comparison_value)} kr/${p.comparison_unit || ""}` : ""}${p.stores > 1 ? ` · ${p.stores} butiker` : ""}`;
       parts.push(`${ring}<circle cx="${x(o).toFixed(1)}" cy="${yp.toFixed(1)}" r="2.6" fill="${col}"><title>${esc(tip)}</title></circle>`);
     }
   }
@@ -428,7 +435,7 @@ function renderPriceHistory(h) {
   const legend = chains.map((c) => {
     const m = state.chains[c.chain] || {};
     const last = c.points[c.points.length - 1];
-    const px = last && last.price != null ? ` ${last.price} kr` : "";
+    const px = last && last.price != null ? ` ${kr(last.price)} kr` : "";
     return `<span class="badge" style="background:${m.color || "#666"};color:#fff">${esc(m.label || c.chain)}${px}</span>`;
   }).join(" ");
   const single = total <= chains.length;
@@ -617,12 +624,12 @@ function compareCard(p) {
     : `<div class="o-img o-img--ph"></div>`;
   const anyDerived = p.compare_by === "unit_price" && p.offers.some(o => o.comparison_derived);
   const spreadLabel = p.compare_by === "unit_price"
-    ? `${anyDerived ? "≈ " : ""}${p.spread} kr/${esc(p.unit)}` : `${p.spread} kr`;
+    ? `${anyDerived ? "≈ " : ""}${kr(p.spread)} kr/${esc(p.unit)}` : `${kr(p.spread)} kr`;
   const rows = p.offers.map((o, i) => {
     const meta = state.chains[o.chain] || {};
     const big = p.compare_by === "unit_price"
-      ? (o.comparison_value != null ? `${o.comparison_derived ? "≈ " : ""}${o.comparison_value} kr/${esc(o.comparison_unit || "")}` : "–")
-      : (o.price != null ? `${o.price} kr` : "–");
+      ? (o.comparison_value != null ? `${o.comparison_derived ? "≈ " : ""}${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")}` : "–")
+      : (o.price != null ? `${kr(o.price)} kr` : "–");
     const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
     return `<div class="cmp-row${i === 0 ? " cmp-best" : ""}">
       <span class="dot" style="background:${meta.color || "#666"}"></span>
@@ -801,7 +808,7 @@ function productCard(p) {
     return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)}</span>`;
   }).join("");
   const price = p.price_min != null
-    ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
+    ? (p.price_min === p.price_max ? `${kr(p.price_min)} kr` : `${kr(p.price_min)}–${kr(p.price_max)} kr`)
     : "";
   const stores = p.offer_count ? `<span class="o-stores">${p.offer_count} butik${p.offer_count === 1 ? "" : "er"}</span>` : "";
   const actions = p.ean
@@ -832,21 +839,21 @@ function catalogCard(p) {
   const prices = (p.prices || []).map((pr) => {
     const m = state.chains[pr.chain] || {};
     const cmp = pr.comparison_value != null
-      ? ` <span class="text-muted">(${pr.comparison_value}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")})</span>`
+      ? ` <span class="text-muted">(${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")})</span>`
       : "";
     const hasOffer = pr.offer_price != null;
     // hyllpris (struket om erbjudande finns) + ev. aktuellt erbjudandepris
-    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${pr.price} kr</s>` : `${pr.price} kr`) : (hasOffer ? "" : "-");
+    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : (hasOffer ? "" : "-");
     const offer = hasOffer
-      ? `<span class="o-offer">rea ${pr.offer_price} kr${pr.offer_member ? " klubb" : ""}${pr.offer_valid_to ? ` <span class="text-muted">t.o.m. ${esc(pr.offer_valid_to)}</span>` : ""}</span>`
+      ? `<span class="o-offer">rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}${pr.offer_valid_to ? ` <span class="text-muted">t.o.m. ${esc(pr.offer_valid_to)}</span>` : ""}</span>`
       : "";
     return `<div class="o-shelf-row"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span><span>${shelf}${shelf && offer ? " " : ""}${offer}${cmp}</span></div>`;
   }).join("");
   const range = p.price_min != null
-    ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
+    ? (p.price_min === p.price_max ? `${kr(p.price_min)} kr` : `${kr(p.price_min)}–${kr(p.price_max)} kr`)
     : "";
   const offerBadge = p.on_offer
-    ? `<span class="o-offer-badge">På erbjudande${p.offer_min != null ? ` fr. ${p.offer_min} kr` : ""}</span>`
+    ? `<span class="o-offer-badge">På erbjudande${p.offer_min != null ? ` fr. ${kr(p.offer_min)} kr` : ""}</span>`
     : "";
   const actions = p.ean
     ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
