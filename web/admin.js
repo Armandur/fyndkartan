@@ -975,6 +975,13 @@
 
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
     const CATALOG_IMPLEMENTED = ["citygross", "ica"];
+    const CRAWL_STATUS = { idle: "väntar", running: "crawlar", ok: "klar", ok_med_fel: "klar (med fel)" };
+    function fmtDur(sec) {
+      sec = Math.round(sec);
+      if (sec < 60) return `${sec}s`;
+      const m = Math.floor(sec / 60);
+      return m < 60 ? `${m}m ${sec % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+    }
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
@@ -1073,19 +1080,33 @@
         const pct = s.categories_total ? Math.round((s.categories_done / s.categories_total) * 100) : 0;
         const bar = s.status === "running" || s.categories_total
           ? `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
-             <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} steg${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
+             <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} steg${s.limited ? " (test)" : ""}${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
           : "";
+        // timing/takt
+        const startMs = s.started_at ? Date.parse(s.started_at) : 0;
+        const running = s.status === "running";
+        const elapsed = startMs ? Math.max(0, ((running ? Date.now() : Date.parse(s.finished_at || s.started_at)) - startMs) / 1000) : 0;
+        const rate = elapsed > 0.5 ? s.products / elapsed : 0;
+        let timing = "";
+        if (running) {
+          const remain = (s.total && rate > 0 && s.products < s.total) ? (s.total - s.products) / rate : 0;
+          timing = `${rate ? rate.toFixed(0) + " prod/s &middot; " : ""}${fmtDur(elapsed)} förflutet${remain ? ` &middot; ~${fmtDur(remain)} kvar` : ""}`;
+        } else if (startMs && s.finished_at) {
+          timing = `klar på ${fmtDur(elapsed)}${rate ? ` (${rate.toFixed(0)} prod/s)` : ""}`;
+        }
+        const statusClass = running ? "running" : s.errors ? "error" : "ok";
         return `<div class="card p-3 mb-2">
           <div class="d-flex align-items-center mb-1">${chip(c)}
             <span class="ms-2 stat" style="font-size:1.2rem">${(s.products || 0).toLocaleString("sv-SE")}</span>
             <span class="ms-2 small text-muted">produkter denna körning (${s.new || 0} nya, ${s.known || 0} befintliga${s.changed ? `, <span class="fw-semibold" style="color:#b8860b">${s.changed} prisändringar</span>` : ""})</span>
-            <span class="ms-auto st-${s.status === "running" ? "running" : s.errors ? "error" : "ok"}">${esc(s.status || "idle")}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
+            <span class="ms-auto st-${statusClass}">${running ? "● " : ""}${esc(CRAWL_STATUS[s.status] || s.status || "väntar")}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
             <span class="ms-2">
               <button class="btn btn-sm btn-outline-secondary py-0 catalog-chain-btn" data-chain="${c}" data-limit="2" ${d.running ? "disabled" : ""}>Testa</button>
               <button class="btn btn-sm btn-outline-dark py-0 catalog-chain-btn" data-chain="${c}" ${d.running ? "disabled" : ""}>Crawla</button>
             </span>
           </div>
           ${bar}
+          ${timing ? `<div class="small mt-1" style="color:#6b7480">${timing}</div>` : ""}
           <div class="small text-muted mt-2">Cachat totalt: <strong>${(st.total || 0).toLocaleString("sv-SE")}</strong> produkter
             (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc((st.last_crawl || "").slice(0, 16).replace("T", " "))}` : ""}</div>
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}

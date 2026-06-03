@@ -27,7 +27,8 @@ _RECENT_MAX = 14  # live-feed: senast ingestade produkter
 def _blank_chain():
     return {"status": "idle", "categories_done": 0, "categories_total": 0, "total": 0,
             "products": 0, "new": 0, "known": 0, "changed": 0, "errors": 0,
-            "current_category": None, "last_errors": []}
+            "current_category": None, "last_errors": [],
+            "started_at": None, "finished_at": None, "limited": False}
 
 
 CRAWL_STATE = {
@@ -137,9 +138,8 @@ async def _cg_crawl_category(client, cid, st, seen):
 
 async def _crawl_citygross(client, limit_categories):
     st = CRAWL_STATE["chains"]["citygross"]
-    st.update(status="running", categories_done=0, categories_total=0, products=0,
-              new=0, known=0, changed=0, errors=0, current_category=None, last_errors=[])
     started = _now()
+    st.update(status="running", started_at=started, finished_at=None, limited=bool(limit_categories))
     seen = set()  # distinkta produkt-id:n denna körning (kampanjkategorier överlappar)
     cats = await _cg_categories(client)
     if limit_categories:
@@ -159,6 +159,7 @@ async def _crawl_citygross(client, limit_categories):
     if not limit_categories:  # full crawl -> markera utgångna; partiell skulle felmarkera
         database.catalog_mark_unseen("citygross", started)
     st["status"] = "ok" if not st["errors"] else "ok_med_fel"
+    st["finished_at"] = _now()
 
 
 # --- ICA (globalsearch quicksearch; wildcard '*' -> hela katalogen, offset-paginering) -------
@@ -175,8 +176,8 @@ async def _crawl_ica(client, limit_pages):
     """ICA har inget kategoriträd som behövs - wildcard '*' + offset paginerar hela katalogen
     (~20k produkter). `limit_pages` (=limit_categories) cappar antal sidor för snabbtest."""
     st = CRAWL_STATE["chains"]["ica"]
-    st["status"] = "running"
     started = _now()
+    st.update(status="running", started_at=started, finished_at=None, limited=bool(limit_pages))
     try:
         token = await ica_token.get_token(client)
     except Exception as e:  # noqa: BLE001
@@ -202,7 +203,8 @@ async def _crawl_ica(client, limit_pages):
         docs = prods.get("documents") or []
         total = (prods.get("stats") or {}).get("totalHits") or 0
         st["total"] = total
-        st["categories_total"] = max(1, -(-total // size))  # = antal sidor
+        pages_full = max(1, -(-total // size))  # antal sidor för hela katalogen
+        st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
         if not docs:
             break
         rows = []
@@ -228,6 +230,7 @@ async def _crawl_ica(client, limit_pages):
         database.catalog_mark_unseen("ica", started)
     if st["status"] == "running":
         st["status"] = "ok" if not st["errors"] else "ok_med_fel"
+    st["finished_at"] = _now()
 
 
 _CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica}
