@@ -23,6 +23,8 @@ def _now():
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
 _IMPLEMENTED = ("citygross", "ica", "coop")
 _RECENT_MAX = 60  # live-feed-buffert: senaste ingestade produkter (klient-kön tömmer en i taget)
+_RECENT_PER_CHAIN = 40  # per-kedje-buffert (för round-robin-rättvis feed)
+_RECENT_BY_CHAIN = {}  # {chain: [items]} - modulnivå, skickas EJ till klienten
 
 
 def _blank_chain():
@@ -101,10 +103,33 @@ async def _cg_categories(client):
     return out
 
 
+def _round_robin_feed():
+    """Interleava per-kedje-buffertarna (rank för rank) -> rättvis feed, ingen kedja dominerar."""
+    lists = [v for v in _RECENT_BY_CHAIN.values() if v]
+    out, idx = [], 0
+    while lists and len(out) < _RECENT_MAX:
+        progressed = False
+        for lst in lists:
+            if idx < len(lst):
+                out.append(lst[idx])
+                progressed = True
+                if len(out) >= _RECENT_MAX:
+                    break
+        if not progressed:
+            break
+        idx += 1
+    return out
+
+
 def _feed(chain, rows):
-    """Lägg senaste ingestade produkter överst i live-feeden."""
+    """Lägg senaste ingestade produkter i kedjans buffert; bygg den gemensamma feeden round-robin."""
     items = [{"chain": chain, "name": r["name"], "ean": r["ean"]} for r in rows if r.get("name")]
-    CRAWL_STATE["recent"] = (items[::-1] + CRAWL_STATE["recent"])[:_RECENT_MAX]
+    if not items:
+        return
+    buf = _RECENT_BY_CHAIN.setdefault(chain, [])
+    buf[:0] = items[::-1]          # nyast först
+    del buf[_RECENT_PER_CHAIN:]    # capa per kedja
+    CRAWL_STATE["recent"] = _round_robin_feed()
 
 
 async def _cg_crawl_category(client, cid, st, seen):
@@ -369,6 +394,7 @@ async def crawl_all(limit_categories=None, chains=None):
     if not targets:
         return CRAWL_STATE
     CRAWL_STATE.update(running=True, started_at=_now(), finished_at=None, recent=[])
+    _RECENT_BY_CHAIN.clear()
     for c in targets:
         CRAWL_STATE["chains"][c] = _blank_chain()
     try:
