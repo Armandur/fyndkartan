@@ -134,6 +134,15 @@ def init_db():
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_product ON catalog_price_observations(chain, product_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_ean ON catalog_price_observations(ean)")
+    # Engångs-baslinje: seeda nuvarande pris för redan cachade katalogprodukter (annars saknar de
+    # startpunkt tills priset ändras). Körs en gång (när observations-tabellen är tom).
+    if conn.execute("SELECT COUNT(*) FROM catalog_price_observations").fetchone()[0] == 0:
+        conn.execute(
+            "INSERT INTO catalog_price_observations "
+            "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
+            "SELECT chain, product_id, ean, price, comparison_value, comparison_unit, fetched_at "
+            "FROM catalog_products WHERE price IS NOT NULL"
+        )
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
