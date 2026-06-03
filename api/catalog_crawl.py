@@ -7,10 +7,11 @@ City Gross: enumerera kategorier via /api/v1/Navigation (Matvaror-barn med categ
 paginera category/{id}/products (totalCount/totalPages), normalisera, upserta batchvis.
 """
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 
-from . import apilog, catalog, config, database, matching
+from . import apilog, catalog, config, database, details, matching
 from .adapters import ica_token
 
 log = logging.getLogger("matbutiker")
@@ -20,7 +21,7 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
-_IMPLEMENTED = ("citygross", "ica")
+_IMPLEMENTED = ("citygross", "ica", "coop")
 _RECENT_MAX = 14  # live-feed: senast ingestade produkter
 
 
@@ -233,7 +234,129 @@ async def _crawl_ica(client, limit_pages):
     st["finished_at"] = _now()
 
 
-_CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica}
+# --- Coop (personalization by-attribute; departement-rötter harvestas ur navCategories) ------
+_COOP_BY_ATTR = "https://external.api.coop.se/personalization/search/entities/by-attribute"
+_COOP_SEARCH = "https://external.api.coop.se/personalization/search/global"
+# Breda sök-termer för att harvesta departement-rötterna (kod = navCategories-rot, tom superCategories).
+_COOP_HARVEST_Q = ["mjölk", "ost", "kött", "kyckling", "fisk", "bröd", "äpple", "godis", "öl",
+                   "vatten", "kaffe", "pasta", "schampo", "tvättmedel", "blöja", "hundmat",
+                   "vitamin", "glass", "ägg", "chips", "blomma", "tandkräm", "toapapper", "lök",
+                   "yoghurt", "ris", "smör", "juice", "korv", "sylt"]
+_COOP_ROOTS = {}  # cachad {kod: namn} departement-lista (harvestas en gång, återanvänds)
+
+
+
+def _coop_params():
+    return {"api-version": "v1", "store": config.COOP_DETAIL_STORE, "groups": "CUSTOMER_PRIVATE",
+            "device": "desktop", "direct": "false"}
+
+
+async def _coop_post(client, url, params, payload):
+    """POST mot Coop perso-API med skanner-säker nyckel (cachad; force-skrapas vid 401/403)."""
+    key = await details._resolve_coop_key(client)
+    H = {"Ocp-Apim-Subscription-Key": key, "Content-Type": "application/json",
+         "Origin": "https://www.coop.se", "Accept": "application/json", "User-Agent": _UA}
+    body = json.dumps(payload)
+    r = await client.post(url, params=params, headers=H, content=body, timeout=30)
+    if r.status_code in (401, 403):
+        H["Ocp-Apim-Subscription-Key"] = await details._resolve_coop_key(client, force=True)
+        r = await client.post(url, params=params, headers=H, content=body, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def _coop_root(navcats):
+    for nc in navcats or []:
+        node = nc
+        while node.get("superCategories"):
+            node = node["superCategories"][0]
+        if node.get("code"):
+            yield node["code"], node.get("name") or node["code"]
+
+
+async def _coop_harvest_roots(client):
+    """Departement-rötter ur produkternas navCategories via breda sökningar (cachas)."""
+    if _COOP_ROOTS:
+        return _COOP_ROOTS
+    for q in _COOP_HARVEST_Q:
+        try:
+            j = await _coop_post(client, _COOP_SEARCH, {k: v for k, v in _coop_params().items() if k != "device"},
+                                 {"query": q, "resultsOptions": {"skip": 0, "take": 25}})
+            for it in (j.get("results") or {}).get("items") or []:
+                for code, name in _coop_root(it.get("navCategories")):
+                    _COOP_ROOTS[code] = name
+        except Exception as e:  # noqa: BLE001
+            log.warning("Coop root-harvest q=%s misslyckades: %s", q, e)
+    return _COOP_ROOTS
+
+
+def _coop_row(it):
+    base = catalog._norm_coop(it)
+    raw = details._parse_coop_item(it).get("category_raw")
+    return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw}
+
+
+async def _coop_browse(client, code, st, seen, max_pages):
+    skip, page, size = 0, 0, config.CATALOG_CRAWL_PAGE
+    while True:
+        j = await _coop_post(client, _COOP_BY_ATTR, _coop_params(), {
+            "attribute": {"name": "categoryIds", "value": str(code)},
+            "resultsOptions": {"skip": skip, "take": size, "sortBy": [], "facets": []},
+            "customData": {"getEntitiesByAttributeABTest": False, "consent": False}})
+        res = j.get("results") or {}
+        items = res.get("items") or []
+        total = res.get("count") or 0
+        if not items:
+            break
+        rows = []
+        for it in items:
+            ean = matching.normalize_ean(it.get("ean"))
+            if ean and ean not in seen:
+                seen.add(ean)
+                rows.append(_coop_row(it))
+        if rows:
+            new, known, changed = database.catalog_upsert("coop", rows)
+            st["new"] += new; st["known"] += known; st["changed"] += changed
+            st["products"] += len(rows)
+            _feed("coop", rows)
+        skip += len(items)
+        page += 1
+        await asyncio.sleep(config.CATALOG_CRAWL_PACE)
+        if skip >= total or (max_pages and page >= max_pages):
+            break
+
+
+async def _crawl_coop(client, limit_categories):
+    """Coop: harvesta departement-rötter (cachat), browsa varje via by-attribute + skip/take.
+    `limit_categories` = max antal departement (test cappar dessutom till 1 sida/departement)."""
+    st = CRAWL_STATE["chains"]["coop"]
+    started = _now()
+    st.update(status="running", started_at=started, finished_at=None, limited=bool(limit_categories))
+    roots = await _coop_harvest_roots(client)
+    codes = list(roots)
+    if limit_categories:
+        codes = codes[:limit_categories]
+    st["categories_total"] = len(codes)
+    seen = set()
+    max_pages = 1 if limit_categories else None  # test: 1 sida/departement för snabbhet
+    for code in codes:
+        st["current_category"] = roots.get(code)
+        try:
+            await _coop_browse(client, code, st, seen, max_pages)
+        except Exception as e:  # noqa: BLE001
+            st["errors"] += 1
+            if len(st["last_errors"]) < 8:
+                st["last_errors"].append(f"{roots.get(code)}: {e}")
+            log.warning("katalog-crawl coop/%s misslyckades: %s", roots.get(code), e)
+        st["categories_done"] += 1
+    st["current_category"] = None
+    if not limit_categories:
+        database.catalog_mark_unseen("coop", started)
+    st["status"] = "ok" if not st["errors"] else "ok_med_fel"
+    st["finished_at"] = _now()
+
+
+_CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica, "coop": _crawl_coop}
 
 
 async def crawl_all(limit_categories=None, chains=None):
