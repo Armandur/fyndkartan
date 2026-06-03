@@ -2,9 +2,9 @@
 i `catalog_products` (ej bara offers). Proaktiv, rate-limitad, inkrementell - `CRAWL_STATE`
 uppdateras per sida så konsolen kan visa produkter strömma in live.
 
-Just nu: City Gross (Loop54). Övriga kedjor kommer (Coop/ICA/Axfood); Lidl saknar EAN -> utesluts.
-City Gross: enumerera kategorier via /api/v1/Navigation (Matvaror-barn med categoryPageId),
-paginera category/{id}/products (totalCount/totalPages), normalisera, upserta batchvis.
+Implementerat: City Gross (Loop54 kategoriträd), ICA (wildcard '*' + offset), Coop (by-attribute
++ harvestade departement-rötter). Kvar: Axfood (Willys/Hemköp). Lidl saknar EAN -> utesluts.
+Kedjorna crawlas PARALLELLT (egen host var -> ingen rate-limit-konflikt).
 """
 import asyncio
 import json
