@@ -366,6 +366,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       gång, lagras hashad) + återkalla. `X-API-Key`-middleware validerar om nyckel skickas
       (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
       - [ ] Kvar: rate limiting + scopes per nyckel (när en faktisk konsument finns).
+  - [ ] **Tidszon inställbar i konsolen (override env).** `SYNC_TZ` är redan env-styrd
+    (`os.getenv("SYNC_TZ", "Europe/Stockholm")`, används av schemaläggarna + `_offers_expired`-
+    datumjämförelsen). Lägg ett admin-fält i Översikt (eller en inställnings-flik) som persisterar
+    tidszonen i `settings`-tabellen och **overridar env vid runtime** - spegla mönstret för
+    `SESSION_SECRET`/`category_map` (DB-värde > env > kod-default). Resolvas vid läsning så ändring
+    slår igenom utan omstart (schemaläggar-loopen läser om nästa varv; ev. signal för direkt effekt).
+    Validera mot `zoneinfo` (avvisa okänd zon). Ev. även `SYNC_CRON`/`OFFERS_SWEEP_CRON` på samma sätt.
 
 ### Normalisering (datakvalitet)
 
