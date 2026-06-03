@@ -256,6 +256,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         (CatalogProduct). Kortet stryker hyllpriset och visar "rea X kr" + "På erbjudande fr. X kr"-
         badge; kedjor med erbjudande men utan hyllpris-rad får en egen rad. Hyllpris = nationellt,
         erbjudandepris = lägsta butikslokala i kedjan.
+      - [ ] **Bunta ihop matchade private-label-varor i katalogen.** Katalogen grupperar på EAN,
+        men egna märken delar aldrig EAN (ICA Krossade Tomater vs Coop Änglamark) -> separata kort.
+        `product_matches` (manuell paring, idag ~18 grupper) länkar dem; ett andra grupperingspass
+        (likt `build_comparisons` `manual_groups`) skulle slå ihop dem till ett kort med hyllpris
+        per kedjas egna märke - just det cross-chain-jämförelsefall EAN-gruppering missar. **Haken:**
+        kort-UI:t (info-modal, prishistorik, "Visa på karta") nyckar på EN EAN; en hopbuntad post har
+        flera (en per kedja), så de actionerna måste göras per kedja/representativ - det är jobbet,
+        inte hopslagningen. Bygg när private-label-täckningen vuxit eller egna-märkes-hyllprisjämförelse
+        blir en uttalad prioritet. (Matchade private labels buntas redan i erbjudande-jämförelsen.)
   - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
     EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
     ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):
