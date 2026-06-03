@@ -237,9 +237,9 @@ _CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica}
 
 
 async def crawl_all(limit_categories=None, chains=None):
-    """Crawla implementerade kedjor sekventiellt (snällt + tydlig progress). `chains` = delmängd
-    att crawla (default alla implementerade). `limit_categories` cappar antal kategorier/sidor per
-    kedja (snabbtest av visualiseringen)."""
+    """Crawla implementerade kedjor PARALLELLT (varje kedja egen host -> ingen rate-limit-konflikt;
+    total tid = långsammaste kedjan, ej summan). `chains` = delmängd (default alla implementerade).
+    `limit_categories` cappar antal kategorier/sidor per kedja (snabbtest av visualiseringen)."""
     if CRAWL_STATE["running"]:
         return CRAWL_STATE
     targets = [c for c in _IMPLEMENTED if not chains or c in chains]
@@ -250,8 +250,9 @@ async def crawl_all(limit_categories=None, chains=None):
         CRAWL_STATE["chains"][c] = _blank_chain()
     try:
         async with apilog.make_client(follow_redirects=True) as client:
-            for c in targets:
-                await _CRAWLERS[c](client, limit_categories)
+            # Parallellt: olika hostar, så ingen kedja hamras hårdare; DB-upserts serialiseras
+            # ändå av event-loopen (synkrona) -> ingen write-contention.
+            await asyncio.gather(*(_CRAWLERS[c](client, limit_categories) for c in targets))
     finally:
         CRAWL_STATE.update(running=False, finished_at=_now())
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
