@@ -978,14 +978,13 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
 // Hash-driven: #sortiment[/k/<kategori>|/s/<sök>]. Kedje-/erbjudande-filter är transient UI-state.
 const browseState = { q: "", category: "", chain: "", onlyOffers: false, limit: 60 };
-let browseTimer = null, browseInit = false, browseProducts = [];
+let browseTimer = null, browseToken = 0, browseProducts = [];
 
 function showBrowseUI() {
   document.body.classList.add("browse-mode");
   document.getElementById("map").classList.add("d-none");
   document.getElementById("browseView").classList.remove("d-none");
   document.getElementById("viewToggle").textContent = "Till kartan";
-  if (!browseInit) { populateBrowseChain(); browseInit = true; }
 }
 function showMapUI() {
   document.body.classList.remove("browse-mode");
@@ -1010,10 +1009,24 @@ function applyBrowseHash() {
   renderBrowseCats();
   loadBrowse();
 }
-window.addEventListener("hashchange", applyBrowseHash);
-document.getElementById("viewToggle").addEventListener("click", () => {
-  location.hash = document.body.classList.contains("browse-mode") ? "" : "sortiment";
+// Navigera: sätt hash OCH rendera direkt (vänta inte på hashchange, som kan vara opålitlig).
+// _selfNav hindrar att vår egen hash-ändring trigger:ar en andra render; nollställs efter ticken
+// (så en oförändrad hash inte låser kommande back/forward).
+let _selfNav = false;
+function browseGo(hash) {
+  _selfNav = true;
+  location.hash = hash;
+  applyBrowseHash();
+  setTimeout(() => { _selfNav = false; }, 0);
+}
+window.addEventListener("hashchange", () => {
+  if (_selfNav) { _selfNav = false; return; }
+  applyBrowseHash();  // back/forward/deep-link
 });
+document.getElementById("viewToggle").addEventListener("click", () =>
+  browseGo(document.body.classList.contains("browse-mode") ? "" : "sortiment"));
+// Force-refresh in i #sortiment: visa shellet direkt (produkterna fylls när bootdatan laddats).
+if (location.hash.slice(1).startsWith("sortiment")) showBrowseUI();
 
 function populateBrowseChain() {
   const sel = document.getElementById("browseChain");
@@ -1060,21 +1073,22 @@ async function loadBrowse() {
   if (browseState.q) p.set("q", browseState.q);
   if (browseState.category) p.set("category", browseState.category);
   if (browseState.chain) p.set("chain", browseState.chain);
+  const token = ++browseToken;  // race-guard: bara senaste laddningen renderar
   try {
     const d = await (await fetch(`/v1/products/catalog/browse?${p}`)).json();
+    if (token !== browseToken) return;  // en nyare laddning tog över (snabb växling)
     browseProducts = d.products || [];
     renderBrowseGrid();
   } catch (e) {
-    grid.innerHTML = `<div class="text-danger p-3">Kunde inte ladda sortimentet.</div>`;
+    if (token === browseToken) grid.innerHTML = `<div class="text-danger p-3">Kunde inte ladda sortimentet.</div>`;
   }
 }
 
 document.getElementById("browseSearch").addEventListener("input", (e) => {
   const q = e.target.value.trim();
   clearTimeout(browseTimer);
-  browseTimer = setTimeout(() => {
-    location.hash = q.length >= 2 ? "sortiment/s/" + encodeURIComponent(q) : "sortiment";
-  }, 250);
+  browseTimer = setTimeout(() =>
+    browseGo(q.length >= 2 ? "sortiment/s/" + encodeURIComponent(q) : "sortiment"), 250);
 });
 document.getElementById("browseChain").addEventListener("change", (e) => {
   browseState.chain = e.target.value;
@@ -1089,13 +1103,13 @@ document.getElementById("browseCats").addEventListener("click", (e) => {
   const c = e.target.closest(".browse-cat");
   if (!c) return;
   const cat = browseState.category === c.dataset.cat ? "" : c.dataset.cat;
-  location.hash = cat ? "sortiment/k/" + encodeURIComponent(cat) : "sortiment";
+  browseGo(cat ? "sortiment/k/" + encodeURIComponent(cat) : "sortiment");
 });
 document.getElementById("browseGrid").addEventListener("click", (e) => {
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
   const mapBtn = e.target.closest(".o-map");
-  if (mapBtn) { showMapUI(); location.hash = ""; filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name); }
+  if (mapBtn) { _selfNav = true; location.hash = ""; showMapUI(); filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name); setTimeout(() => { _selfNav = false; }, 0); }
 });
 
 // ---- Mobil: sidopanel som overlay ----
@@ -1227,6 +1241,7 @@ async function submitAuth() {
   await loadChains();   // data laddas först efter inloggning (endpoints är gatade)
   await loadStores();
   render();
+  populateBrowseChain();
   applyBrowseHash();    // återställ bläddra-vyn om URL:en har #sortiment
 }
 
@@ -1271,6 +1286,7 @@ document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key
     await loadCategories();
     await loadChains();
     await loadStores();
+    populateBrowseChain();
     applyBrowseHash();   // återställ bläddra-vyn om URL:en har #sortiment
   } else {
     showWall();  // hela appen kräver inloggning
