@@ -604,7 +604,7 @@ def archive_offers(chain, store_id, offers):
     # observationen blir EAN-nyckad (annars går prishistoriken inte att slå upp på EAN för
     # Willys/Hemköp). Koder som ännu inte warmats fångas i stället read-time i price_history.
     code_eans = (get_cached_eans([str(o.get("offer_id")) for o in offers])
-                 if chain in ("willys", "hemkop") else {})
+                 if chain in AXFOOD_CHAINS else {})
     conn = get_conn()
     try:
         latest = {
@@ -939,7 +939,7 @@ def get_store_offers(chain, store_id):
         out.append(d)
     # Axfood: fyll saknad offer-kategori (särskilt Willys) från förvärmad ean_cache
     # (googleAnalyticsCategory per code). category_for hanterar pipe-pathens första segment.
-    if chain in ("willys", "hemkop"):
+    if chain in AXFOOD_CHAINS:
         axc = get_axfood_categories([o["offer_id"] for o in out if not o.get("category_raw")])
         for o in out:
             if not o.get("category_raw") and axc.get(o["offer_id"]):
@@ -991,7 +991,7 @@ def list_products(q=None, category=None, chain=None, limit=40):
     # Kategori-berikning som get_store_offers (offer-nivå + Axfood ean_cache + product_info).
     reps = {k: g["offs"][0] for k, g in groups.items()}
     axc = get_axfood_categories(
-        [r["offer_id"] for r in reps.values() if r["chain"] in ("willys", "hemkop") and not r.get("category_raw")]
+        [r["offer_id"] for r in reps.values() if r["chain"] in AXFOOD_CHAINS and not r.get("category_raw")]
     )
     pc = get_product_categories([g["ean"] for g in groups.values() if g["ean"]])
     out = []
@@ -999,7 +999,7 @@ def list_products(q=None, category=None, chain=None, limit=40):
         rep = g["offs"][0]
         ch = rep["chain"]
         cat = category_for(ch, rep.get("category_raw"))
-        if ch in ("willys", "hemkop") and not rep.get("category_raw") and axc.get(rep["offer_id"]):
+        if ch in AXFOOD_CHAINS and not rep.get("category_raw") and axc.get(rep["offer_id"]):
             cat = category_for(ch, axc[rep["offer_id"]])
         if g["ean"] and pc.get(g["ean"]):
             cat = pc[g["ean"]]
