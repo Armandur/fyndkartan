@@ -7,7 +7,7 @@
 
     const gate = document.getElementById("loginGate");
     const consoleEl = document.getElementById("console");
-    let active = "overview", callsTimer = null, syncTimer = null;
+    let active = "overview", callsTimer = null, syncTimer = null, catalogTimer = null;
     let callsData = null, callsFilter = { source: "", status: "" };
 
     // Alla konsol-anrop går via api(): 403 => sessionen är borta, visa login.
@@ -973,7 +973,64 @@
       renderCatRows();
     }
 
-    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, marques: loadMarques, keys: loadKeys };
+    // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
+    const CATALOG_IMPLEMENTED = ["citygross"];
+
+    async function loadCatalog() {
+      const d = await (await api("/v1/admin/catalog/crawl/status")).json();
+      const stats = d.stats || {};
+      const chainRows = CATALOG_IMPLEMENTED.map((c) => {
+        const s = (d.chains || {})[c] || {};
+        const st = stats[c] || {};
+        const pct = s.categories_total ? Math.round((s.categories_done / s.categories_total) * 100) : 0;
+        const bar = s.status === "running" || s.categories_total
+          ? `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%"></div></div>
+             <div class="small text-muted mt-1">${s.categories_done}/${s.categories_total} kategorier${s.current_category ? ` &middot; <span class="fw-semibold">${esc(s.current_category)}</span>` : ""}</div>`
+          : "";
+        return `<div class="card p-3 mb-2">
+          <div class="d-flex align-items-center mb-1">${chip(c)}
+            <span class="ms-2 stat" style="font-size:1.2rem">${(s.products || 0).toLocaleString("sv-SE")}</span>
+            <span class="ms-2 small text-muted">produkter denna körning (${s.new || 0} nya, ${s.updated || 0} uppdaterade)</span>
+            <span class="ms-auto st-${s.status === "running" ? "running" : s.errors ? "error" : "ok"}">${esc(s.status || "idle")}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
+          </div>
+          ${bar}
+          <div class="small text-muted mt-2">Cachat totalt: <strong>${(st.total || 0).toLocaleString("sv-SE")}</strong> produkter
+            (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc((st.last_crawl || "").slice(0, 16).replace("T", " "))}` : ""}</div>
+          ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
+        </div>`;
+      }).join("");
+      const feed = (d.recent || []).map((p) =>
+        `<div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:.8rem">
+          ${chip(p.chain)}<span class="text-truncate">${esc(p.name || "")}</span>
+          <span class="ms-auto mono text-muted">${esc(p.ean || "")}</span></div>`).join("");
+      document.getElementById("catalog").innerHTML = `
+        <div class="d-flex align-items-center mb-3">
+          <h5 class="mb-0">Fulla sortiment</h5>
+          <span class="ms-3 small ${d.running ? "st-running" : "text-muted"}">${d.running ? "● crawlar…" : `senast: ${esc(d.finished_at || "-")}`}</span>
+          <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto" ${d.running ? "disabled" : ""}>Testa (2 kategorier)</button>
+          <button id="crawlNow" class="btn btn-sm btn-dark ms-2" ${d.running ? "disabled" : ""}>Crawla hela sortimentet</button>
+        </div>
+        <div class="text-muted small mb-3">Walk:ar kedjornas kategoriträd och persistar hela sortimentet (ej bara erbjudanden). Rate-limitat - hela körningen tar några minuter. Just nu: City Gross (övriga kedjor kommer).</div>
+        <div class="row g-3">
+          <div class="col-12 col-lg-7">${chainRows}</div>
+          <div class="col-12 col-lg-5"><div class="card p-3">
+            <h6 class="mb-2">Senast inlästa produkter ${d.running ? '<span class="st-running small">● live</span>' : ""}</h6>
+            <div style="min-height:200px">${feed || '<div class="text-muted small">Starta en crawl för att se produkter strömma in.</div>'}</div>
+          </div></div>
+        </div>`;
+      document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));
+      document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2));
+      clearTimeout(catalogTimer);
+      if (d.running && active === "catalog") catalogTimer = setTimeout(loadCatalog, 1500);
+    }
+
+    async function triggerCrawl(limit) {
+      const q = limit ? `?limit_categories=${limit}` : "";
+      await api(`/v1/admin/catalog/crawl${q}`, { method: "POST" });
+      loadCatalog();
+    }
+
+    const LOADERS = { overview: loadOverview, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys };
 
     function show(tab) {
       active = tab;
@@ -982,6 +1039,7 @@
       document.querySelectorAll(".tab").forEach(s => s.classList.toggle("d-none", s.id !== tab));
       clearInterval(callsTimer);
       clearTimeout(syncTimer);
+      clearTimeout(catalogTimer);
       LOADERS[tab]().catch(() => {});
       if (tab === "calls") callsTimer = setInterval(refreshCalls, 5000);
     }
@@ -993,7 +1051,7 @@
 
     // ---- Auth (konsol) ----
     function showGate() {
-      clearInterval(callsTimer); clearTimeout(syncTimer);
+      clearInterval(callsTimer); clearTimeout(syncTimer); clearTimeout(catalogTimer);
       consoleEl.classList.add("d-none");
       document.getElementById("consoleAuth").innerHTML = "";
       gate.classList.remove("d-none");

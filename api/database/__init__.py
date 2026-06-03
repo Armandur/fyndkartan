@@ -8,3 +8,4 @@ from .products import *  # noqa: F401,F403
 from .stores import *  # noqa: F401,F403
 from .meta import *  # noqa: F401,F403
 from .offers import *  # noqa: F401,F403
+from .catalog import *  # noqa: F401,F403

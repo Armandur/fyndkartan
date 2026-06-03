@@ -40,6 +40,14 @@ OFFERS_SWEEP_RETRIES = int(os.getenv("OFFERS_SWEEP_RETRIES", "3"))  # försök p
 OFFERS_SWEEP_BACKOFF = float(os.getenv("OFFERS_SWEEP_BACKOFF", "1.5"))  # bas-back-off (s, exponentiell)
 OFFERS_SWEEP_CIRCUIT = int(os.getenv("OFFERS_SWEEP_CIRCUIT", "12"))  # fel i rad/kedja -> pausa kedjan
 
+# Fulla sortiment-crawl (steg 5): walk:ar kedjornas kategoriträd och persistar hela sortimentet.
+# Default-cron av (tomt) -> triggas manuellt från konsolen (skonar kedjorna). Rate-limit per sida.
+CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "")
+CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkter per sida (take)
+CATALOG_CRAWL_PACE = float(os.getenv("CATALOG_CRAWL_PACE", "0.3"))   # paus mellan sidor (s)
+CATALOG_CRAWL_RETRIES = int(os.getenv("CATALOG_CRAWL_RETRIES", "3"))
+CATALOG_CRAWL_BACKOFF = float(os.getenv("CATALOG_CRAWL_BACKOFF", "1.5"))
+
 # Session-cookie. SESSION_SECRET löses i main vid import (env eller DB-persisterad).
 # https_only måste vara av i normalfallet (lokal Unraid över http).
 SESSION_SECRET = os.getenv("SESSION_SECRET", "")

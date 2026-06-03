@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog, categories, config, database, details, images, matching, schemas, tags
+from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, matching, schemas, tags
 from .adapters import axfood_offers
 from .database import (
     get_cached_eans,
@@ -1136,3 +1136,18 @@ async def trigger_offers_sweep(force: bool = False, _=Depends(require_admin)):
 @app.get("/v1/offers/sweep/status")
 async def offers_sweep_status(_=Depends(require_admin)):
     return SWEEP_STATE
+
+
+@app.post("/v1/admin/catalog/crawl")
+async def trigger_catalog_crawl(limit_categories: int | None = None, _=Depends(require_admin)):
+    """Starta en katalog-crawl (fulla sortiment) i bakgrunden. `limit_categories` cappar antal
+    kategorier per kedja - för snabb test av live-visualiseringen utan att vänta på hela sortimentet."""
+    if catalog_crawl.CRAWL_STATE["running"]:
+        return {"status": "running", "detail": "En crawl pågår redan."}
+    asyncio.create_task(catalog_crawl.crawl_all(limit_categories=limit_categories))
+    return {"status": "started", "limit_categories": limit_categories}
+
+
+@app.get("/v1/admin/catalog/crawl/status")
+async def catalog_crawl_status(_=Depends(require_admin)):
+    return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats()}

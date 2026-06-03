@@ -107,6 +107,22 @@ def init_db():
             "FROM offers o JOIN ean_cache e ON o.offer_id=e.code "
             "WHERE o.chain IN ('willys','hemkop') AND e.ean!=''"
         )
+    # Fulla sortiment (steg 5): persistent produktkatalog per kedja (allt de säljer, ej bara offers).
+    # En rad per (chain, product_id); EAN-gruppering vid läsning. `origin` = JSON-lista. `available`
+    # = sedd i senaste fullständiga crawl (utgångna behålls). Kanonisk kategori härleds vid läsning.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS catalog_products (
+            chain TEXT NOT NULL, product_id TEXT NOT NULL,
+            ean TEXT, name TEXT, brand TEXT, image TEXT, origin TEXT,
+            price REAL, comparison_value REAL, comparison_unit TEXT,
+            package_size TEXT, package_value REAL, package_unit TEXT,
+            category_raw TEXT, available INTEGER DEFAULT 1,
+            first_seen TEXT, last_seen TEXT, fetched_at TEXT,
+            PRIMARY KEY (chain, product_id)
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_ean ON catalog_products(ean)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_chain_cat ON catalog_products(chain, category_raw)")
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
