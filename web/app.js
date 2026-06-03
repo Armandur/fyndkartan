@@ -834,11 +834,19 @@ function catalogCard(p) {
     const cmp = pr.comparison_value != null
       ? ` <span class="text-muted">(${pr.comparison_value}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")})</span>`
       : "";
-    const px = pr.price != null ? `${pr.price} kr` : "-";
-    return `<div class="o-shelf-row"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span><span>${px}${cmp}</span></div>`;
+    const hasOffer = pr.offer_price != null;
+    // hyllpris (struket om erbjudande finns) + ev. aktuellt erbjudandepris
+    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${pr.price} kr</s>` : `${pr.price} kr`) : (hasOffer ? "" : "-");
+    const offer = hasOffer
+      ? `<span class="o-offer">rea ${pr.offer_price} kr${pr.offer_member ? " klubb" : ""}${pr.offer_valid_to ? ` <span class="text-muted">t.o.m. ${esc(pr.offer_valid_to)}</span>` : ""}</span>`
+      : "";
+    return `<div class="o-shelf-row"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span><span>${shelf}${shelf && offer ? " " : ""}${offer}${cmp}</span></div>`;
   }).join("");
   const range = p.price_min != null
     ? (p.price_min === p.price_max ? `${p.price_min} kr` : `${p.price_min}–${p.price_max} kr`)
+    : "";
+  const offerBadge = p.on_offer
+    ? `<span class="o-offer-badge">På erbjudande${p.offer_min != null ? ` fr. ${p.offer_min} kr` : ""}</span>`
     : "";
   const actions = p.ean
     ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
@@ -848,7 +856,7 @@ function catalogCard(p) {
     <div class="o-body">
       <div class="o-name">${esc(p.name || "")}</div>
       <div class="o-meta">${meta}</div>
-      <div class="o-price-row"><span class="o-price">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span></div>
+      <div class="o-price-row"><span class="o-price">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span>${offerBadge}</div>
       <div class="o-shelf">${prices}</div>
       <div class="o-foot">${catChip}</div>
       ${actions}

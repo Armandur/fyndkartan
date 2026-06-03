@@ -249,6 +249,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       längre debounce (450ms) + race-guard (`productsToken`) så ett segt fan-out-svar för en äldre
       söksträng inte skriver över en nyare. Kategori-dropdownen döljs i katalog-läget (ingen
       by-category där). "Visa information" öppnar samma produktmodal (info + prishistorik).
+      - [x] **Aktuella erbjudanden överlagrade på katalogen BYGGT.** `catalog._enrich_with_offers`
+        slår upp `database.offers_for_eans` (bästa aktuella erbjudandepris per EAN+kedja ur offers-
+        cachen, inline + Axfood-kod reverse-resolvat) och överlagrar på hyllpriserna: per kedja
+        `offer_price`/`offer_valid_to`/`offer_member` (CatalogPrice), `on_offer`/`offer_min`
+        (CatalogProduct). Kortet stryker hyllpriset och visar "rea X kr" + "På erbjudande fr. X kr"-
+        badge; kedjor med erbjudande men utan hyllpris-rad får en egen rad. Hyllpris = nationellt,
+        erbjudandepris = lägsta butikslokala i kedjan.
   - [x] **Dokumentera alla kedjors produktsök-/katalog-API:er** - endpoint, params,
     EAN/pris/jämförpris-tillgång (för unified-söket). Alla kedjor kartlagda (City Gross, Coop,
     ICA, Axfood nedan + i "Kända datakälle-fakta"; Lidl auth-gatat -> SSR-skrap utan EAN):

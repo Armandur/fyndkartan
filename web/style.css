@@ -267,6 +267,11 @@ img.o-img { cursor: zoom-in; }
 .o-shelf { display: flex; flex-direction: column; gap: 2px; margin-top: .15rem; }
 .o-shelf-row { display: flex; align-items: baseline; gap: .4rem; font-size: .72rem; color: #46505c; }
 .o-shelf-row .o-chainchip { flex: 0 0 auto; }
+.o-offer { color: #c0392b; font-weight: 700; }
+.o-offer-badge {
+  font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;
+  padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .02em;
+}
 .o-store { color: #46505c; font-weight: 600; }
 .fav-sec {
   font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;

@@ -315,11 +315,41 @@ async def catalog_search(client, q, per_chain=20, limit=60):
         gkey = it["ean"] or f"{it['chain']}:{(it['name'] or '').lower()}"
         groups.setdefault(gkey, []).append(it)
     products = [_build_product(g) for g in groups.values()]
+    _enrich_with_offers(products)
     # Flest kedjor först, sedan billigast, sedan namn.
     products.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                                  (p["name"] or "").lower()))
     _cache_put(ckey, products)
     return products[:limit]
+
+
+def _enrich_with_offers(products):
+    """Överlagra aktuella erbjudanden (ur offers-cachen) på katalogens hyllpriser. Per kedja sätts
+    `offer_price`/`offer_valid_to`/`offer_member`; kedjor med erbjudande men utan hyllpris-rad får
+    en egen rad (hyllpris None). `on_offer`/`offer_min` på produktnivå. Erbjudandepriset är lägsta
+    aktuella i kedjan (butikslokalt) - hyllpriset är nationellt/representativt."""
+    eans = [p["ean"] for p in products if p.get("ean")]
+    omap = db.offers_for_eans(eans) if eans else {}
+    for p in products:
+        offs = omap.get(p["ean"]) or {}
+        p["on_offer"] = bool(offs)
+        seen = set()
+        for pr in p["prices"]:
+            o = offs.get(pr["chain"])
+            if o:
+                pr["offer_price"] = o["price"]
+                pr["offer_valid_to"] = o["valid_to"]
+                pr["offer_member"] = o["member_price"]
+            seen.add(pr["chain"])
+        for chain, o in offs.items():
+            if chain not in seen:
+                p["prices"].append({
+                    "chain": chain, "price": None, "comparison_value": o["comparison_value"],
+                    "comparison_unit": o["comparison_unit"], "comparison_derived": False,
+                    "offer_price": o["price"], "offer_valid_to": o["valid_to"],
+                    "offer_member": o["member_price"]})
+        op = [o["price"] for o in offs.values() if o.get("price") is not None]
+        p["offer_min"] = min(op) if op else None
 
 
 def _build_product(group):

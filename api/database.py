@@ -712,6 +712,48 @@ def stores_with_offer(ean):
     return list(best.values())
 
 
+def offers_for_eans(eans):
+    """Bästa (lägsta) aktuella erbjudandepris per (EAN, kedja) ur offers-cachen, för en lista EAN.
+    {ean: {chain: {price, comparison_value, comparison_unit, valid_to, member_price}}}. Matchar
+    inline (ICA/Coop/CG via json_each) + Axfood-koder reverse-resolvat ur ean_cache. Används för
+    att överlagra aktuella erbjudanden på katalog-sökets nationella hyllpriser."""
+    eans = list({e for e in eans if e})
+    if not eans:
+        return {}
+    out = {}
+
+    def acc(ean, chain, r):
+        slot = out.setdefault(ean, {})
+        cur = slot.get(chain)
+        if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
+            slot[chain] = {"price": r["price"], "comparison_value": r["comparison_value"],
+                           "comparison_unit": r["comparison_unit"], "valid_to": r["valid_to"],
+                           "member_price": bool(r["member_price"])}
+
+    conn = get_conn()
+    ph = ",".join("?" * len(eans))
+    for r in conn.execute(
+        f"SELECT je.value AS ean, o.chain, o.price, o.comparison_value, o.comparison_unit, "
+        f"o.valid_to, o.member_price FROM offers o, json_each(o.eans) je WHERE je.value IN ({ph})",
+        eans,
+    ):
+        acc(r["ean"], r["chain"], r)
+    code_to_ean = {r["code"]: r["ean"]
+                   for r in conn.execute(f"SELECT code, ean FROM ean_cache WHERE ean IN ({ph})", eans)}
+    if code_to_ean:
+        cph = ",".join("?" * len(code_to_ean))
+        for r in conn.execute(
+            f"SELECT o.offer_id, o.chain, o.price, o.comparison_value, o.comparison_unit, "
+            f"o.valid_to, o.member_price FROM offers o WHERE o.chain IN ('willys','hemkop') "
+            f"AND o.offer_id IN ({cph})", list(code_to_ean),
+        ):
+            ean = code_to_ean.get(r["offer_id"])
+            if ean:
+                acc(ean, r["chain"], r)
+    conn.close()
+    return out
+
+
 def replace_store_offers(chain, store_id, offers):
     """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON.
     Arkiverar prisförändringar (prishistorik) innan replace."""

@@ -44,10 +44,13 @@ class ProductSearchResponse(BaseModel):
 
 class CatalogPrice(BaseModel):
     chain: str = Field(..., description="Kedja")
-    price: float | None = Field(None, description="Hyllpris i kr (nationellt/representativt)")
+    price: float | None = Field(None, description="Hyllpris i kr (nationellt/representativt); null = bara erbjudande")
     comparison_value: float | None = Field(None, description="Jämförpris-värde eller null")
     comparison_unit: str | None = Field(None, description="Jämförpris-enhet (kg/l/st...) eller null")
     comparison_derived: bool | None = Field(None, description="True = beräknat jämförpris (pris/storlek), ungefärligt")
+    offer_price: float | None = Field(None, description="Lägsta aktuella erbjudandepris i kedjan (butikslokalt), eller null")
+    offer_valid_to: str | None = Field(None, description="Erbjudandet gäller t.o.m. (ISO-datum)")
+    offer_member: bool | None = Field(None, description="Om erbjudandepriset är medlems-/klubbpris")
 
 
 class CatalogProduct(BaseModel):
@@ -63,9 +66,11 @@ class CatalogProduct(BaseModel):
     package_value: float | None = Field(None, description="Förpackningens mängd (numeriskt) eller null")
     package_unit: str | None = Field(None, description="Förpackningens enhet eller null")
     chains: list[str] = Field(..., description="Kedjor vars katalog har produkten")
-    prices: list[CatalogPrice] = Field(..., description="Hyllpris per kedja (stigande)")
+    prices: list[CatalogPrice] = Field(..., description="Hyllpris (+ ev. erbjudande) per kedja (stigande)")
     price_min: float | None = Field(None, description="Lägsta hyllpris i kr")
     price_max: float | None = Field(None, description="Högsta hyllpris i kr")
+    on_offer: bool = Field(False, description="Om varan har minst ett aktuellt erbjudande i någon kedja")
+    offer_min: float | None = Field(None, description="Lägsta aktuella erbjudandepris över alla kedjor, eller null")
 
 
 class CatalogSearchResponse(BaseModel):
