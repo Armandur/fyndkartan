@@ -661,6 +661,16 @@ bara en slutsiffra. Bygg ovanpå sweep-mönstret men rikare:
   känns trög; håll det till polling i v1. CRAWL_STATE måste uppdateras inkrementellt under crawlen
   (per ingestad batch) så feeden/räknaren rör sig, inte bara vid slutet.
 
+### Hyllpris-historik: läs-vy / graf (TODO - fångsten BYGGD)
+Fångsten finns: `catalog_price_observations` (append-only) skrivs i `catalog_upsert` vid pris-/
+jämförpris-ändring (+ baslinje vid första pris). KVAR är läs-sidan:
+- `database.catalog_price_history(ean)` (grupperad per kedja, EAN-nyckel - Axfood-katalog bär EAN
+  direkt så ingen reverse-resolve behövs här) + endpoint, speglar `price_history`/`/v1/products/{ean}/history`.
+- **Graf i konsument-appens produktmodal, SAMMANSLAGEN med erbjudande-historiken**: en vy som visar
+  både ordinarie hyllpris (linje) och fynd-dipparna (offer_observations) så man ser rea mot ordinarie.
+  Återanvänd inline-SVG-stegfunktionen; lägg hyllpris som en andra serie (ev. streckad/grå) under
+  offer-serierna. Honest: hyllpris = nationellt, offer = butikslokalt.
+
 ### Avgörande beslut (ta UPP innan bygge)
 - **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",
   inte "BUTIKEN för varan". Per-butiks-sortiment skulle kräva crawl × 2500 butiker × hela katalogen =
