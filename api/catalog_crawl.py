@@ -22,7 +22,7 @@ def _now():
 
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
 _IMPLEMENTED = ("citygross", "ica", "coop")
-_RECENT_MAX = 14  # live-feed: senast ingestade produkter
+_RECENT_MAX = 60  # live-feed-buffert: senaste ingestade produkter (klient-kön tömmer en i taget)
 
 
 def _blank_chain():

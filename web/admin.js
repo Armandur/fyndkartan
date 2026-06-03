@@ -985,7 +985,7 @@
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
-    const FEED_RELEASE_MS = 240, FEED_MAX = 18, FEED_QUEUE_CAP = 40;  // > synliga rader: understa tas bort under masken
+    const FEED_RELEASE_MS = 240, FEED_MAX = 18, FEED_QUEUE_CAP = 90;  // > synliga rader: understa tas bort under masken
 
     function stopFeedPump() { clearInterval(feedPump); feedPump = null; }
 
