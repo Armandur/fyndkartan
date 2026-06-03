@@ -978,7 +978,7 @@
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
-    const FEED_RELEASE_MS = 240, FEED_MAX = 12, FEED_QUEUE_CAP = 40;
+    const FEED_RELEASE_MS = 240, FEED_MAX = 14, FEED_QUEUE_CAP = 40;  // FEED_MAX ~ #catalogFeed-höjd
 
     function stopFeedPump() { clearInterval(feedPump); feedPump = null; }
 
@@ -1029,7 +1029,7 @@
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5"><div class="card p-3">
             <h6 class="mb-2">Senast inlästa produkter <span id="catalogLive"></span></h6>
-            <div id="catalogFeed" style="min-height:200px"></div>
+            <div id="catalogFeed"></div>
           </div></div>
         </div>`;
       document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null));

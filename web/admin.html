@@ -77,7 +77,9 @@
     .lb-overlay[hidden] { display: none; }
     .lb-img { max-width: 92vw; max-height: 92vh; object-fit: contain; border-radius: 8px; background: #fff; }
     /* Live crawl-feed: kontinuerligt nedåtflöde. Ny rad expanderar överst (trycker ner listan -
-       "creep nedåt"), borttagen kollapsar + tonar ut. En i taget via klient-kö (admin.js). */
+       "creep nedåt"), borttagen kollapsar + tonar ut. En i taget via klient-kö (admin.js).
+       Containern har FAST höjd + overflow:hidden så nederkanten inte hoppar när feeden fylls. */
+    #catalogFeed { height: 432px; overflow: hidden; }
     .feed-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; overflow: hidden;
       max-height: 44px; opacity: 1; padding: .28rem .25rem; border-bottom: 1px solid #eef1f4;
       transition: max-height .4s ease, opacity .45s ease, padding .4s ease; }
