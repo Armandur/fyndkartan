@@ -123,3 +123,27 @@ Därefter: **Steg 5 (fulla sortiment)** på en ren grund i stället för en anst
 - Modulariteten i `api/` är i grunden god (adapters/, sync/, catalog/, details/, brands/ etc.);
   det är bara `main.py` + `database.py` som svällt.
 - Rate-limiting/back-off/circuit-breaker-mönstret i sweepen är återanvändbart rakt av för Steg 5.
+
+---
+
+## Genomförande-status (2026-06-03)
+
+| Fynd | Status | Resultat |
+|------|--------|----------|
+| **1** Normalisera offer→EAN | ✅ Klar (`c1b3b8b`) | `offer_eans`-tabell; `stores_with_offer` ~350ms → 1-10ms |
+| **4** Tester runt tunga läsfunktioner | ✅ Klar (`1e79d27`) | `tests/test_logic.py` |
+| **2** Bryt ut `offers.py` ur main.py | ✅ Klar (`548afca`) | main.py 1294 → 1138 rader |
+| **6** `config.AXFOOD_CHAINS` | ✅ Klar (`005f5a0`) | (delvis redan i Fynd 1) |
+| **3** Dela `database.py` | ✅ Klar (`9a5714c`) | 1655-radersfil → paket, störst submodul ~517 rader |
+| **5** Frontend-split | 🟡 Delvis (`ec5bd21`) | admin.html 1229 → 141 + `admin.js`; **app.js-split återstår** |
+
+**Kvar i Fynd 5:** app.js (1145 rader) är inte uppdelad - no-bundler global scope + laddningsordning
+gör en multifils-split känslig och den kräver webbläsartest (kan ej köras headless). Görs som en
+fokuserad uppgift där resultatet kan verifieras i webbläsare, annars lämnas app.js som appens enda
+kärnfil. Påverkar INTE Steg 5:s datagrund.
+
+**Notera:** main.py är 1138 rader (fortfarande >600). Fynd 2 tog ut offers-domänen; ev. nästa steg
+är route-grupper till `api/routes/` - lämnat som framtida (ingen brådska, blockerar inget).
+
+Alla genomförda fynd verifierade: import + `test_schemas` + `test_logic` gröna, uppstart (init_db) +
+EAN/kategori-warming utan fel, schemaläggare aktiva, healthz 200.
