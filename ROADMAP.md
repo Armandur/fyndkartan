@@ -628,6 +628,29 @@ upserta i `catalog_products`. Per kedja (endpoints dokumenterade i "Kända datak
 - Kategoriträd: hämta en gång per kedja (de flesta har ett kategori-API; annars härled ur sökresultatens
   kategorifält). Spara enumererade kategorier i `catalog_crawl_state` för resumerbarhet.
 
+**Genomförande-status (crawler):**
+- [x] **City Gross BYGGT** (`_crawl_citygross`): kategoriträd via `GET /api/v1/Navigation` -> `data.tree`
+  -> "Matvaror"-barn med `link.categoryPageId` (35 toppkategorier; vissa är kampanjer/säsong som
+  överlappar departments -> dedup på `product_id` per körning). Paginera `Loop54/category/{id}/products`
+  (`skip`/`take`, har `totalCount`/`totalPages`). Normalisering = `_cg_row` (samma item-shape som offers).
+- [x] **ICA BYGGT** (`_crawl_ica`): INGET kategoriträd behövs - `queryString:"*"` (wildcard) + `offset`
+  paginerar HELA katalogen (~19 938 produkter), `stats.totalHits` = total. Återanvänder `catalog._norm_ica`,
+  `product_id`=gtin. (`""` ger 0; `*` är wildcarden.)
+- [ ] **Coop EJ LÖST** (recon gjord, mekanism saknas): perso-search är FRITEXT-only - `query:""`->count 0,
+  `query:"*"`->count 0, `query:"a"`->autokorrigeras till "apelsin". Items bär `navCategories` med NUMERISKA
+  koder (t.ex. 6262=Mejeri & Ägg, 6264=Mjölk, 334703=Mellanmjölk - 3 nivåer). Behöver det kategori-
+  PRODUKT-endpoint coop.se använder på kategorisidor. Probade `personalization/category/{6262}/products`,
+  `category/products/{6262}`, samt search med `filters:[{type:category,values:[6262]}]` -> alla gav
+  **200 med TOM body** (fel format, inte 404). Nästa: fånga det riktiga anropet på en coop.se-kategorisida
+  (DevTools/obscura) - koden finns, bara endpoint/param-formen saknas.
+- [ ] **Axfood (Willys/Hemköp) EJ LÖST** (recon gjord): `/search` kräver fritext (`q=""`->500, `q="*"`->total 0).
+  Svaret har en `category`-FACETT (värden som "Allergi mejeri", facet-query `q=mjölk:category:<namn>`) + fälten
+  `navigationCategories` (NULL i sök-svar), `categoryCode`, `categoryBreadcrumbs`. Hybris-kategori-browse
+  `q=:relevance:category:Mejeri` / `:allCategories:<kod>` gav total 0 (fel namn/kod). `/c/Mejeri`->404,
+  `/handla/varor/mejeri`->200 (HTML, ~30kB). Nästa: hitta Hybris-kategori-trädet (troligen ett
+  `axfoodcommercewebservices`-cms/category-endpoint) + rätt `allCategories`-kod-format. OBS: EAN ej inline
+  -> resolve via `ean_cache`/`/p/{code}` (capat) som offers/katalog-söket. Lidl utesluts (ingen EAN).
+
 ### Cadence + rate-limiting (återanvänd run_scheduler + sweep-mönstret)
 Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:
 - **Rullande/inkrementell:** crawla N kategorier per körning (cap, som `warm_ica_categories`), sprid över
