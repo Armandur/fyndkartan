@@ -978,7 +978,7 @@
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
-    const FEED_RELEASE_MS = 240, FEED_MAX = 14, FEED_QUEUE_CAP = 40;  // FEED_MAX ~ #catalogFeed-höjd
+    const FEED_RELEASE_MS = 240, FEED_MAX = 18, FEED_QUEUE_CAP = 40;  // > synliga rader: understa tas bort under masken
 
     function stopFeedPump() { clearInterval(feedPump); feedPump = null; }
 
@@ -993,12 +993,10 @@
       el.innerHTML = `${chip(p.chain)}<span class="text-truncate flex-grow-1">${esc(p.name || "")}</span><span class="mono text-muted">${esc(p.ean || "")}</span>`;
       box.prepend(el);
       requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("entering")));
-      const items = box.querySelectorAll(".feed-item:not(.leaving)");
-      if (items.length > FEED_MAX) {
-        const last = items[items.length - 1];
-        last.classList.add("leaving");
-        setTimeout(() => last.remove(), 450);
-      }
+      // Ingen kollaps-utgång (det blev hoppigt). Raderna flödar nedåt och tonar ut under
+      // gradient-masken; understa raden (under fold/mask) tas bort tyst.
+      const items = box.querySelectorAll(".feed-item");
+      if (items.length > FEED_MAX) items[items.length - 1].remove();
     }
 
     function enqueueFeed(recent) {
