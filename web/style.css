@@ -360,3 +360,21 @@ img.o-img { cursor: zoom-in; }
   }
   body.nav-open .nav-backdrop { display: block; }
 }
+
+/* ---- Bläddra-vy (alternativ till kartan): kategori-navigering + produktrutnät ---- */
+#browseView { flex: 1 1 auto; min-width: 0; overflow-y: auto; background: #f4f6f8;
+  padding: .9rem 1.1rem 2rem; }
+body.browse-mode .sidebar { display: none; }
+.browse-head { display: flex; gap: .5rem; align-items: center; max-width: 720px; margin: 0 auto .8rem; }
+.browse-head #browseSearch { flex: 1 1 auto; }
+.browse-cats { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: center;
+  max-width: 900px; margin: 0 auto .9rem; }
+.browse-cat { font-size: .76rem; padding: 3px 11px; border-radius: 16px; cursor: pointer;
+  background: #fff; border: 1px solid #dfe4ea; color: #46505c; user-select: none; }
+.browse-cat:hover { background: #eef1f4; }
+.browse-cat.on { background: #19c37d; border-color: #19c37d; color: #04231a; font-weight: 700; }
+.browse-title { max-width: 1200px; margin: 0 auto .5rem; font-weight: 700; color: #1c2530; }
+.browse-grid { max-width: 1200px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .6rem; }
+.browse-grid .offer-card { background: #fff; border: 1px solid #e6e9ec; border-radius: 9px; padding: .5rem .6rem; }
+#browseMore { max-width: 1200px; margin: 1rem auto; }

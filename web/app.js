@@ -967,6 +967,101 @@ document.getElementById("productsList").addEventListener("click", (e) => {
   if (mapBtn) filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
 
+// ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
+const browseState = { q: "", category: "", chain: "", limit: 60 };
+let browseTimer = null, browseInit = false;
+
+function openBrowse() {
+  document.body.classList.add("browse-mode");
+  document.getElementById("map").classList.add("d-none");
+  document.getElementById("browseView").classList.remove("d-none");
+  document.getElementById("viewToggle").textContent = "Till kartan";
+  if (!browseInit) { populateBrowseChain(); browseInit = true; }
+  renderBrowseCats();
+  loadBrowse();
+}
+function closeBrowse() {
+  document.body.classList.remove("browse-mode");
+  document.getElementById("browseView").classList.add("d-none");
+  document.getElementById("map").classList.remove("d-none");
+  document.getElementById("viewToggle").textContent = "Bläddra sortiment";
+  map.invalidateSize();  // kartan var dold -> räkna om storlek
+}
+document.getElementById("viewToggle").addEventListener("click", () =>
+  document.body.classList.contains("browse-mode") ? closeBrowse() : openBrowse());
+
+function populateBrowseChain() {
+  const sel = document.getElementById("browseChain");
+  sel.innerHTML = `<option value="">Alla kedjor</option>` +
+    Object.entries(state.chains).map(([c, m]) => `<option value="${esc(c)}">${esc(m.label || c)}</option>`).join("");
+}
+
+function renderBrowseCats() {
+  const box = document.getElementById("browseCats");
+  box.innerHTML = Object.entries(catLabels)
+    .sort((a, b) => a[1].localeCompare(b[1], "sv"))
+    .map(([k, label]) => `<span class="browse-cat${browseState.category === k ? " on" : ""}" data-cat="${esc(k)}">${esc(label)}</span>`).join("");
+}
+
+async function loadBrowse() {
+  const grid = document.getElementById("browseGrid");
+  const title = document.getElementById("browseTitle");
+  const more = document.getElementById("browseMore");
+  if (!browseState.q && !browseState.category) {
+    title.textContent = "";
+    grid.innerHTML = `<div class="text-muted p-3">Välj en kategori ovan eller sök för att bläddra hela sortimentet.</div>`;
+    more.innerHTML = "";
+    return;
+  }
+  grid.innerHTML = `<div class="text-muted p-3">Laddar&hellip;</div>`;
+  const p = new URLSearchParams({ limit: browseState.limit });
+  if (browseState.q) p.set("q", browseState.q);
+  if (browseState.category) p.set("category", browseState.category);
+  if (browseState.chain) p.set("chain", browseState.chain);
+  try {
+    const d = await (await fetch(`/v1/products/catalog/browse?${p}`)).json();
+    const products = d.products || [];
+    title.textContent = browseState.q
+      ? `Sök: "${browseState.q}" (${products.length})`
+      : `${catLabels[browseState.category] || browseState.category} (${products.length})`;
+    grid.innerHTML = products.length ? products.map(catalogCard).join("") : `<div class="text-muted p-3">Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom).</div>`;
+    more.innerHTML = products.length >= browseState.limit ? `<button id="browseMoreBtn" class="btn btn-sm btn-outline-dark">Visa fler</button>` : "";
+    const mb = document.getElementById("browseMoreBtn");
+    if (mb) mb.onclick = () => { browseState.limit += 60; loadBrowse(); };
+  } catch (e) {
+    grid.innerHTML = `<div class="text-danger p-3">Kunde inte ladda sortimentet.</div>`;
+  }
+}
+
+document.getElementById("browseSearch").addEventListener("input", (e) => {
+  browseState.q = e.target.value.trim();
+  browseState.category = "";
+  browseState.limit = 60;
+  clearTimeout(browseTimer);
+  browseTimer = setTimeout(() => { renderBrowseCats(); loadBrowse(); }, 250);
+});
+document.getElementById("browseChain").addEventListener("change", (e) => {
+  browseState.chain = e.target.value;
+  browseState.limit = 60;
+  loadBrowse();
+});
+document.getElementById("browseCats").addEventListener("click", (e) => {
+  const c = e.target.closest(".browse-cat");
+  if (!c) return;
+  browseState.category = browseState.category === c.dataset.cat ? "" : c.dataset.cat;
+  browseState.q = "";
+  document.getElementById("browseSearch").value = "";
+  browseState.limit = 60;
+  renderBrowseCats();
+  loadBrowse();
+});
+document.getElementById("browseGrid").addEventListener("click", (e) => {
+  const info = e.target.closest(".o-info");
+  if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
+  const mapBtn = e.target.closest(".o-map");
+  if (mapBtn) { closeBrowse(); filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name); }
+});
+
 // ---- Mobil: sidopanel som overlay ----
 function openNav() { document.body.classList.add("nav-open"); }
 function closeNav() { document.body.classList.remove("nav-open"); }
