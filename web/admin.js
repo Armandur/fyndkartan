@@ -974,7 +974,7 @@
     }
 
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
-    const CATALOG_IMPLEMENTED = ["citygross", "ica", "coop"];
+    const CATALOG_IMPLEMENTED = ["citygross", "ica", "coop", "willys", "hemkop"];
     const CRAWL_STATUS = { idle: "väntar", running: "crawlar", ok: "klar", ok_med_fel: "klar (med fel)" };
     function fmtDur(sec) {
       sec = Math.round(sec);

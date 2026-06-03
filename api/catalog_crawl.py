@@ -3,8 +3,9 @@ i `catalog_products` (ej bara offers). Proaktiv, rate-limitad, inkrementell - `C
 uppdateras per sida så konsolen kan visa produkter strömma in live.
 
 Implementerat: City Gross (Loop54 kategoriträd), ICA (wildcard '*' + offset), Coop (by-attribute
-+ harvestade departement-rötter). Kvar: Axfood (Willys/Hemköp). Lidl saknar EAN -> utesluts.
-Kedjorna crawlas PARALLELLT (egen host var -> ingen rate-limit-konflikt).
++ harvestade departement-rötter), Willys/Hemköp (Axfood /c/<slug> + leftMenu/categorytree; EAN
+ur ean_cache, NULL annars). Lidl saknar EAN -> utesluts. Kedjorna crawlas PARALLELLT (egen host
+var -> ingen rate-limit-konflikt). ALLA EAN-bärande kedjor nu täckta.
 """
 import asyncio
 import json
@@ -21,7 +22,7 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
-_IMPLEMENTED = ("citygross", "ica", "coop")
+_IMPLEMENTED = ("citygross", "ica", "coop", "willys", "hemkop")
 _RECENT_MAX = 60  # live-feed-buffert: senaste ingestade produkter (klient-kön tömmer en i taget)
 _RECENT_PER_CHAIN = 40  # per-kedje-buffert (för round-robin-rättvis feed)
 _RECENT_BY_CHAIN = {}  # {chain: [items]} - modulnivå, skickas EJ till klienten
@@ -381,7 +382,112 @@ async def _crawl_coop(client, limit_categories):
     st["finished_at"] = _now()
 
 
-_CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica, "coop": _crawl_coop}
+# --- Axfood (Willys/Hemköp): /c/<slug>-paginering + leftMenu/categorytree -----------------
+# Olika API-prefix och kategori-id/slugs per sajt (delar backend men ej taxonomi). EAN ej inline
+# -> slås upp ur ean_cache (gratis; NULL annars, fylls av warm_axfood_eans över tid).
+_AXFOOD_BASE = {"willys": "https://www.willys.se/axfood/rest/v1", "hemkop": "https://www.hemkop.se"}
+_AXFOOD_TREE = {
+    "willys": ("https://www.willys.se/axfood/rest/v1/leftMenu/categorytree",
+               {"storeId": "2110", "deviceType": "OTHER"}),
+    "hemkop": ("https://www.hemkop.se/leftMenu/categorytree", {}),
+}
+
+
+async def _axfood_categories(client, chain):
+    """Topp-avdelningarna (rotens direkta barn) -> [(slug, titel)]."""
+    url, params = _AXFOOD_TREE[chain]
+    j = await _get_json(client, url, params)
+    root = j[0] if isinstance(j, list) else j
+    out = []
+    for ch in root.get("children") or []:
+        if ch.get("url") and ch.get("valid", True):
+            out.append((ch["url"].strip("/").split("/")[-1], ch.get("title") or ch["url"]))
+    return out
+
+
+def _axfood_row(it, ean, cat_fallback):
+    img = it.get("image") or {}
+    return {
+        "product_id": str(it.get("code") or ""),
+        "ean": ean,
+        "name": it.get("name"),
+        "brand": (it.get("manufacturer") or "").strip() or None,
+        "origin": None,
+        "image": img.get("url") if isinstance(img, dict) else None,
+        "category_raw": it.get("googleAnalyticsCategory") or cat_fallback,
+        "package_size": it.get("productLine2") or None,
+        "package_value": None, "package_unit": None,
+        "price": catalog._price_num(it.get("priceValue") if it.get("priceValue") is not None else it.get("price")),
+        "comparison_value": catalog._price_num(it.get("comparePrice")),
+        "comparison_unit": (it.get("comparePriceUnit") or "").lower() or None,
+    }
+
+
+async def _axfood_browse(client, chain, slug, title, st, seen, max_pages):
+    base, page, size = _AXFOOD_BASE[chain], 0, config.CATALOG_CRAWL_PAGE
+    while True:
+        j = await _get_json(client, f"{base}/c/{slug}", {"page": page, "size": size, "sort": ""})
+        items = j.get("results") or []
+        npages = (j.get("pagination") or {}).get("numberOfPages") or 0
+        if not items:
+            break
+        codes = [str(it.get("code")) for it in items if it.get("code")]
+        code_eans = database.get_cached_eans(codes)  # gratis ean_cache-uppslag
+        rows = []
+        for it in items:
+            code = str(it.get("code") or "")
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            rows.append(_axfood_row(it, code_eans.get(code) or None, title))
+        if rows:
+            new, known, changed = database.catalog_upsert(chain, rows)
+            st["new"] += new; st["known"] += known; st["changed"] += changed
+            st["products"] += len(rows)
+            _feed(chain, rows)
+        page += 1
+        await asyncio.sleep(config.CATALOG_CRAWL_PACE)
+        if page >= npages or (max_pages and page >= max_pages):
+            break
+
+
+async def _crawl_axfood(client, limit_categories, chain):
+    st = CRAWL_STATE["chains"][chain]
+    started = _now()
+    st.update(status="running", started_at=started, finished_at=None, limited=bool(limit_categories))
+    cats = await _axfood_categories(client, chain)
+    if limit_categories:
+        cats = cats[:limit_categories]
+    st["categories_total"] = len(cats)
+    seen = set()
+    max_pages = 1 if limit_categories else None
+    for slug, title in cats:
+        st["current_category"] = title
+        try:
+            await _axfood_browse(client, chain, slug, title, st, seen, max_pages)
+        except Exception as e:  # noqa: BLE001
+            st["errors"] += 1
+            if len(st["last_errors"]) < 8:
+                st["last_errors"].append(f"{title}: {e}")
+            log.warning("katalog-crawl %s/%s misslyckades: %s", chain, title, e)
+        st["categories_done"] += 1
+    st["current_category"] = None
+    if not limit_categories:
+        database.catalog_mark_unseen(chain, started)
+    st["status"] = "ok" if not st["errors"] else "ok_med_fel"
+    st["finished_at"] = _now()
+
+
+async def _crawl_willys(client, limit):
+    await _crawl_axfood(client, limit, "willys")
+
+
+async def _crawl_hemkop(client, limit):
+    await _crawl_axfood(client, limit, "hemkop")
+
+
+_CRAWLERS = {"citygross": _crawl_citygross, "ica": _crawl_ica, "coop": _crawl_coop,
+             "willys": _crawl_willys, "hemkop": _crawl_hemkop}
 
 
 async def crawl_all(limit_categories=None, chains=None):
