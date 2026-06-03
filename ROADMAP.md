@@ -227,8 +227,8 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
           resizebar cloudinary-bild (Coop före Axfood) framför ICA:s offer-bild (200px, ej
           resizebar); för ICA-produkter används EAN-CDN:n (400px) i stället. Tidigare togs
           första träffen (LIMIT 1). Bildcachen rensad så det slår igenom.
-  - [ ] **Fulla sortiment** (ej bara offers) - se separat övervägande; ger komplett
-    produktlista + hyllprisjämförelse men är ett eget hämtnings-/lagringsprojekt.
+  - [ ] **Fulla sortiment** (ej bara offers) - eget hämtnings-/lagringsprojekt. **Detaljerad,
+    resumerbar implementationsplan: se "Steg 5 - Fulla sortiment" sist i detta dokument.**
   - [x] **Unified produktsök (API) BYGGT (`api/catalog.py` + `GET /v1/products/catalog?q=`).**
     Live fan-out mot kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt
     hyllpris** (ej butikslokalt, ej offers - en upptäckts-funktion skild från `/v1/products/search`).
@@ -575,3 +575,100 @@ aggregering - stäm av innan skarp drift.
   Stats i konsolens Översikt. Kvar: ev. djupare vy (per butik, längre tidsspann) när datan vuxit.
 - Avvägning kvarstår: per butik (nu, stort) vs aggregerat per kedja/nationellt (juridiskt
   känsligare) - stäm av ToS innan ev. nationell aggregering.
+
+---
+
+## Steg 5 - Fulla sortiment (PLANERAT, ej påbörjat)
+
+Persista HELA produktkatalogen per kedja (allt de säljer, inte bara det som är på rea och
+inte bara det någon råkat söka på), med nationellt hyllpris, i en beständig tabell. Skild
+från: (a) **offers-cachen** = bara nedsatta varor, churnar; (b) **live katalog-söket**
+(`catalog.py` + `/v1/products/catalog`) = hela sortimentet MEN efemärt/per-query. Steg 5 =
+crawla + lagra allt periodiskt.
+
+**Syfte/upplåser:** komplett produktlista + bläddring per kategori för ALLT; riktigt
+hyllprisindex cross-chain (inte bara deals); "vilken KEDJA för varan" (ej per butik, se
+nedan); fullständig produktsök (ej bara cachade offers); grund för hyllpris-historik.
+
+### Datamodell (database.py + init_db ALTER-guards)
+Ny tabell, en rad per (kedja, produkt) - EAN-gruppering vid LÄSNING (spegla `list_products`):
+```
+catalog_products
+  chain TEXT, product_id TEXT          -- kedjans interna kod; PK (chain, product_id)
+  ean TEXT                             -- normaliserad (matching.normalize_ean); NULL för Lidl
+  name, brand, image, origin TEXT
+  price REAL                           -- nationellt/representativt hyllpris
+  comparison_value REAL, comparison_unit TEXT
+  package_size TEXT, package_value REAL, package_unit TEXT
+  category_raw TEXT                    -- kanonisk härleds vid läsning via category_map (derive-at-read)
+  available INTEGER DEFAULT 1          -- 0 om ej sedd i senaste fullständiga crawl (utgången)
+  first_seen, last_seen, fetched_at TEXT
+  -- INDEX(ean), INDEX(chain, category_raw)
+catalog_crawl_state                    -- per kedja: senaste kategori/offset, status, started/finished (resumebar)
+```
+
+### Crawl-strategi (NY modul `api/catalog_crawl.py`, återanvänd `catalog.py`-searcharna)
+`catalog.py` har redan en `_search_<chain>` per kedja som normaliserar item-dicts. Steg 5 kör
+dem i BLÄDDRA-ALLT-läge: enumerera kedjans KATEGORITRÄD, paginera produkter inom varje kategori,
+upserta i `catalog_products`. Per kedja (endpoints dokumenterade i "Kända datakälle-fakta" ovan):
+- **City Gross** (Loop54): `GET /api/v1/Loop54/category/{id}/products` - paginera hela kategoriträdet.
+- **Coop** (perso-search): `personalization/search/global` med `navCategories`-filter + `resultsOptions.skip/take`.
+- **Willys/Hemköp** (Axfood): `{domän}/search?q=&page=&size=` per kategori (`googleAnalyticsCategory`-trädet);
+  EAN ej inline -> resolve via `ean_cache`/`/p/{code}` som idag (`axfood_offers.fetch_p_meta`, capat).
+- **ICA** (globalsearch): `quicksearch` med `offset`/`take`, per `mainCategoryName`, flaggskepps-`accountNumber`
+  + public-access-token (`ica_token`). EAN = `gtin` (nollpaddad 14 -> normalisera till 13).
+- **Lidl**: UTESLUTS (ingen EAN i sök -> kan ej cross-matchas; SSR-skrap ger bara internt artikelnr).
+- Kategoriträd: hämta en gång per kedja (de flesta har ett kategori-API; annars härled ur sökresultatens
+  kategorifält). Spara enumererade kategorier i `catalog_crawl_state` för resumerbarhet.
+
+### Cadence + rate-limiting (återanvänd run_scheduler + sweep-mönstret)
+Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:
+- **Rullande/inkrementell:** crawla N kategorier per körning (cap, som `warm_ica_categories`), sprid över
+  ett dygn. Egen `CATALOG_CRAWL_CRON` i config + `run_scheduler(cron, tz, crawl_job, "katalog-crawl")`.
+- Samma skydd som `sweep_offers`: bunden parallellism (`CATALOG_CRAWL_CONCURRENCY`), paus mellan anrop,
+  exponentiell back-off/retry, circuit breaker per kedja. Spegla `_sweep_chain`/`_sweep_one_store`.
+- `last_seen` < senaste fullständiga crawl-runda -> sätt `available=0` (utgången vara behålls för historik).
+- INGEN crawl vid uppstart (skonar kedjorna); trigga via konsol-knapp + schema, som sweepen.
+
+### Läs-integration
+- Läs-funktioner i `database.py` som speglar `list_products` (EAN-gruppering cross-chain, kanonisk kategori
+  via `category_map`, brand/origin-split): `catalog_browse(category, chain, q, limit)` + ev. `catalog_product(ean)`.
+- `/v1/products/search` + `by-category` kan läsa ur `catalog_products` (eller union med offers) -> söket
+  hittar ALLT, inte bara cachade offers. Overlay aktuella erbjudanden via befintlig `offers_for_eans`
+  (samma mönster som live-katalogens `_enrich_with_offers`).
+- Live `/v1/products/catalog` (fan-out) kan behållas för färskhet men blir overflödigt för bläddring.
+- Schema: nya/utökade Pydantic-modeller i `schemas.py` + `OWN_APIS`-poster + `test_schemas.py`-täckning
+  (projektets kontrakt-regel). Konsol-status (rader/kedja, senaste crawl, available-andel) i Översikt,
+  som offers-sweepen (`offers_coverage`-mönstret).
+
+### Avgörande beslut (ta UPP innan bygge)
+- **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",
+  inte "BUTIKEN för varan". Per-butiks-sortiment skulle kräva crawl × 2500 butiker × hela katalogen =
+  ogenomförbart. Konsekvens: det EXAKTA kartfiltret per butik förblir offers-baserat; fulla sortiment
+  ger kedjenivå-täckning + nationellt hyllpris.
+- **Storlek:** ~30-50k varor/kedja × 5 ≈ 200k rader (~5x offers). Hanterbart i SQLite med index.
+- **ToS/juridik:** att skörda hela kataloger är känsligare än erbjudanden - stäm av före skarp drift.
+- **Beroende:** bygg EFTER datalager-översynen (se nedan) - särskilt den normaliserade `offer_eans`-tabellen,
+  vars EAN-index-mönster fulla sortiment återanvänder.
+
+---
+
+## Översyn - datalager + struktur (PLANERAT, görs FÖRE Steg 5)
+
+Fokuserad genomlysning + städning av grunden innan ett ~200k-raders subsystem läggs ovanpå.
+Fynden produceras i `REVIEW.md` (rangordnade efter värde/risk). Områden att granska:
+
+1. **Filstorlekar mot projektregeln (<400-500 rader):** `api/main.py` (~1294), `api/database.py` (~1638),
+   `web/app.js` (~1145), `web/admin.html` (~1229). Kandidat: bryt ut offers-/sweep-logiken ur `main.py`
+   (ny `api/offers.py`: `_fetch_offers_for`, `_offers_fresh`/`_offers_expired`, `_ensure_offers`,
+   `sweep_offers`/`_sweep_chain`/`_sweep_one_store`, `SWEEP_STATE`, OFFERS_*-konstanter); ev. route-grupper
+   till `api/routes/`. `database.py` ev. dela per domän (offers/stores/catalog/ean).
+2. **Query-grunden:** `stores_with_offer`/`offers_for_eans`/`price_history` gör full-scan + `json_each`
+   på 382k offers-rader (~300ms). Normalisera till en indexerad `offer_eans`-tabell (offer_id -> ean,
+   fylld vid `replace_store_offers`) -> snabbare uppslag OCH samma mönster fulla sortiment behöver.
+3. **Testtäckning:** idag bara schema-drift-testet; lägg tester runt de tyngsta läs-funktionerna innan mer byggs.
+4. **Övrigt att notera under passet:** döda/oanvända helpers, dubblerad logik mellan moduler, ställen där
+   derive-at-read kan ha drivit isär, konsekvent felhantering/loggning.
+
+Leverans: `REVIEW.md` med rangordnade fynd + rekommenderad åtgärdsordning. Själva åtgärderna beslutas
+EFTER att fynden lagts fram (inte automatiskt).
