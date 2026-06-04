@@ -292,7 +292,9 @@ def _html_versioned(filename):
             return ref
         return f"{ref}?v={v}"
 
-    return HTMLResponse(_STATIC_REF_RX.sub(stamp, html))
+    # no-cache: webbläsaren måste revalidera HTML:en varje gång -> plockar alltid upp nya
+    # ?v=-asset-URL:er (annars kan en cachad HTML peka på gamla assets).
+    return HTMLResponse(_STATIC_REF_RX.sub(stamp, html), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/", response_class=HTMLResponse)
