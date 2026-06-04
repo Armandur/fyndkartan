@@ -10,7 +10,7 @@ mellan butiker, samt prisutveckling över tid.
 
 ## Steg 1 - Butiker (KLART)
 
-Unified store-API för 5 kedjor, ~2682 butiker, Leaflet/OSM-karta. Spec i
+Unified store-API för 6 kedjor (ICA, Coop, Willys, Hemköp, Lidl, City Gross), ~2722 butiker, Leaflet/OSM-karta. Spec i
 `UNIFIED-API.md`. Självförnyande nycklar (ICA token-API, Coop/Lidl scrape-on-401).
 Normaliserade veckoöppettider (`opening_hours.week`/`exceptions`) för alla kedjor.
 
@@ -257,19 +257,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         sortiment skiljer sig, så 0 träffar på 5 EAN betyder "saknar de varorna", inte "ofrågbar".
       - **Slutsats:** ingen billig zon-genväg finns (Coop-zoner inkonsekventa, ICA saknar zoner). Full
         per-butik = ~310 Coop + 1289 ICA staggrat över ~en månad. Hanterbart men inte trivialt.
-    - **Datamodell:** separera produkt-master (butiksoberoende: namn/brand/ean/kategori) från butikspris.
-      Ny `catalog_store_prices (chain, product_id, store)` -> price/comparison/last_seen (PK på trippeln).
-      `catalog_price_observations` + `store`-kolumn -> append-on-change per (chain, product_id, store)
-      (växer med ändringar, inte butiker × dagar -> hanterbart).
-    - **Crawl:** generisk per-butik-rotation ovanpå crawl-maskineriet. Kö av (kedja, store), zon-
-      representanter först. Staggrat N butiker/natt, tungt rate-limitat, egen cadence (`STORE_PRICE_CRON`),
-      circuit-breaker/cooldown vid WAF (som EAN-warmingen). Coop varierar `store={ledger}`, ICA
-      `accountNumber` (finns i butikernas native). Skippa ledgers som svarar tomt (markera ej-e-handel).
-    - **Läs/API + UI:** `GET /v1/products/{ean}/prices?near=lat,lng` (billigast nära dig), prisvärmekarta.
-      Kopplar till statistik-appen (PRO-matkasse per region).
-    - **Inramning:** för cross-chain-jämförelse räcker EN representativ butik/kedja (det vi har). Full
-      per-butik = geografiskt prisintelligens-projekt, värt det bara om det blir en uttalad produkt.
-      Bygg INTE förrän steg 0-researchen säger att det är hanterbart (särskilt om Coop är zon-prissatt).
+    - **Detaljerad, resumerbar implementationsplan (datamodell, efterfrågestyrd crawl, nya endpoints,
+      kart-app-funktioner, SQLite-vs-Postgres): se "Steg 6 - Per-butik-priser" sist i dokumentet.**
+    - **Inramning:** för enkel cross-chain-jämförelse räcker EN representativ butik/kedja (det vi har).
+      Full per-butik = geografiskt prisintelligens-projekt, värt det bara om det blir en uttalad produkt.
   - [x] **Unified produktsök (API) BYGGT (`api/catalog.py` + `GET /v1/products/catalog?q=`).**
     Live fan-out mot kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt
     hyllpris** (ej butikslokalt, ej offers - en upptäckts-funktion skild från `/v1/products/search`).
@@ -707,7 +698,12 @@ domäner:
 
 ---
 
-## Steg 4 - Prishistorik (SENARE)
+## Steg 4 - Prishistorik (BYGGT)
+
+> **Status:** `offer_observations` (append-on-change, per butik), `GET /v1/products/{ean}/history`
+> och konsument-modalens inline-SVG prisgraf är BYGGT (se CLAUDE.md "Prishistorik (steg 4)").
+> Dessutom: innehållshistorik (`product_info_observations`) + hyllpris-historik
+> (`catalog_price_observations`) tillkomna. Texten nedan är den ursprungliga ramen.
 
 Tidsserie (`offer_observations`) per produkt/EAN för prisutveckling. Endast
 meningsfull för nivå-2-matchade märkesvaror. ToS/juridik känsligare vid nationell
@@ -740,7 +736,13 @@ aggregering - stäm av innan skarp drift.
 
 ---
 
-## Steg 5 - Fulla sortiment (PLANERAT, ej påbörjat)
+## Steg 5 - Fulla sortiment (KÄRNAN BYGGD)
+
+> **Status:** crawl-maskineriet (`api/catalog_crawl.py`), `catalog_products`-tabellen, daglig cadence,
+> `/v1/products/catalog/browse` + konsolens Sortiment-flik med live-feed och hyllpris-historik-logg
+> är BYGGT och i drift. Plan-texten nedan är den ursprungliga designen (mestadels förverkligad);
+> kvarvarande detaljer markeras i "Att göra"-punkterna på respektive ställe ovan.
+
 
 Persista HELA produktkatalogen per kedja (allt de säljer, inte bara det som är på rea och
 inte bara det någon råkat söka på), med nationellt hyllpris, i en beständig tabell. Skild
@@ -835,15 +837,18 @@ bara en slutsiffra. Bygg ovanpå sweep-mönstret men rikare:
   känns trög; håll det till polling i v1. CRAWL_STATE måste uppdateras inkrementellt under crawlen
   (per ingestad batch) så feeden/räknaren rör sig, inte bara vid slutet.
 
-### Hyllpris-historik: läs-vy / graf (TODO - fångsten BYGGD)
+### Hyllpris-historik: läs-vy / graf (DELVIS BYGGT)
 Fångsten finns: `catalog_price_observations` (append-only) skrivs i `catalog_upsert` vid pris-/
-jämförpris-ändring (+ baslinje vid första pris). KVAR är läs-sidan:
-- `database.catalog_price_history(ean)` (grupperad per kedja, EAN-nyckel - Axfood-katalog bär EAN
-  direkt så ingen reverse-resolve behövs här) + endpoint, speglar `price_history`/`/v1/products/{ean}/history`.
-- **Graf i konsument-appens produktmodal, SAMMANSLAGEN med erbjudande-historiken**: en vy som visar
-  både ordinarie hyllpris (linje) och fynd-dipparna (offer_observations) så man ser rea mot ordinarie.
-  Återanvänd inline-SVG-stegfunktionen; lägg hyllpris som en andra serie (ev. streckad/grå) under
-  offer-serierna. Honest: hyllpris = nationellt, offer = butikslokalt.
+jämförpris-ändring (+ baslinje vid första pris).
+- [x] **Admin-läsvy BYGGT:** `database.catalog_price_changes(chain, q, sort, limit)` (LAG-fönster ->
+  föregående pris) + `GET /v1/admin/catalog/price-changes` + konsolens Sortiment-flik: beständig,
+  filtrerbar (kedja + sök) och sorterbar (största/minsta ändring, höjning/sänkning) prisändrings-logg
+  med upp/ner-visualisering, klickbar rad -> produktmodal. Live-uppdateras under crawl.
+- [ ] **Kvar: per-EAN tidsserie + graf i KONSUMENT-appens produktmodal, SAMMANSLAGEN med
+  erbjudande-historiken**: `database.catalog_price_history(ean)` (per kedja) + endpoint, och en vy som
+  visar både ordinarie hyllpris (linje) och fynd-dipparna (offer_observations). Återanvänd inline-SVG-
+  stegfunktionen; hyllpris som andra serie (streckad/grå). Honest: hyllpris = butik/nationellt (se
+  Steg 6 om butiksscoping), offer = butikslokalt.
 
 ### Avgörande beslut (ta UPP innan bygge)
 - **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",
@@ -857,22 +862,119 @@ jämförpris-ändring (+ baslinje vid första pris). KVAR är läs-sidan:
 
 ---
 
-## Översyn - datalager + struktur (PLANERAT, görs FÖRE Steg 5)
+## Översyn - datalager + struktur (MESTADELS GJORD)
 
-Fokuserad genomlysning + städning av grunden innan ett ~200k-raders subsystem läggs ovanpå.
-Fynden produceras i `REVIEW.md` (rangordnade efter värde/risk). Områden att granska:
+> **Status:** de strukturella punkterna (1-2) är till stora delar genomförda. Kvar = test/städning (3-4).
 
-1. **Filstorlekar mot projektregeln (<400-500 rader):** `api/main.py` (~1294), `api/database.py` (~1638),
-   `web/app.js` (~1145), `web/admin.html` (~1229). Kandidat: bryt ut offers-/sweep-logiken ur `main.py`
-   (ny `api/offers.py`: `_fetch_offers_for`, `_offers_fresh`/`_offers_expired`, `_ensure_offers`,
-   `sweep_offers`/`_sweep_chain`/`_sweep_one_store`, `SWEEP_STATE`, OFFERS_*-konstanter); ev. route-grupper
-   till `api/routes/`. `database.py` ev. dela per domän (offers/stores/catalog/ean).
-2. **Query-grunden:** `stores_with_offer`/`offers_for_eans`/`price_history` gör full-scan + `json_each`
-   på 382k offers-rader (~300ms). Normalisera till en indexerad `offer_eans`-tabell (offer_id -> ean,
-   fylld vid `replace_store_offers`) -> snabbare uppslag OCH samma mönster fulla sortiment behöver.
-3. **Testtäckning:** idag bara schema-drift-testet; lägg tester runt de tyngsta läs-funktionerna innan mer byggs.
-4. **Övrigt att notera under passet:** döda/oanvända helpers, dubblerad logik mellan moduler, ställen där
-   derive-at-read kan ha drivit isär, konsekvent felhantering/loggning.
+1. **Filstorlekar/struktur:** [x] `database.py`-monoliten splittad till paketet `api/database/` per domän
+   (`_conn`/`offers`/`stores`/`catalog`/`ean`/`products`/`meta`). [x] offers-/sweep-logiken utbruten till
+   `api/offers.py`. [x] konsol-logiken i `web/admin.js` (ej inline i admin.html). [ ] Kvar: `api/main.py`
+   är fortfarande stort (route-grupper till `api/routes/` ej gjort); `web/app.js` växer.
+2. **Query-grunden:** [x] indexerad `offer_eans`-tabell byggd (offer_id->ean, fylld vid
+   `replace_store_offers`) -> snabba uppslag i `stores_with_offer`/`offers_for_eans`/`price_history`,
+   ersätter `json_each`-scans. (EAN normaliseras nu vid skrivning, se "normalisera offers-EAN".)
+3. **Testtäckning:** [ ] fortfarande mest schema-drift-testet; lägg tester runt de tyngsta läs-funktionerna.
+4. **Övrigt:** [ ] döda/oanvända helpers, dubblerad logik, derive-at-read-drift, konsekvent felhantering.
 
-Leverans: `REVIEW.md` med rangordnade fynd + rekommenderad åtgärdsordning. Själva åtgärderna beslutas
-EFTER att fynden lagts fram (inte automatiskt).
+Resterande (3-4) kan tas i en fokuserad städ-runda; de strukturella tunga lyften är redan inne.
+
+
+## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PLANERAT, ej påbörjat)
+
+Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), så vi kan svara
+"var är varan/matkassen billigast - hos mina favoritbutiker / nära mig". Bygger ovanpå Steg 5
+(katalog) men är ett eget, tyngre subsystem. **Bygg inte förrän det finns en uttalad produkt
+(t.ex. statistik-/matkasse-appen) som motiverar det - en representativ butik per kedja räcker
+för enkel cross-chain-jämförelse.**
+
+### Nuläge (grunden som redan finns)
+- `catalog_products.store` taggar vilken butik (ledger/account) priset är scopat till (Coop=251300,
+  ICA=1003647, Axfood/CG=NULL=nationellt). Backfillat.
+- `catalog_price_observations` (append-on-change) - idag EN butik per kedja.
+- `stores`-tabellen har ALLA Coop-ledgers (`native.ledgerAccountNumber`) + ICA-accounts
+  (`native.accountNumber`) -> vi kan crawla vilken butik som helst.
+- Crawl-maskineri (`catalog_crawl.py`), daglig cadence, per-butik-param finns redan (`store`/`accountNumber`).
+- Favoriter (`favorites`, `chain:store_id`) finns - används idag för "rea hos favoriter" i offers-compare.
+
+### Research-fynd (Steg 0, gjord - styr designen)
+- **Coop:** ~43% av ledgers frågbara (resten ej e-handelsindexerade); zoner INKONSEKVENTA per förening
+  -> ingen "en butik/förening"-genväg. ~310 frågbara av 722.
+- **ICA:** 100% queryable (alla 1289 accounts svarar), per-butik-pris, ingen zon-struktur -> alla 1289.
+- Slutsats: ingen billig genväg. Full matris worst case ~39M ICA + ~? Coop pris-punkter.
+
+### Vägval: bygg INTE hela matrisen eagerly - efterfrågestyrt
+Crawla i prioritetsordning, inte allt:
+1. **Favoritbutiker** (användare bryr sig) - full katalog, tätare. När någon favoritar en NY butik ->
+   köa den för crawl (demand-driven). Bundet av faktiskt intresse, inte 39M på spekulation.
+2. **Representativt urval** per kedja/region för nationell-ish jämförelse + "billigast nära dig"-grundtäckning.
+3. **Resten** inkrementellt/sampling, lägst prio.
+Detta håller storage + last bundet till vad som faktiskt används.
+
+### Datamodell (separera master från butikspris)
+```
+catalog_products            -- BLIR butiksoberoende master (namn/brand/ean/kategori/bild/förpackning).
+                               'price'/'store' kvar som REPRESENTATIVT pris (bakåtkompat) ELLER flyttas ut.
+catalog_store_prices         -- NY. PK (chain, product_id, store)
+  ean, price, comparison_value, comparison_unit, available, first_seen, last_seen
+  -- INDEX(ean), INDEX(chain, store), INDEX(store)
+catalog_price_observations   -- + store-kolumn -> append-on-change per (chain, product_id, store)
+store_crawl                  -- NY. per (chain, store): queryable (bool), priority, last_crawled,
+                               product_count, status. Driver rotationen + minns ej-frågbara (sluta fråga).
+```
+Mappning favorit -> crawl-butik: favoritens `store_id` -> `stores.native` -> ledger/account.
+
+### Crawl-strategi (generisk per-butik-rotation, återanvänd Steg 5)
+- En kö av (chain, store) ur `store_crawl`, prioritetsordnad (favoriter > representativa > resten).
+- Staggrat: N butiker/natt, tungt rate-limitat, egen cadence (`STORE_PRICE_CRON`), circuit-breaker/
+  cooldown vid WAF (samma mönster som EAN-warmingen/sweepen).
+- Coop varierar `store={ledger}`; markera ej-frågbara i `store_crawl.queryable=0` (sluta fråga).
+- ICA varierar `accountNumber` (alla frågbara).
+- Inkrementellt: re-crawla en butik var M:e dag; favoriter oftare.
+- Återanvänd `catalog_crawl._search_*`/`_*_row` men parametrisera butiken (idag fast COOP_DETAIL_STORE/
+  ica_resolve_accounts()[0]).
+
+### Nya API-endpoints
+- `GET /v1/products/{ean}/prices` - per-butik-pris för en EAN (cross-chain). Query: `stores=`
+  (specifika, t.ex. favoriter), `near=lat,lng&radius=` (närmaste), default representativa.
+- `GET /v1/compare/basket?stores=&eans=` - matkasse-jämförelse: summa per butik för en varukorg
+  (PRO-undersöknings-caset). Markerar saknade varor per butik.
+- Utöka `catalog_browse`/`compare` med butiks-scope (`stores=`) -> hyllpris filtrerat till favoriter.
+- Admin: `store_crawl`-status + per-butik-trigger + queryability-karta (likt partial/EAN-warm-korten).
+
+### Kart-appen (konsument) - ny funktionalitet
+- **Butiksval/favoriter som jämförelse-scope:** "jämför sortiment bara mot mina favoritbutiker"
+  (infran finns - favoriter används redan för offers "rea hos favoriter"; utöka till katalog/hyllpris).
+- **Per produkt:** "billigast hos dina favoriter" / "billigast nära dig" + en liten butikslista med pris.
+- **Matkasse-vy:** lägg varor i en korg -> jämför totalsumma över favoritbutiker/kedjor.
+- **Prisvärmekarta:** var är varan/korgen billigast geografiskt (Leaflet, vi har redan kartan).
+- **Hantera ej-frågbara favoriter:** ~57% Coop-butiker saknar e-handelspris -> visa "inget hyllpris för
+  den butiken" snyggt (inte tom). Demand-crawl: favoritmarkering köar butiken; visa "hämtar priser...".
+
+### Databasval: SQLite vs PostgreSQL (svar på frågan)
+- **Nu / nuvarande scope:** SQLite (WAL) räcker gott - även Steg 5:s ~74k katalograder. Ingen anledning byta.
+- **Per-butter-skalan:** ~39M ICA-rader är teknisk möjligt i SQLite (indexerat, append-on-change-historik
+  är kompakt), MEN trycket ökar: (a) samtidig tung crawl-skrivning + många API-läsningar (SQLite har
+  en-skrivare-lås; WAL klarar 1 skrivare + många läsare men hög skrivvolym + läsning kan ge kontention),
+  (b) geo-frågor "billigast nära mig" -> **PostGIS** är överlägset, (c) tunga analytiska frågor (statistik-
+  appen) -> Postgres query-planner/partitionering starkare, (d) **api/app/admin-splitten** (uttalat mål):
+  separata processer/containrar delar inte gärna en SQLite-FIL -> en DB-server (Postgres) är då naturlig.
+- **Rekommendation:** migrera INTE preemptivt. **Triggers** (vilken som helst räcker): per-butter-skalan
+  visar kontention/perf-problem ELLER geo/PostGIS behövs ELLER statistik-appen kräver tung analys ELLER
+  api/app/admin splittas till separata tjänster. Förbered genom att gå via **SQLAlchemy ORM** (projektets
+  egen eskaleringsväg "när det växer") som mellansteg - då blir SQLite->Postgres ett dialekt-byte, inte en
+  omskrivning. Migrationer fortsatt utan Alembic (ALTER-guards) tills ORM införs.
+
+### Faser (resumerbart)
+1. **Datamodell:** `catalog_store_prices` + `store` i observationer + `store_crawl` (queryability/prio).
+2. **Per-butik-crawler:** parametrisera butiken i `catalog_crawl`, rotations-kö, egen cadence, WAF-skydd.
+   Starta med favoriter + ett litet representativt urval; markera ej-frågbara Coop-ledgers.
+3. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
+4. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
+5. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
+- DB-migrering (Postgres/ORM) tas in NÄR en trigger slår, inte som egen fas i förväg.
+
+### Caveats att rama in
+- Per-butter-pris finns bara för FRÅGBARA butiker (Coop ~43%); favoritar man en ej-frågbar butik finns
+  inget hyllpris - kommunicera det.
+- Hyllpris != kassapris (samma caveat som idag); medlemspris/erbjudanden ovanpå.
+- Stor storage/last -> efterfrågestyrt (favoriter först), inte full matris.
