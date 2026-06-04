@@ -41,8 +41,10 @@ OFFERS_SWEEP_BACKOFF = float(os.getenv("OFFERS_SWEEP_BACKOFF", "1.5"))  # bas-ba
 OFFERS_SWEEP_CIRCUIT = int(os.getenv("OFFERS_SWEEP_CIRCUIT", "12"))  # fel i rad/kedja -> pausa kedjan
 
 # Fulla sortiment-crawl (steg 5): walk:ar kedjornas kategoriträd och persistar hela sortimentet.
-# Tung körning (~74k produkter) -> gles default (veckovis, mån 03:00). Tomt/'off' = av (manuell).
-CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * 1")
+# Daglig default (03:00) för hyllpris-historik per dag - append-on-change håller storage kompakt,
+# rate-limitat + off-peak. Hyllpriser kommer bara härifrån (offers-sweepen ger bara dealpriser).
+# Tomt/'off' = av (manuell). DB-override i konsolen slår defaulten.
+CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * *")
 # Riktad uppgradering av GLESA partial-rader (piggyback, näring < 4) till full korsskällig merge
 # (fetch_for_ean). Strypt: cap/körning + bunden parallellism + paus (ICA-detaljen är WAF-känslig).
 # Bredd kommer ur crawl/warm; detta fyller bara de verkliga närings-luckorna över tid. 'off' = av.
