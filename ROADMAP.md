@@ -450,6 +450,34 @@ Per-domän-REST:en är redan ren (stores/offers/products/compare/chains). Det so
 saknas för en *andra/extern* frontend är tvärgående enablers, inte fler utbrutna
 domäner:
 
+- [ ] **Statistik-/analys-app ovanpå datan (egen konsument).** Med fullsortiment-katalogen
+  (nationellt hyllpris per kedja), offers (butikslokalt), prishistoriken (`catalog_price_observations`
+  + `offer_observations`), butikernas geo (lat/lng, ort) och cross-chain-EAN finns underlag för en
+  read-only analys-app/dashboard. Lämpligen schemalagda aggregat -> summary-tabeller (tungt att
+  räkna live), egen frontend (REST redan ren) eller en analys-flik. Frågor att kunna besvara:
+  - **Vilka varor/kategorier är olika kedjor dyrare/billigare på** (per EAN + aggregerat per
+    kanonisk kategori): prisindex per kedja totalt och per kategori, "kedja X dyrast på mejeri,
+    billigast på skafferi".
+  - **Standard-varukorg (à la PRO:s matprisundersökning):** en fast, representativ korg av
+    produkter (PRO/SCB-liknande metodik) prissatt över alla kedjor och **över tid** som ett
+    jämförelse-/indexvärde -> vilken kedja är billigast på korgen (nationellt vs butikslokalt),
+    och hur korgens totalpris utvecklas (matpris-index). Korgen bör vara kurerbar (admin väljer
+    EAN:er) och hantera att en vara saknas hos en kedja (substitut eller exkludering).
+  - **Prisutveckling över tid** ur observationerna: inflation/säsong per kategori/kedja, störst
+    prisökningar, "shrinkflation" (jämförpris upp men pris stilla).
+  - **Erbjudande-intensitet per kedja:** rea-frekvens, snittbesparing, djup; vem rear mest/djupast.
+  - **Private label vs branded prisgap**; **medlemspris-effekt** (klubbpris-rabatt per kedja);
+    **ursprung/svenskandel** per kedja/kategori (vi har origin); **jämförpris-anomalier** (samma EAN,
+    stor jämförpris-skillnad mellan kedjor).
+  - **Sortimentsbredd/täckning** per kedja per kategori (vem har bredast utbud, vilka luckor).
+  - **Geografiska skillnader + urbanitets-lager (din idé):** butikslokala offers vs nationellt
+    hyllpris -> var avviker priser geografiskt. Kräver en **urbanitets-klassning av butiker**
+    (storstad / stad / landsbygd) - data-enrichment: SCB:s tätorts-/landsbygdsindelning eller
+    kommuntyp, alternativt härledd ur ortens befolkning / butikstäthet. Då kan man fråga "är
+    landsbygdsbutiker dyrare?", prisspridning per region/län, kedjornas geografiska täckning.
+  - GDPR: enbart butiks-/produktdata, inga personuppgifter -> okomplicerat. Tunga aggregat bör
+    cachas (samma mönster som katalog-grupperingscachen) eller materialiseras vid crawl/sweep.
+
 - [x] **Hela API:t gatat (ingen anonym åtkomst) BYGGT.** `require_consumer` på alla
   `/v1`-dataendpoints kräver inloggad app-användare (session/bearer) eller giltig
   API-nyckel. Kart-appen är nu en **inloggnings-vägg** (ingen anonym surf). Öppna:
