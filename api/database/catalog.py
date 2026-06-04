@@ -185,15 +185,17 @@ def catalog_mark_unseen(chain, before):
 
 
 def catalog_stats():
-    """Per kedja: antal produkter, varav tillgängliga, distinkta EAN, senaste crawl (fetched_at)."""
+    """Per kedja: antal produkter, varav tillgängliga, distinkta EAN, hur många som SAKNAR EAN
+    (tillgängliga rader utan EAN -> kan ej slås ihop cross-chain), senaste crawl (fetched_at)."""
     conn = get_conn()
     rows = conn.execute(
         "SELECT chain, COUNT(*) total, SUM(available) avail, COUNT(DISTINCT ean) eans, "
+        "SUM(CASE WHEN available=1 AND (ean IS NULL OR ean='') THEN 1 ELSE 0 END) missing_ean, "
         "MAX(fetched_at) last FROM catalog_products GROUP BY chain"
     ).fetchall()
     conn.close()
-    return {r["chain"]: {"total": r["total"], "available": r["avail"] or 0,
-                         "eans": r["eans"], "last_crawl": r["last"]} for r in rows}
+    return {r["chain"]: {"total": r["total"], "available": r["avail"] or 0, "eans": r["eans"],
+                         "missing_ean": r["missing_ean"] or 0, "last_crawl": r["last"]} for r in rows}
 
 
 def catalog_summary(chain=None):

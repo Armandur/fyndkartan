@@ -247,7 +247,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       "städad horisontell": större bild (56px), namn klippt till 2 rader (jämn topphöjd), tydligare
       rea-vs-hyllpris (hyllpris neutralt via `o-price--shelf`, rött reserverat för faktisk rea),
       meta på en rad i rutnätet. Kompakt-vs-detaljerat-läge medvetet bortvalt (horisontell räckte).
-    - [ ] **Svensk tusentalsavgränsning (visuellt) överallt.** Utvärdera/inför blanksteg som
+    - [x] **Svensk tusentalsavgränsning (visuellt) BYGGT.** Delad `fmtNum` (`toLocaleString("sv-SE")`)
+      i app.js + admin.js, applicerad på de stora antalen (bläddra-vyns summary/kategori-chips/titel/
+      progress, kart-vyns butiksantal, konsolens stat-kort + Per kedja-tabell). Priser via `kr()` (små,
+      decimaler viktigare än tusental) lämnade. Tidigare:
       tusentalsavgränsare i visade tal (12345 -> 12 345) i både konsument-appen och konsolen - rent
       presentationslager (`toLocaleString("sv-SE")` eller en delad `fmtNum`-hjälpare), aldrig på
       lagrade/skickade värden. Redan använt på ett par ställen i konsolen (crawl-feeden); gör det
@@ -266,15 +269,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       (IntersectionObserver på `#browseMore` i `#browseView`, rootMargin 400px) - behåller
       scrollpositionen i stället för den gamla "Visa fler"-knappen som laddade om allt. Staggad
       fade-in på appendade kort + bild-fade-in (onload) i rutnätet.
-    - [ ] **Visa "saknar EAN"-antal i konsolens översikt.** I lämpligt kort (Sortimentprodukter eller
-      Per kedja-tabellen) visa hur många katalogprodukter som saknar EAN per kedja (`catalog_products`
-      `ean IS NULL`, främst Willys/Hemköp) - så man ser hur mycket EAN-resolvningen har kvar och
-      cross-chain-merge-täckningen. Datan finns redan (`catalog_axfood_codes_missing_ean`).
-    - [ ] **Bugg: "Laddar fler…" visas när allt redan laddats.** I bläddra-vyns progress-rad kan
-      "Laddar fler… 4 av 4 produkter" dyka upp i en liten kategori där alla redan laddats (sentinel/
-      IntersectionObserver triggar `loadMoreBrowse` trots `browseHasMore=false`, eller en race i
-      `browseLoadingMore`-flaggan). Ska visa "Alla N produkter visade", aldrig "Laddar fler" när
-      inget mer finns.
+    - [x] **"Saknar EAN"-antal i konsolens översikt BYGGT.** `catalog_stats` returnerar `missing_ean`
+      per kedja (`available=1 AND ean IS NULL/''`); Per kedja-tabellen har en "Saknar EAN"-kolumn
+      (röd om > 0) + totalrad. Visar hur mycket EAN-resolvningen har kvar / cross-chain-täckningen.
+    - [x] **Bugg: "Laddar fler…" när allt laddats FIXAD.** `browseLoadingMore` var fortfarande `true`
+      när `renderBrowseGrid()`/`renderBrowseProgress()` kördes på första sidan (sattes `false` först i
+      `finally`, efter render). Nu sätts den `false` före render -> visar "Alla N produkter visade".
     - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** Man ska kunna lista
       alla produkter från en viss tillverkare/märke (`brand`/`manufacturer`-fältet finns redan i
       katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en

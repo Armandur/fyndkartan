@@ -48,6 +48,7 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+const fmtNum = (n) => (n ?? 0).toLocaleString("sv-SE");  // svensk tusentalsavgränsning (blanksteg)
 
 // Avrunda pris till max 2 decimaler (strippar avrundnings-artefakter som 8.333333... -> 8.33).
 function kr(v) {
@@ -155,7 +156,7 @@ function render() {
   cluster.addLayers(markers);
 
   document.getElementById("resultCount").textContent =
-    `${list.length} butiker (${markers.length} på kartan)`;
+    `${fmtNum(list.length)} butiker (${fmtNum(markers.length)} på kartan)`;
 
   renderList();
 }
@@ -1065,9 +1066,9 @@ function renderBrowseSummary() {
   if (!browseSummary || !browseSummary.total) { el.innerHTML = ""; return; }
   const chains = Object.entries(browseSummary.by_chain || {}).map(([c, n]) => {
     const m = state.chains[c] || {};
-    return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)} ${n}</span>`;
+    return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)} ${fmtNum(n)}</span>`;
   }).join("");
-  el.innerHTML = `<strong>${browseSummary.total}</strong> produkter i katalogen` +
+  el.innerHTML = `<strong>${fmtNum(browseSummary.total)}</strong> produkter i katalogen` +
     (chains ? `<span class="browse-summary-chains">${chains}</span>` : "");
 }
 
@@ -1081,7 +1082,7 @@ function renderBrowseCats() {
     .sort((a, b) => (b.n || 0) - (a.n || 0) || a.label.localeCompare(b.label, "sv"));
   box.innerHTML = entries.map((e) =>
     `<span class="browse-cat${browseState.category === e.k ? " on" : ""}" data-cat="${esc(e.k)}">${esc(e.label)}` +
-    `${e.n != null ? ` <span class="browse-cat-n">${e.n}</span>` : ""}</span>`).join("");
+    `${e.n != null ? ` <span class="browse-cat-n">${fmtNum(e.n)}</span>` : ""}</span>`).join("");
 }
 
 // Staggad fade-in: animation-delay per kort i batchen (capad) -> kaskad-infällning.
@@ -1095,7 +1096,7 @@ function updateBrowseTitle() {
   const title = document.getElementById("browseTitle");
   const head = browseState.q ? `Sök: "${browseState.q}"` : (catLabels[browseState.category] || browseState.category);
   title.textContent = head
-    ? `${head} (${browseProducts.length}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
+    ? `${head} (${fmtNum(browseProducts.length)}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
 }
 
 function renderBrowseGrid() {  // full omrendering (kategori-/filterbyte) - infinite scroll appendar separat
@@ -1117,11 +1118,11 @@ function renderBrowseProgress() {
   if (!more) return;
   const loaded = browseProducts.length;
   const total = browseTotal();
-  const of = total != null ? `${loaded} av ${total}` : `${loaded}`;
+  const of = total != null ? `${fmtNum(loaded)} av ${fmtNum(total)}` : `${fmtNum(loaded)}`;
   if (!loaded) more.innerHTML = "";
   else if (browseLoadingMore) more.innerHTML = `<div class="browse-progress">Laddar fler&hellip; <span>${of} produkter</span></div>`;
   else if (browseHasMore) more.innerHTML = `<div class="browse-progress">${of} produkter</div>`;
-  else more.innerHTML = `<div class="browse-progress">Alla ${loaded} produkter visade</div>`;
+  else more.innerHTML = `<div class="browse-progress">Alla ${fmtNum(loaded)} produkter visade</div>`;
 }
 
 function appendBrowseCards(batch) {
@@ -1150,6 +1151,7 @@ async function loadBrowse() {
     browseProducts = d.products || [];
     browseTotalCount = d.total ?? null;
     browseHasMore = browseProducts.length === BROWSE_PAGE;
+    browseLoadingMore = false;  // första sidan klar -> innan render (annars visar progressen "Laddar fler…")
     renderBrowseGrid();
     setupBrowseObserver();
   } catch (e) {

@@ -4,6 +4,7 @@
     const CHAIN_LABELS = { ica:"ICA", coop:"Coop", willys:"Willys", hemkop:"Hemköp", lidl:"Lidl", citygross:"City Gross", egen:"Egen", other:"Övrigt" };
     const chip = (c) => `<span class="badge badge-chain" style="background:${CHAIN_COLOR[c]||'#777'}">${esc(CHAIN_LABELS[c]||c)}</span>`;
     const ago = (ts) => { const s = Math.round(Date.now()/1000 - ts); return s<60?`${s}s`:s<3600?`${Math.round(s/60)}m`:`${Math.round(s/3600)}h`; };
+    const fmtNum = (n) => (n ?? 0).toLocaleString("sv-SE");  // svensk tusentalsavgränsning (blanksteg)
 
     const gate = document.getElementById("loginGate");
     const consoleEl = document.getElementById("console");
@@ -29,21 +30,24 @@
       ].filter(j => j.next).sort((a, b) => a.next.localeCompare(b.next));
       const catTot = Object.values(d.catalog || {}).reduce((a, s) => a + (s.total || 0), 0);
       const catAvail = Object.values(d.catalog || {}).reduce((a, s) => a + (s.available || 0), 0);
+      const catMissEan = Object.values(d.catalog || {}).reduce((a, s) => a + (s.missing_ean || 0), 0);
       const nChains = d.chains.filter(c => c.store_count).length;
       // Per kedja: butiker + crawlat sortiment (listat, inte inline). Kedjeordning = config.CHAINS.
       const perChainRows = d.chains.map(c => {
         const cat = (d.catalog || {})[c.chain] || {};
-        return `<tr><td>${chip(c.chain)}</td><td>${c.store_count || 0}</td>
-          <td>${cat.total || 0}</td><td class="text-muted">${cat.eans || 0}</td></tr>`;
+        const miss = cat.missing_ean || 0;
+        return `<tr><td>${chip(c.chain)}</td><td>${fmtNum(c.store_count || 0)}</td>
+          <td>${fmtNum(cat.total || 0)}</td><td class="text-muted">${fmtNum(cat.eans || 0)}</td>
+          <td class="${miss ? "text-danger" : "text-muted"}">${fmtNum(miss)}</td></tr>`;
       }).join("");
       document.getElementById("overview").innerHTML = `
         <h5 class="mb-3">Översikt</h5>
         <div class="row g-3 mb-3 stats-row">
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${storeTot}</div><div class="small text-muted">${nChains} kedjor</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${catTot}</div><div class="small text-muted">${catAvail} tillgängliga</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${fmtNum(storeTot)}</div><div class="small text-muted">${nChains} kedjor</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${fmtNum(d.offers.rows)}</div><div class="small text-muted">${fmtNum(d.offers.stores_cached)} butiker</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${fmtNum(catTot)}</div><div class="small text-muted">${fmtNum(catAvail)} tillgängliga</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${fmtNum(d.ean_stats.distinct)}</div><div class="small text-muted">${fmtNum(d.ean_stats.with_info)} med produktinfo · ${fmtNum(d.ean_stats.axfood_cache)} Axfood-resolvade</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${fmtNum(d.price_history.rows)}</div><div class="small text-muted">${fmtNum(d.price_history.products)} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda körning</div>
             ${jobs.length
@@ -54,9 +58,9 @@
         </div>
         <div class="card p-3"><h6 class="mb-2">Per kedja</h6>
           <table class="table table-sm align-middle mb-0">
-            <thead><tr><th>Kedja</th><th>Butiker</th><th>Sortiment (crawlat)</th><th>Distinkta EAN</th></tr></thead>
+            <thead><tr><th>Kedja</th><th>Butiker</th><th>Sortiment (crawlat)</th><th>Distinkta EAN</th><th>Saknar EAN</th></tr></thead>
             <tbody>${perChainRows}</tbody>
-            <tfoot><tr class="fw-semibold"><td>Totalt</td><td>${storeTot}</td><td>${catTot}</td><td class="text-muted">-</td></tr></tfoot>
+            <tfoot><tr class="fw-semibold"><td>Totalt</td><td>${fmtNum(storeTot)}</td><td>${fmtNum(catTot)}</td><td class="text-muted">-</td><td class="${catMissEan ? "text-danger" : "text-muted"}">${fmtNum(catMissEan)}</td></tr></tfoot>
           </table></div>`;
     }
 
