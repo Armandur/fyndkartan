@@ -182,11 +182,12 @@ def _cat_pick(members, field):
     return next((m[field] for m in members if m.get(field)), None)
 
 
-def catalog_browse(q=None, category=None, chain=None, limit=60):
+def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
-    frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`."""
+    frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`.
+    `offset`/`limit` paginerar den sorterade listan (infinite scroll)."""
     ql = (q or "").strip()
     if q is not None and len(ql) < 2:
         return []
@@ -228,7 +229,7 @@ def catalog_browse(q=None, category=None, chain=None, limit=60):
         })
     out.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                             (p["name"] or "").lower()))
-    page = out[:limit]
+    page = out[offset:offset + limit]
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
     return page
 

@@ -1041,13 +1041,15 @@ async def products_catalog_browse(
     category: str | None = None,
     chain: str | None = None,
     limit: int = 60,
+    offset: int = 0,
     _auth=Depends(require_consumer),
 ):
     """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
     sortimentet med hyllpris, EAN-grupperat cross-chain, + aktuella erbjudanden överlagrade.
-    Snabbare än live-`/catalog` (ingen fan-out) och täcker crawlade kedjor. q ELLER category krävs."""
+    Snabbare än live-`/catalog` (ingen fan-out) och täcker crawlade kedjor. q ELLER category krävs.
+    `offset` paginerar (infinite scroll appendar nästa sida)."""
     products = database.catalog_browse(q=q, category=category, chain=chain,
-                                       limit=max(1, min(limit, 100)))
+                                       limit=max(1, min(limit, 100)), offset=max(0, offset))
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "products": products}
 
