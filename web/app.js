@@ -832,7 +832,7 @@ function productCard(p) {
 function catalogCard(p) {
   const imgSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
   const img = imgSrc
-    ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
+    ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt="" onload="this.classList.add('loaded')"${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
   const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
   const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
@@ -977,8 +977,10 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
 // Hash-driven: #sortiment[/k/<kategori>|/s/<sök>]. Kedje-/erbjudande-filter är transient UI-state.
-const browseState = { q: "", category: "", chain: "", onlyOffers: false, limit: 60 };
+const browseState = { q: "", category: "", chain: "", onlyOffers: false };
 let browseTimer = null, browseToken = 0, browseProducts = [];
+const BROWSE_PAGE = 60;  // sidstorlek för infinite scroll (offset-paginering)
+let browseHasMore = false, browseLoadingMore = false, browseObserver = null;
 
 function showBrowseUI() {
   document.body.classList.add("browse-mode");
@@ -1004,7 +1006,6 @@ function applyBrowseHash() {
   const rest = h.slice("sortiment".length).replace(/^\//, "");
   browseState.category = rest.startsWith("k/") ? decodeURIComponent(rest.slice(2)) : "";
   browseState.q = rest.startsWith("s/") ? decodeURIComponent(rest.slice(2)) : "";
-  browseState.limit = 60;
   document.getElementById("browseSearch").value = browseState.q;
   loadBrowseSummary();  // räknare per kategori + totaler (renderar chips)
   loadBrowse();
@@ -1072,48 +1073,103 @@ function renderBrowseCats() {
     `${e.n != null ? ` <span class="browse-cat-n">${e.n}</span>` : ""}</span>`).join("");
 }
 
-function renderBrowseGrid() {
-  const grid = document.getElementById("browseGrid");
+// Staggad fade-in: animation-delay per kort i batchen (capad) -> kaskad-infällning.
+function browseCardsHtml(products) {
+  return products.map((p, i) => catalogCard(p).replace(
+    'class="offer-card"', `class="offer-card" style="animation-delay:${Math.min(i, 14) * 25}ms"`)).join("");
+}
+
+function updateBrowseTitle() {
   const title = document.getElementById("browseTitle");
-  const more = document.getElementById("browseMore");
   let products = browseProducts;
   if (browseState.onlyOffers) products = products.filter((p) => p.on_offer);
   const head = browseState.q ? `Sök: "${browseState.q}"` : (catLabels[browseState.category] || browseState.category);
-  title.textContent = head ? `${head} (${products.length}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
+  title.textContent = head
+    ? `${head} (${products.length}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
+}
+
+function renderBrowseGrid() {  // full omrendering (kategori-/filterbyte) - infinite scroll appendar separat
+  const grid = document.getElementById("browseGrid");
+  let products = browseProducts;
+  if (browseState.onlyOffers) products = products.filter((p) => p.on_offer);
+  updateBrowseTitle();
   grid.innerHTML = products.length
-    // Staggad fade-in (animation-delay per kort, capad) -> korten "fylls i" istället för att poppa.
-    ? products.map((p, i) => catalogCard(p).replace(
-        'class="offer-card"', `class="offer-card" style="animation-delay:${Math.min(i, 14) * 25}ms"`)).join("")
+    ? browseCardsHtml(products)
     : `<div class="text-muted p-3">${browseState.onlyOffers && browseProducts.length ? "Inga produkter med erbjudande i urvalet." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
-  more.innerHTML = browseProducts.length >= browseState.limit
-    ? `<button id="browseMoreBtn" class="btn btn-sm btn-outline-dark">Visa fler</button>` : "";
-  const mb = document.getElementById("browseMoreBtn");
-  if (mb) mb.onclick = () => { browseState.limit += 60; loadBrowse(); };
+}
+
+function appendBrowseCards(batch) {
+  let items = browseState.onlyOffers ? batch.filter((p) => p.on_offer) : batch;
+  if (items.length) document.getElementById("browseGrid").insertAdjacentHTML("beforeend", browseCardsHtml(items));
+  updateBrowseTitle();
 }
 
 async function loadBrowse() {
   const grid = document.getElementById("browseGrid");
+  const more = document.getElementById("browseMore");
   if (!browseState.q && !browseState.category) {
-    browseProducts = [];
+    browseProducts = []; browseHasMore = false;
     document.getElementById("browseTitle").textContent = "";
     grid.innerHTML = `<div class="text-muted p-3">Välj en kategori ovan eller sök för att bläddra hela sortimentet.</div>`;
-    document.getElementById("browseMore").innerHTML = "";
+    more.innerHTML = "";
     return;
   }
   grid.innerHTML = `<div class="text-muted p-3">Laddar&hellip;</div>`;
-  const p = new URLSearchParams({ limit: browseState.limit });
+  more.innerHTML = "";
+  const token = ++browseToken;  // race-guard: bara senaste laddningen renderar
+  browseLoadingMore = true;     // blockera infinite scroll medan första sidan laddas
+  try {
+    const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(0)}`)).json();
+    if (token !== browseToken) return;  // en nyare laddning tog över (snabb växling)
+    browseProducts = d.products || [];
+    browseHasMore = browseProducts.length === BROWSE_PAGE;
+    renderBrowseGrid();
+    setupBrowseObserver();
+  } catch (e) {
+    if (token === browseToken) grid.innerHTML = `<div class="text-danger p-3">Kunde inte ladda sortimentet.</div>`;
+  } finally {
+    if (token === browseToken) browseLoadingMore = false;
+  }
+}
+
+function browseQS(offset) {
+  const p = new URLSearchParams({ limit: BROWSE_PAGE, offset });
   if (browseState.q) p.set("q", browseState.q);
   if (browseState.category) p.set("category", browseState.category);
   if (browseState.chain) p.set("chain", browseState.chain);
-  const token = ++browseToken;  // race-guard: bara senaste laddningen renderar
+  return p;
+}
+
+async function loadMoreBrowse() {
+  if (browseLoadingMore || !browseHasMore) return;
+  browseLoadingMore = true;
+  const token = browseToken;
+  const more = document.getElementById("browseMore");
+  more.innerHTML = `<div class="text-muted small py-2">Laddar fler&hellip;</div>`;
   try {
-    const d = await (await fetch(`/v1/products/catalog/browse?${p}`)).json();
-    if (token !== browseToken) return;  // en nyare laddning tog över (snabb växling)
-    browseProducts = d.products || [];
-    renderBrowseGrid();
+    const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(browseProducts.length)}`)).json();
+    if (token !== browseToken) return;  // kategori bytt under hämtningen
+    const batch = d.products || [];
+    browseProducts = browseProducts.concat(batch);
+    browseHasMore = batch.length === BROWSE_PAGE;
+    appendBrowseCards(batch);
+    more.innerHTML = "";
   } catch (e) {
-    if (token === browseToken) grid.innerHTML = `<div class="text-danger p-3">Kunde inte ladda sortimentet.</div>`;
+    if (token === browseToken) more.innerHTML = "";
+  } finally {
+    if (token === browseToken) browseLoadingMore = false;
   }
+}
+
+// Infinite scroll: observera #browseMore (sentinel) i #browseView (scroll-containern). rootMargin
+// förladdar innan man når botten. Observern är persistent; loadMoreBrowse no-op:ar när inget mer finns.
+function setupBrowseObserver() {
+  const sentinel = document.getElementById("browseMore");
+  if (!sentinel || browseObserver) return;
+  browseObserver = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) loadMoreBrowse();
+  }, { root: document.getElementById("browseView"), rootMargin: "400px" });
+  browseObserver.observe(sentinel);
 }
 
 document.getElementById("browseSearch").addEventListener("input", (e) => {
@@ -1124,7 +1180,6 @@ document.getElementById("browseSearch").addEventListener("input", (e) => {
 });
 document.getElementById("browseChain").addEventListener("change", (e) => {
   browseState.chain = e.target.value;
-  browseState.limit = 60;
   loadBrowseSummary();  // räknare/totaler för vald kedja
   loadBrowse();
 });

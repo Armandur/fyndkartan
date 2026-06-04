@@ -388,6 +388,11 @@ body.browse-mode .sidebar { display: none; }
   animation: cardFadeIn .3s ease both; }  /* `both` -> osynlig under animation-delay = staggad infällning */
 @keyframes cardFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .browse-grid .offer-card { animation: none; } }
+/* Produktbilden tonas in när den laddats (onload -> .loaded). Bara i rutnätet; div-platshållaren
+   (.o-img--ph) är inte en <img> och påverkas ej. */
+.browse-grid img.o-img { opacity: 0; transition: opacity .35s ease; }
+.browse-grid img.o-img.loaded { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .browse-grid img.o-img { opacity: 1; transition: none; } }
 /* I rutnätet: håll meta på en rad (ellipsis) så korten blir jämna; sidopanelens listkort
    får fortsatt wrappa (butiksnamn m.m. ska synas där). */
 .browse-grid .o-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
