@@ -285,6 +285,7 @@ img.o-img { cursor: zoom-in; }
 .od-row { padding: .3rem .4rem; border-radius: 6px; margin-bottom: 3px; background: #f7f9fb; font-size: .82rem; }
 .od-row.od-hi { background: #fdecea; box-shadow: inset 2px 0 0 #c0392b; }
 .od-row .od-price { font-weight: 800; margin-left: .35rem; }
+.od-row .od-deal-txt { font-weight: 600; color: #46505c; }
 .od-row .od-sub { font-size: .7rem; margin-top: 1px; }
 .o-offer-badge {
   font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;

@@ -394,12 +394,19 @@ async function loadOfferDetail(ean, chain) {
       const m = state.chains[o.chain] || {};
       const cnt = list.filter((s) => s.chain === o.chain).length;
       const cmp = o.comparison_value != null ? ` <span class="text-muted">(${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")})</span>` : "";
-      const deal = o.deal_type === "multibuy" ? ` <span class="o-deal o-deal--mb">${o.multibuy_qty ? o.multibuy_qty + " för" : "Flerköp"}</span>`
-        : (o.deal_type === "by_weight" ? ` <span class="o-deal o-deal--bw">Per vikt</span>` : "");
-      const price = o.price_text ? esc(o.price_text) : (o.price != null ? `${kr(o.price)} kr` : "");
+      // Styckpris: flerköps-totalen / antal; överstruket ordinarie ur savings (ordinarie ≈ pris + besparing).
+      const qty = o.multibuy_qty || 1;
+      const perItem = o.price != null ? o.price / qty : null;
+      const ordPerItem = (perItem != null && o.savings != null) ? perItem + o.savings / qty : null;
+      const struck = ordPerItem != null && ordPerItem > perItem ? `<s class="text-muted">${kr(ordPerItem)} kr</s> ` : "";
+      const now = perItem != null
+        ? `<span class="od-price o-offer">${kr(perItem)} kr${qty > 1 ? "/st" : ""}</span>`
+        : `<span class="od-price o-offer">${esc(o.price_text || "")}</span>`;
+      // Visa deal-texten ("3 för 18 kr") när det är flerköp; annars räcker styckpriset.
+      const dealLabel = (qty > 1 && o.price_text) ? ` &middot; <span class="od-deal-txt">${esc(o.price_text)}</span>` : "";
       return `<div class="od-row${o.chain === chain ? " od-hi" : ""}">
         <span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || o.chain)}</span>
-        <span class="od-price o-offer">${price}</span>${deal}${o.member_price ? ' <span class="o-member">Klubbpris</span>' : ""}
+        ${struck}${now}${dealLabel}${o.member_price ? ' <span class="o-member">Klubbpris</span>' : ""}
         <div class="od-sub text-muted">${esc(o.name || "")}${o.package ? " &middot; " + esc(o.package) : ""}${cmp}${o.valid_to ? " &middot; t.o.m. " + esc(o.valid_to) : ""} &middot; ${cnt} butik${cnt === 1 ? "" : "er"}</div>
       </div>`;
     }).join("");
