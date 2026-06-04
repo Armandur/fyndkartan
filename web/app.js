@@ -1046,6 +1046,7 @@ async function loadBrowseSummary() {
   } catch (e) { browseSummary = null; }
   renderBrowseCats();
   renderBrowseSummary();
+  renderBrowseProgress();  // totalen kan ha blivit känd -> uppdatera "X av Y"
 }
 
 function renderBrowseSummary() {
@@ -1096,12 +1097,32 @@ function renderBrowseGrid() {  // full omrendering (kategori-/filterbyte) - infi
   grid.innerHTML = products.length
     ? browseCardsHtml(products)
     : `<div class="text-muted p-3">${browseState.onlyOffers && browseProducts.length ? "Inga produkter med erbjudande i urvalet." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
+  renderBrowseProgress();
+}
+
+// Totala antalet i kategorin (ur summary-cachen, kedje-scopat) - bara i kategori-läge; q-sök saknar total.
+function browseTotal() {
+  if (browseState.q || !browseState.category || !browseSummary) return null;
+  return (browseSummary.categories || {})[browseState.category] ?? null;
+}
+
+function renderBrowseProgress() {
+  const more = document.getElementById("browseMore");
+  if (!more) return;
+  const loaded = browseProducts.length;
+  const total = browseTotal();
+  const of = total != null ? `${loaded} av ${total}` : `${loaded}`;
+  if (!loaded) more.innerHTML = "";
+  else if (browseLoadingMore) more.innerHTML = `<div class="browse-progress">Laddar fler&hellip; <span>${of} produkter</span></div>`;
+  else if (browseHasMore) more.innerHTML = `<div class="browse-progress">${of} produkter</div>`;
+  else more.innerHTML = `<div class="browse-progress">Alla ${loaded} produkter visade</div>`;
 }
 
 function appendBrowseCards(batch) {
   let items = browseState.onlyOffers ? batch.filter((p) => p.on_offer) : batch;
   if (items.length) document.getElementById("browseGrid").insertAdjacentHTML("beforeend", browseCardsHtml(items));
   updateBrowseTitle();
+  renderBrowseProgress();
 }
 
 async function loadBrowse() {
@@ -1145,19 +1166,18 @@ async function loadMoreBrowse() {
   browseLoadingMore = true;
   const token = browseToken;
   const more = document.getElementById("browseMore");
-  more.innerHTML = `<div class="text-muted small py-2">Laddar fler&hellip;</div>`;
+  renderBrowseProgress();  // "Laddar fler… (X av Y)"
   try {
     const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(browseProducts.length)}`)).json();
     if (token !== browseToken) return;  // kategori bytt under hämtningen
     const batch = d.products || [];
     browseProducts = browseProducts.concat(batch);
     browseHasMore = batch.length === BROWSE_PAGE;
-    appendBrowseCards(batch);
-    more.innerHTML = "";
+    appendBrowseCards(batch);  // anropar renderBrowseProgress
   } catch (e) {
     if (token === browseToken) more.innerHTML = "";
   } finally {
-    if (token === browseToken) browseLoadingMore = false;
+    if (token === browseToken) { browseLoadingMore = false; renderBrowseProgress(); }
   }
 }
 
