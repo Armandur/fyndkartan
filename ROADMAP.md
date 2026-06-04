@@ -280,11 +280,17 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       visas som löpande text/inline; bör renderas som en TABELL (näringsämne | mängd per 100g, ev.
       per portion) för läsbarhet. Datan finns i `product_info` (näring), `details.py` parsar den redan
       i olika format - normalisera till nyckel/värde-par och rendera tabell.
+    - [ ] **Normalisera tillverkarnamn (förarbete till tillverkar-filtret).** Samma märke stavas
+      olika per kedja ("Arla", "Arla Foods", "ARLA AB"...) och `manufacturer`/`brand` kommer rått från
+      respektive kedjas API. Innan ett tillverkar-filter blir användbart behövs en kanonisk mappning
+      (derive-at-read likt `category_map`/`tag_map`: råname -> kanoniskt namn, redigerbar admin-flik).
+      Annars splittras en tillverkares produkter på flera stavningar. Detta är blockern - gör det först.
     - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** Man ska kunna lista
       alla produkter från en viss tillverkare/märke (`brand`/`manufacturer`-fältet finns redan i
       katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en
       tillverkar-katalog/aggregat), kanske inte i nuvarande kart-app men i en kommande konsument-/
-      analys-app. Kräver normalisering av tillverkarnamn (samma märke stavas olika per kedja).
+      analys-app. **Beror på tillverkarnamn-normaliseringen ovan** - utan den splittras märket på
+      olika stavningar. En råname-exakt v1 går att göra tidigare men ger begränsat värde.
     - [ ] **Kost-filter: vegan/vegetariskt (+ härled när otaggat).** Kunna filtrera produkter på
       vegansk/vegetarisk - som ett TVÄRGÅENDE kost-filter (vegetariska varor finns i alla kategorier,
       inte bara kanoniska `vegetariskt`). Steg: (1) använd kedjornas ev. taggar/kategori när de finns;
@@ -308,9 +314,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       rea-fallet": rean hör ofta till ett FLERKÖP ("3 för 18 kr") eller annan förpackning som delar
       EAN med hyllvaran. Kartans butiks-popup visar också erbjudandepriset för den filtrerade produkten
       (`state.productFilter` bär per-butik-offers), och produktfilter-baren visar prisintervall.
-      - [ ] **Kvar: visa flerköp/pristext på kortet (inte bara "rea 18 kr").** Kortets rea = flerköps-
-        totalen -> missvisande (ser ut som styckpris). Bör visa "3 för 18 kr" e.d. (kräver att
-        `offers_for_eans`/`_enrich_with_offers` bär `price_text`/deal-typ in i katalogen).
+      - [x] **Visa flerköp/pristext på kortet (inte bara "rea 18 kr") BYGGT.** Kortets rea visar nu
+        beräknat styckpris ("X kr/st") + en liten deal-text ("N för Y kr") vid flerköp, så det inte
+        ser ut som ett missvisande styckpris. Samma styckpris + pristext i erbjudande-modalen, kartans
+        pris-chip och produktfilter-toasten (`offers_for_eans`/`stores_with_offer` bär `price_text`/
+        `multibuy_qty`/`deal_type`).
       - [ ] (sido-spår) bör olika förpackningsstorlekar grupperas på samma EAN i katalogen?
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
