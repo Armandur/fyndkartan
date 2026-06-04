@@ -467,11 +467,14 @@ def list_products(q=None, category=None, chain=None, limit=40):
     hits = [dict(r) for r in rows if not ql or ql in (r["name"] or "").lower()]
     if not hits:
         return []
-    # EAN-resolution: inline-array, annars ean_cache (Axfood code->EAN).
-    code_eans = get_cached_eans([h["offer_id"] for h in hits if not h["eans"]])
+    # EAN-resolution: inline-array, annars ean_cache (Axfood code->EAN). OBS: eans lagras som
+    # JSON-sträng, så '[]' (Axfood utan inline-EAN) är truthy -> parsa och kolla den TOMMA listan.
+    for h in hits:
+        h["_eans"] = json.loads(h["eans"]) if h["eans"] else []
+    code_eans = get_cached_eans([h["offer_id"] for h in hits if not h["_eans"]])
     groups = {}
     for h in hits:
-        eans = json.loads(h["eans"]) if h["eans"] else []
+        eans = h["_eans"]
         ean = eans[0] if eans else code_eans.get(h["offer_id"])
         key = ean or f"{h['chain']}:{(h['name'] or '').lower()}"
         g = groups.setdefault(key, {"ean": ean, "chains": set(), "offs": []})
