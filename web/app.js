@@ -86,7 +86,7 @@ function offerPinLabel(off) {
   if (!off || off.price == null) return "erb";
   const qty = off.multibuy_qty || 1;
   if (qty > 1) {
-    const deal = off.price_text ? `<span class="mp-deal">${esc(off.price_text)}</span>` : "";
+    const deal = off.price_text ? `<br><span class="mp-deal">${esc(off.price_text)}</span>` : "";
     return `${kr(off.price / qty)} kr/st${deal}`;
   }
   return `${kr(off.price)} kr`;
@@ -284,7 +284,9 @@ async function filterMapByProduct(ean, name, chain = null) {
     if (chain) list = list.filter((s) => s.chain === chain);  // scope:a till en kedja (klick på dess rea)
     const offers = new Map(list.map((s) => [`${s.chain}:${s.store_id}`, s]));  // pris per butik
     const stores = new Set(offers.keys());
-    state.productFilter = { ean, name: name || ean, chain, offers, stores, count: stores.size };
+    // Vid deep-link (delad URL) saknas name -> härled ur datan.
+    const pname = name || (list[0] && list[0].name) || ean;
+    state.productFilter = { ean, name: pname, chain, offers, stores, count: stores.size };
     // Per-styck (flerköps-totalen / antal) så intervallet är jämförbart över butiker.
     const perPrices = list.map((s) => (s.price != null ? s.price / (s.multibuy_qty || 1) : null)).filter((p) => p != null);
     const priceTxt = perPrices.length
@@ -317,7 +319,9 @@ function fitToVisible() {
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
 }
 
-document.getElementById("productFilterClear").addEventListener("click", clearProductFilter);
+document.getElementById("productFilterClear").addEventListener("click", () => {
+  _selfNav = true; location.hash = ""; clearProductFilter(); setTimeout(() => { _selfNav = false; }, 0);
+});
 
 document.getElementById("search").addEventListener("input", (e) => {
   state.query = e.target.value.trim();
@@ -446,9 +450,7 @@ async function loadOfferDetail(ean, chain, name) {
     el.innerHTML = `<div class="od-head">Aktuellt erbjudande</div>${rows}`;
     el.querySelectorAll(".od-map").forEach((btn) => btn.addEventListener("click", () => {
       document.getElementById("productModal").classList.add("d-none");
-      _selfNav = true; location.hash = ""; showMapUI();
-      filterMapByProduct(ean, name, btn.dataset.chain);   // scope:a kartan till bara den kedjan
-      setTimeout(() => { _selfNav = false; }, 0);
+      goProduct(ean, name, btn.dataset.chain);   // scope:a kartan till bara den kedjan (delbar URL)
     }));
   } catch (e) { el.innerHTML = ""; }
 }
@@ -1090,7 +1092,7 @@ document.getElementById("productsList").addEventListener("click", (e) => {
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
   const mapBtn = e.target.closest(".o-map");
-  if (mapBtn) filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
+  if (mapBtn) goProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
 
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
@@ -1116,8 +1118,17 @@ function showMapUI() {
 
 function applyBrowseHash() {
   const h = location.hash.slice(1);
+  if (h.startsWith("produkt/")) {  // delbart kartfilter: #produkt/<ean>[/<chain>]
+    if (document.body.classList.contains("browse-mode")) showMapUI();
+    const parts = h.slice("produkt/".length).split("/");
+    const ean = decodeURIComponent(parts[0] || "");
+    const fchain = parts[1] ? decodeURIComponent(parts[1]) : null;
+    if (ean) filterMapByProduct(ean, null, fchain);
+    return;
+  }
   if (!h.startsWith("sortiment")) {
     if (document.body.classList.contains("browse-mode")) showMapUI();
+    if (state.productFilter) clearProductFilter();  // lämnade produktfiltret -> rensa
     return;
   }
   showBrowseUI();
@@ -1136,6 +1147,15 @@ function browseGo(hash) {
   _selfNav = true;
   location.hash = hash;
   applyBrowseHash();
+  setTimeout(() => { _selfNav = false; }, 0);
+}
+// Navigera till kartans produktfilter (delbar URL). chain = scope:a till en kedja.
+function goProduct(ean, name, chain = null) {
+  if (!ean) return;
+  _selfNav = true;
+  location.hash = chain ? `produkt/${encodeURIComponent(ean)}/${encodeURIComponent(chain)}` : `produkt/${encodeURIComponent(ean)}`;
+  if (document.body.classList.contains("browse-mode")) showMapUI();
+  filterMapByProduct(ean, name, chain);
   setTimeout(() => { _selfNav = false; }, 0);
 }
 window.addEventListener("hashchange", () => {
@@ -1361,7 +1381,7 @@ document.getElementById("browseGrid").addEventListener("click", (e) => {
     return;
   }
   const mapBtn = e.target.closest(".o-map");
-  if (mapBtn) { _selfNav = true; location.hash = ""; showMapUI(); filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name); setTimeout(() => { _selfNav = false; }, 0); }
+  if (mapBtn) goProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
 
 // ---- Mobil: sidopanel som overlay ----
