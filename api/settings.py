@@ -13,10 +13,11 @@ _DEFAULTS = {
     "sync_cron": config.SYNC_CRON,
     "offers_sweep_cron": config.OFFERS_SWEEP_CRON,
     "catalog_crawl_cron": config.CATALOG_CRAWL_CRON,
+    "partial_upgrade_cron": config.PARTIAL_UPGRADE_CRON,
     "sync_tz": config.SYNC_TZ,
 }
 KEYS = tuple(_DEFAULTS)
-CRON_KEYS = ("sync_cron", "offers_sweep_cron", "catalog_crawl_cron")
+CRON_KEYS = ("sync_cron", "offers_sweep_cron", "catalog_crawl_cron", "partial_upgrade_cron")
 
 
 def default(key):

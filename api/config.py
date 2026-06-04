@@ -43,6 +43,13 @@ OFFERS_SWEEP_CIRCUIT = int(os.getenv("OFFERS_SWEEP_CIRCUIT", "12"))  # fel i rad
 # Fulla sortiment-crawl (steg 5): walk:ar kedjornas kategoriträd och persistar hela sortimentet.
 # Tung körning (~74k produkter) -> gles default (veckovis, mån 03:00). Tomt/'off' = av (manuell).
 CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * 1")
+# Riktad uppgradering av GLESA partial-rader (piggyback, näring < 4) till full korsskällig merge
+# (fetch_for_ean). Strypt: cap/körning + bunden parallellism + paus (ICA-detaljen är WAF-känslig).
+# Bredd kommer ur crawl/warm; detta fyller bara de verkliga närings-luckorna över tid. 'off' = av.
+PARTIAL_UPGRADE_CRON = os.getenv("PARTIAL_UPGRADE_CRON", "0 2 * * *")  # dagligen 02:00
+PARTIAL_UPGRADE_CAP = int(os.getenv("PARTIAL_UPGRADE_CAP", "300"))     # max EAN/körning
+PARTIAL_UPGRADE_CONC = int(os.getenv("PARTIAL_UPGRADE_CONC", "3"))     # samtidiga hämtningar
+PARTIAL_UPGRADE_PACE = float(os.getenv("PARTIAL_UPGRADE_PACE", "0.25"))  # paus (s) mellan starter
 # Max Axfood-katalogkoder/kedja som EAN-resolvas efter en crawl (cross-chain-merge). Engångs-bulken
 # körs ocapad manuellt; detta är den inkrementella påfyllningen så nya koder täcks över tid.
 CATALOG_EAN_WARM_CAP = int(os.getenv("CATALOG_EAN_WARM_CAP", "1000"))

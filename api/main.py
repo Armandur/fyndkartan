@@ -25,10 +25,12 @@ from .database import (
 from .geo import haversine
 from .sync import (
     CATALOG_EAN_STATE,
+    PARTIAL_UPGRADE_STATE,
     STATE,
     run_scheduler,
     run_sync,
     sync_and_warm,
+    upgrade_sparse_partials,
     warm_axfood_catalog_eans,
     warm_axfood_eans,
     warm_coop_categories,
@@ -115,9 +117,14 @@ async def lifespan(app: FastAPI):
     # Fulla sortiment-crawlen (tung) har egen gles cadence (default veckovis). Tomt cron = av.
     crawl_scheduler = asyncio.create_task(
         run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, crawl_and_warm, "sortiment-crawl"))
+    # Riktad uppgradering av glesa partial-rader till full merge (egen, strypt cadence). Tomt cron = av.
+    partial_scheduler = asyncio.create_task(
+        run_scheduler(lambda: settings.get("partial_upgrade_cron"), _tz, upgrade_sparse_partials, "partial-uppgradering"))
     yield
     scheduler.cancel()
     offers_scheduler.cancel()
+    crawl_scheduler.cancel()
+    partial_scheduler.cancel()
 
 
 app = FastAPI(
@@ -1304,6 +1311,21 @@ async def trigger_offers_sweep(force: bool = False, _=Depends(require_admin)):
 @app.get("/v1/offers/sweep/status")
 async def offers_sweep_status(_=Depends(require_admin)):
     return SWEEP_STATE
+
+
+@app.post("/v1/admin/partials/upgrade")
+async def trigger_partial_upgrade(cap: int | None = None, _=Depends(require_admin)):
+    """Starta en riktad uppgradering av glesa partial-rader (piggyback) till full korsskällig merge
+    (bakgrund). `cap` = max EAN denna körning (default PARTIAL_UPGRADE_CAP)."""
+    if PARTIAL_UPGRADE_STATE["running"]:
+        return {"status": "running", "detail": "En uppgradering pågår redan."}
+    asyncio.create_task(upgrade_sparse_partials(cap=cap))
+    return {"status": "started", "cap": cap or config.PARTIAL_UPGRADE_CAP}
+
+
+@app.get("/v1/admin/partials/upgrade/status")
+async def partial_upgrade_status(_=Depends(require_admin)):
+    return PARTIAL_UPGRADE_STATE
 
 
 @app.post("/v1/admin/catalog/crawl")

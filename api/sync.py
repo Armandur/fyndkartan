@@ -24,6 +24,7 @@ from .database import (
     save_product_info,
     product_info_fresh_set,
     archive_product_info,
+    sparse_partial_eans,
 )
 from .geo import grid
 
@@ -162,6 +163,42 @@ CATALOG_EAN_STATE = {"running": False, "total": 0, "done": 0, "resolved": 0, "em
                      "blocked": 0, "updated": 0, "current_chain": None, "cooldown": False,
                      "skipped_chains": [], "started_at": None, "finished_at": None,
                      "error": None, "recent": []}
+
+PARTIAL_UPGRADE_STATE = {"running": False, "total": 0, "done": 0, "upgraded": 0, "failed": 0,
+                         "started_at": None, "finished_at": None}
+
+
+async def upgrade_sparse_partials(cap=None):
+    """Riktad uppgradering: hämta GLESA partial-rader (piggyback, näring < 4) på nytt med full
+    korsskällig merge (fetch_for_ean) och spara som full (partial-flaggan faller bort). Strypt -
+    cap/körning + bunden parallellism + paus, för ICA-detaljen är WAF-känslig. Egen cadence."""
+    if PARTIAL_UPGRADE_STATE["running"]:
+        return
+    eans = sparse_partial_eans(cap or config.PARTIAL_UPGRADE_CAP)
+    PARTIAL_UPGRADE_STATE.update(running=True, total=len(eans), done=0, upgraded=0, failed=0,
+                                 started_at=_now(), finished_at=None)
+    sem = asyncio.Semaphore(config.PARTIAL_UPGRADE_CONC)
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            async def one(ean):
+                async with sem:
+                    await asyncio.sleep(config.PARTIAL_UPGRADE_PACE)
+                    try:
+                        info = await details.fetch_for_ean(client, ean)
+                        if info is not None:  # None = inget hittades nu -> behåll partial (clobbra ej)
+                            save_product_info(ean, info)  # full -> faller ur kandidatmängden
+                            PARTIAL_UPGRADE_STATE["upgraded"] += 1
+                    except Exception as e:  # noqa: BLE001
+                        PARTIAL_UPGRADE_STATE["failed"] += 1
+                        log.warning("partial-uppgradering %s: %s", ean, e)
+                    PARTIAL_UPGRADE_STATE["done"] += 1
+            await asyncio.gather(*(one(e) for e in eans))
+    finally:
+        PARTIAL_UPGRADE_STATE.update(running=False, finished_at=_now())
+    log.info("Partial-uppgradering klar: %d/%d uppgraderade, %d fel",
+             PARTIAL_UPGRADE_STATE["upgraded"], PARTIAL_UPGRADE_STATE["total"], PARTIAL_UPGRADE_STATE["failed"])
+
+
 _EAN_FEED_MAX = 60
 
 

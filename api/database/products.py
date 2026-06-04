@@ -156,6 +156,19 @@ def archive_product_info(items):
     conn.close()
 
 
+def sparse_partial_eans(limit=None):
+    """EAN för partial-rader (piggyback) med GLES näring (< 4 värden) - kandidater för full
+    korsskällig merge-uppgradering. Uppgraderade rader tappar partial-flaggan och faller ur mängden."""
+    conn = get_conn()
+    sql = ("SELECT ean FROM product_info WHERE json_extract(data,'$.partial')=1 "
+           "AND COALESCE(json_array_length(json_extract(data,'$.nutrition')),0) < 4")
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    rows = conn.execute(sql).fetchall()
+    conn.close()
+    return [r["ean"] for r in rows]
+
+
 def product_info_fresh_set(eans):
     """Mängd EAN som har en EJ utgången product_info-rad (full/partial/negativ). För piggyback-
     skrivningarnas skip-if-fresh - utgångna återfylls av nästa crawl/warm."""

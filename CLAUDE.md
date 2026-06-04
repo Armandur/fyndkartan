@@ -185,7 +185,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   skip-if-fresh via `product_info_fresh_set`, batchat). Fyller katalogens ~32k tomma EAN gratis (inga
   extra anrop). On-demand-endpointen behandlar en `partial`-rad som cache-miss -> kör full `fetch_for_ean`
   (Axfood+Coop+ICA-merge) först när någon öppnar produktmodalen. `partial` strippas i `normalize_info`
-  (intern, ej i API:t). Bredd ur crawl/warm, djup on-demand.
+  (intern, ej i API:t). Bredd ur crawl/warm, djup on-demand. **Schemalagd riktad uppgradering
+  (`sync.upgrade_sparse_partials`, egen cadence `PARTIAL_UPGRADE_CRON`, default dagligen 02:00, `off`=av):**
+  hämtar bara de GLESA partials (`database.sparse_partial_eans`, näring < 4) på nytt med full merge -
+  fyller de verkliga närings-luckorna över tid (cap/körning + bunden parallellism + paus, ICA-WAF-skonsamt).
+  Uppgraderade rader tappar `partial` -> faller ur kandidatmängden. Manuell trigger `POST /v1/admin/partials/upgrade`.
 - **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
   ur cachade offers, annars ICA-detaljens `og:image` ur `product_info` (täcker ICA:s egna
   märken utan offer-bild), annars ICA:s EAN-CDN. **Resizar via Cloudinary-transform** (källorna
