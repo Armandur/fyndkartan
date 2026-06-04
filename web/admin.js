@@ -20,8 +20,6 @@
     async function loadOverview() {
       const d = await (await api("/v1/admin/overview")).json();
       const storeTot = d.chains.reduce((a, c) => a + (c.store_count || 0), 0);
-      const storePer = d.chains.filter(c => c.store_count).sort((a, b) => b.store_count - a.store_count)
-        .map(c => `${chip(c.chain)} ${c.store_count}`).join(" ");
       const sw = d.offers_sweep || {};  // bara nästa-körning-kortet kvar i översikten; resten i Erbjudanden-fliken
       // Alla schemalagda jobb -> ett kort, soonest överst (next_run = "YYYY-MM-DD HH:MM", strängsortbart).
       const jobs = [
@@ -29,20 +27,21 @@
         { name: "Erbjudande-sweep", next: sw.next_run, cron: sw.cron },
         { name: "Sortiment-crawl", next: (d.catalog_crawl || {}).next_run, cron: (d.catalog_crawl || {}).cron },
       ].filter(j => j.next).sort((a, b) => a.next.localeCompare(b.next));
+      const catTot = Object.values(d.catalog || {}).reduce((a, s) => a + (s.total || 0), 0);
+      const catAvail = Object.values(d.catalog || {}).reduce((a, s) => a + (s.available || 0), 0);
+      const nChains = d.chains.filter(c => c.store_count).length;
+      // Per kedja: butiker + crawlat sortiment (listat, inte inline). Kedjeordning = config.CHAINS.
+      const perChainRows = d.chains.map(c => {
+        const cat = (d.catalog || {})[c.chain] || {};
+        return `<tr><td>${chip(c.chain)}</td><td>${c.store_count || 0}</td>
+          <td>${cat.total || 0}</td><td class="text-muted">${cat.eans || 0}</td></tr>`;
+      }).join("");
       document.getElementById("overview").innerHTML = `
         <h5 class="mb-3">Översikt</h5>
         <div class="row g-3 mb-3 stats-row">
-          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${storeTot}</div><div class="small text-muted">${storePer || "-"}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${storeTot}</div><div class="small text-muted">${nChains} kedjor</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
-          ${(() => {
-            const cat = d.catalog || {};
-            const ents = Object.entries(cat);
-            const tot = ents.reduce((a, [, s]) => a + (s.total || 0), 0);
-            const avail = ents.reduce((a, [, s]) => a + (s.available || 0), 0);
-            const per = ents.sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
-              .map(([c, s]) => `${chip(c)} ${s.total}`).join(" ");
-            return `<div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${tot}</div><div class="small text-muted">${avail} tillgängliga${per ? ` &middot; ${per}` : ""}</div></div></div>`;
-          })()}
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${catTot}</div><div class="small text-muted">${catAvail} tillgängliga</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${d.ean_stats.distinct}</div><div class="small text-muted">${d.ean_stats.with_info} med produktinfo · ${d.ean_stats.axfood_cache} Axfood-resolvade</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${d.price_history.rows}</div><div class="small text-muted">${d.price_history.products} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
@@ -53,7 +52,12 @@
               : `<div class="fw-bold mt-1">-</div><div class="small text-muted">inga schemalagda körningar</div>`}
           </div></div>
         </div>
-        </div>`;
+        <div class="card p-3"><h6 class="mb-2">Per kedja</h6>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Kedja</th><th>Butiker</th><th>Sortiment (crawlat)</th><th>Distinkta EAN</th></tr></thead>
+            <tbody>${perChainRows}</tbody>
+            <tfoot><tr class="fw-semibold"><td>Totalt</td><td>${storeTot}</td><td>${catTot}</td><td class="text-muted">-</td></tr></tfoot>
+          </table></div>`;
     }
 
     async function loadKedjor() {
