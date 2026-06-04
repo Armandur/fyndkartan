@@ -280,6 +280,7 @@ img.o-img { cursor: zoom-in; }
 .o-offer { color: #c0392b; font-weight: 700; }
 .o-offer-link { color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .o-offer-link:hover { text-decoration: underline; }
+.o-sc-deal { font-weight: 400; color: #8b95a4; font-size: .92em; }  /* liten deal-text efter styckpris */
 /* "Aktuellt erbjudande"-sektionen i produktmodalen */
 .od-head { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #8b95a4; margin-bottom: .25rem; }
 .od-row { padding: .3rem .4rem; border-radius: 6px; margin-bottom: 3px; background: #f7f9fb; font-size: .82rem; }

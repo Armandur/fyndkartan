@@ -909,10 +909,15 @@ function catalogCard(p) {
     const m = state.chains[pr.chain] || {};
     const hasOffer = pr.offer_price != null;
     const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
-    // Rea-cellen klickbar -> aktuellt erbjudande. Flerköp visas som sin pristext ("3 för 18 kr")
-    // i stället för det missvisande "rea 18 kr" (rean är då flerköps-totalen, ej styckpris).
-    const dealTxt = (pr.offer_deal === "multibuy" && pr.offer_text) ? esc(pr.offer_text) : `rea ${kr(pr.offer_price)} kr`;
-    const reaTxt = hasOffer ? `${dealTxt}${pr.offer_member ? " klubb" : ""}` : "";
+    // Rea-cellen klickbar -> aktuellt erbjudande. Flerköp visar det beräknade STYCKPRISET
+    // (jämförbart med det strukna hyllpriset) + liten deal-text; vanlig rea visar "rea X kr".
+    const qty = pr.offer_multibuy || 1;
+    const perItem = pr.offer_price != null ? pr.offer_price / qty : null;
+    const isMulti = pr.offer_deal === "multibuy" && perItem != null && qty > 1;
+    const reaCore = isMulti
+      ? `${kr(perItem)} kr/st<span class="o-sc-deal"> ${esc(pr.offer_text || "")}</span>`
+      : `rea ${kr(pr.offer_price)} kr`;
+    const reaTxt = hasOffer ? `${reaCore}${pr.offer_member ? " klubb" : ""}` : "";
     const rea = (hasOffer && p.ean)
       ? `<a class="o-offer-link" data-ean="${esc(p.ean)}" data-chain="${esc(pr.chain)}" data-name="${esc(p.name || "")}" title="Visa det aktuella erbjudandet">${reaTxt}</a>`
       : reaTxt;
