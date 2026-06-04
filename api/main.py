@@ -1288,15 +1288,16 @@ async def crawl_and_warm(limit_categories=None, chains=None):
 
 
 @app.post("/v1/admin/catalog/warm-eans")
-async def trigger_catalog_ean_warm(cap: int | None = None, _=Depends(require_admin)):
+async def trigger_catalog_ean_warm(cap: int | None = None, chain: str | None = None,
+                                   _=Depends(require_admin)):
     """Resolva Axfood-katalogkoder till EAN (cross-chain-merge) i bakgrunden. `cap` = max koder/kedja
-    (default: alla = engångs-bulk). Progress i crawl-status (`ean_warm`)."""
+    (default: alla = engångs-bulk). `chain` (willys|hemkop) = bara en kedja. Progress i crawl-status."""
     if CATALOG_EAN_STATE["running"]:
         return {"status": "running", "detail": "En EAN-resolvning pågår redan."}
     if catalog_crawl.CRAWL_STATE["running"]:
         return {"status": "blocked", "detail": "En crawl pågår - vänta tills den är klar."}
-    asyncio.create_task(warm_axfood_catalog_eans(cap=cap))
-    return {"status": "started", "cap": cap}
+    asyncio.create_task(warm_axfood_catalog_eans(cap=cap, chain=chain))
+    return {"status": "started", "cap": cap, "chain": chain}
 
 
 @app.get("/v1/admin/catalog/crawl/status")

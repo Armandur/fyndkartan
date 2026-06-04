@@ -161,20 +161,24 @@ def _ean_feed(chain, meta):
     del buf[_EAN_FEED_MAX:]
 
 
-async def warm_axfood_catalog_eans(cap=None):
+async def warm_axfood_catalog_eans(cap=None, chain=None):
     """Resolva Axfood-KATALOGkoder (catalog_products utan EAN) till EAN via `/p/{code}`, fyll
     ean_cache och backfilla `catalog_products.ean` (normaliserat) -> Willys/Hemköp slås ihop
-    cross-chain med kedjor som redan har EAN. `cap` = max koder/kedja (None = alla, engångs-bulk).
-    Hämtar bara ej-cachade koder (`codes_missing_category`). Progress i CATALOG_EAN_STATE."""
+    cross-chain med kedjor som redan har EAN. `cap` = max koder/kedja (None = alla, engångs-bulk),
+    `chain` = bara en kedja (willys|hemkop, None = båda). Hämtar bara ej-cachade koder
+    (`codes_missing_category`). Progress i CATALOG_EAN_STATE."""
     if CATALOG_EAN_STATE["running"]:
         return 0
+    src = catalog_axfood_codes_missing_ean()
+    if chain:
+        src = {chain: src[chain]} if chain in src else {}
     to_fetch = {}
-    for chain, codes in catalog_axfood_codes_missing_ean().items():
+    for ch, codes in src.items():
         miss = codes_missing_category(codes)
         if cap:
             miss = miss[:cap]
         if miss:
-            to_fetch[chain] = miss
+            to_fetch[ch] = miss
     CATALOG_EAN_STATE.update(running=True, total=sum(len(v) for v in to_fetch.values()), done=0,
                              resolved=0, empty=0, blocked=0, updated=0, current_chain=None,
                              cooldown=False, skipped_chains=[], started_at=_now(), finished_at=None,

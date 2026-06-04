@@ -1096,10 +1096,16 @@
           <div class="d-flex align-items-center mb-1">
             <h6 class="mb-0">Axfood-EAN-resolvning</h6>
             <span id="eanWarmStatus" class="ms-2 small text-muted"></span>
-            <button id="warmEansTest" class="btn btn-sm btn-outline-dark ms-auto">Testa (300)</button>
-            <button id="warmEansAll" class="btn btn-sm btn-dark ms-2">Resolva alla</button>
           </div>
-          <div class="text-muted small mb-1">Slår upp Willys/Hemköp-katalogkoder till EAN (<span class="mono">/p/{code}</span>) så de slås ihop cross-chain med kedjor som redan har EAN. Rate-limitat; full körning är ~tiotusentals anrop. Körs även capat automatiskt efter varje crawl.</div>
+          <div class="text-muted small mb-2">Slår upp Willys/Hemköp-katalogkoder till EAN (<span class="mono">/p/{code}</span>) så de slås ihop cross-chain med kedjor som redan har EAN. Rate-limitat; full körning är ~tiotusentals anrop. Körs även capat automatiskt efter varje crawl. En kedja i taget.</div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            ${chip("willys")}
+            <button class="btn btn-sm btn-outline-dark warm-ean" data-chain="willys" data-cap="300">Testa (300)</button>
+            <button class="btn btn-sm btn-dark warm-ean" data-chain="willys">Resolva alla</button>
+            <span class="ms-2">${chip("hemkop")}</span>
+            <button class="btn btn-sm btn-outline-dark warm-ean" data-chain="hemkop" data-cap="300">Testa (300)</button>
+            <button class="btn btn-sm btn-dark warm-ean" data-chain="hemkop">Resolva alla</button>
+          </div>
           <div id="eanWarmProgress"></div>
         </div>
         <div class="row g-3">
@@ -1111,8 +1117,10 @@
         </div>`;
       document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null, null));
       document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2, null));
-      document.getElementById("warmEansAll").addEventListener("click", () => triggerWarmEans(null));
-      document.getElementById("warmEansTest").addEventListener("click", () => triggerWarmEans(300));
+      document.getElementById("catalog").addEventListener("click", (e) => {
+        const b = e.target.closest(".warm-ean");
+        if (b && !b.disabled) triggerWarmEans(b.dataset.cap ? Number(b.dataset.cap) : null, b.dataset.chain);
+      });
       // Per-kedja-knappar (korten re-renderas varje poll -> delegerad lyssnare på containern).
       document.getElementById("catalogChains").addEventListener("click", (e) => {
         const b = e.target.closest(".catalog-chain-btn");
@@ -1193,10 +1201,8 @@
     }
 
     function renderEanWarm(w, crawlRunning) {
-      const test = document.getElementById("warmEansTest"), all = document.getElementById("warmEansAll");
       const prog = document.getElementById("eanWarmProgress"), status = document.getElementById("eanWarmStatus");
-      if (test) test.disabled = w.running || crawlRunning;
-      if (all) all.disabled = w.running || crawlRunning;
+      document.querySelectorAll(".warm-ean").forEach(b => { b.disabled = w.running || crawlRunning; });
       if (status) status.innerHTML = w.running
         ? (w.cooldown ? '<span class="st-running">● pausad (WAF-block, väntar…)</span>' : '<span class="st-running">● resolvar…</span>')
         : "";
@@ -1214,8 +1220,12 @@
       }
     }
 
-    async function triggerWarmEans(cap) {
-      const r = await api(`/v1/admin/catalog/warm-eans${cap ? "?cap=" + cap : ""}`, { method: "POST" });
+    async function triggerWarmEans(cap, chain) {
+      const p = new URLSearchParams();
+      if (cap) p.set("cap", cap);
+      if (chain) p.set("chain", chain);
+      const qs = p.toString();
+      await api(`/v1/admin/catalog/warm-eans${qs ? "?" + qs : ""}`, { method: "POST" });
       loadCatalog();
     }
 
