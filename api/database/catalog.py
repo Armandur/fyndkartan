@@ -217,16 +217,29 @@ def catalog_summary(chain=None):
 
 
 def _cat_canonical(members):
-    """Kanonisk kategori (derive-at-read) ur medlemmarnas råkategorier; första mappbara, annars
-    'ovrigt'. Coop/ICA via category_from_detail (nav-namn), övriga via category_for."""
+    """Kanonisk kategori (derive-at-read): MAJORITETSröstning över medlemmarnas mappbara råkategorier
+    (robust mot att en enskild kedja felklassar en produkt). Oavgjort -> föredra detalj-baserad
+    ICA/Coop-nav-kategori om den är bland vinnarna, annars första-sedda. Inga mappbara -> 'ovrigt'.
+    Coop/ICA via category_from_detail (nav-namn), övriga via category_for."""
+    votes = {}          # kanonisk -> röster (dict bevarar insättningsordning = först-sedd)
+    detail_winner = None  # första detalj-baserade (ica/coop) mappbara, för tie-break
     for m in members:
         raw, ch = m["category_raw"], m["chain"]
         if not raw:
             continue
         c = category_from_detail(ch, raw) if ch in ("coop", "ica") else category_for(ch, raw)
-        if c and c != "ovrigt":
-            return c
-    return "ovrigt"
+        if not c or c == "ovrigt":
+            continue
+        votes[c] = votes.get(c, 0) + 1
+        if detail_winner is None and ch in ("coop", "ica"):
+            detail_winner = c
+    if not votes:
+        return "ovrigt"
+    top = max(votes.values())
+    winners = [c for c in votes if votes[c] == top]
+    if len(winners) == 1:
+        return winners[0]
+    return detail_winner if detail_winner in winners else winners[0]
 
 
 def _cat_pick(members, field):
