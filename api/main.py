@@ -1111,17 +1111,19 @@ async def products_catalog_browse(
     limit: int = 60,
     offset: int = 0,
     only_offers: bool = False,
-    sort: str | None = Query(None, description="price|spread|name (annars default-ordning)"),
+    sort: str | None = Query(None, description="price|spread|name|savings (annars default-ordning)"),
+    deal: str | None = Query(None, description="multibuy|by_weight|flat - filtrera på erbjudande-typ"),
     _auth=Depends(require_consumer),
 ):
     """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
     sortimentet med hyllpris, EAN-grupperat cross-chain, + aktuella erbjudanden överlagrade.
     Snabbare än live-`/catalog` (ingen fan-out) och täcker crawlade kedjor. q ELLER category krävs.
-    `offset` paginerar (infinite scroll); `only_offers` filtrerar; `sort` ordnar (server-side, före
-    paginering). `total` = antal matchande produkter (för progress/paginering)."""
+    `offset` paginerar; `only_offers` filtrerar; `sort` ordnar (inkl. `savings` = störst besparing);
+    `deal` filtrerar på erbjudande-typ (begränsar till rea-produkter). Server-side före paginering.
+    `total` = antal matchande produkter (för progress/paginering)."""
     products, total = database.catalog_browse(q=q, category=category, chain=chain,
                                                limit=max(1, min(limit, 100)), offset=max(0, offset),
-                                               only_offers=only_offers, sort=sort)
+                                               only_offers=only_offers, sort=sort, deal=deal)
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "total": total, "products": products}
 

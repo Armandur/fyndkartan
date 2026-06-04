@@ -1044,7 +1044,7 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
 // Hash-driven: #sortiment[/k/<kategori>|/s/<sök>]. Kedje-/erbjudande-filter är transient UI-state.
-const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "" };
+const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "", deal: "" };
 let browseTimer = null, browseToken = 0, browseProducts = [];
 const BROWSE_PAGE = 60;  // sidstorlek för infinite scroll (offset-paginering)
 let browseHasMore = false, browseLoadingMore = false, browseObserver = null, browseTotalCount = null;
@@ -1224,6 +1224,7 @@ function browseQS(offset) {
   if (browseState.chain) p.set("chain", browseState.chain);
   if (browseState.onlyOffers) p.set("only_offers", "1");  // server-filter (inte klient)
   if (browseState.sort) p.set("sort", browseState.sort);
+  if (browseState.deal) p.set("deal", browseState.deal);
   return p;
 }
 
@@ -1277,6 +1278,10 @@ document.getElementById("browseOffers").addEventListener("change", (e) => {
 document.getElementById("browseSort").addEventListener("change", (e) => {
   browseState.sort = e.target.value;
   loadBrowse();  // server-side sort -> hämta om från offset 0
+});
+document.getElementById("browseDeal").addEventListener("change", (e) => {
+  browseState.deal = e.target.value;
+  loadBrowse();  // deal-typ-filter (server-side, begränsar till rea-produkter)
 });
 document.getElementById("browseCats").addEventListener("click", (e) => {
   const c = e.target.closest(".browse-cat");

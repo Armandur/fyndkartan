@@ -4,7 +4,7 @@ import json
 
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
-from .offers import norm_origin, normalized_package, on_offer_eans
+from .offers import norm_origin, normalized_package, offers_for_eans, on_offer_eans
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit, normalize_ean
 
@@ -255,7 +255,8 @@ _BROWSE_SORTS = {
 }
 
 
-def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False, sort=None):
+def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False,
+                   sort=None, deal=None):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
@@ -305,9 +306,35 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
     if only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
         oset = on_offer_eans()
         out = [p for p in out if p["ean"] in oset]
-    out.sort(key=_BROWSE_SORTS.get(sort) or (lambda p: (
-        -len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9, (p["name"] or "").lower())))
+    # Besparings-sort / deal-typ-filter är OFFERS-koncept -> kräver offer-enrichment av HELA mängden
+    # före paginering. Restrikterar då till produkter med aktuellt erbjudande och beräknar besparing
+    # (max hyllpris-rea över kedjorna) + deal-typer per produkt.
+    if sort == "savings" or deal:
+        omap = offers_for_eans([p["ean"] for p in out if p["ean"]])
+        kept = []
+        for p in out:
+            offs = omap.get(p["ean"]) or {}
+            if not offs:
+                continue
+            deals = {o["deal_type"] for o in offs.values() if o.get("deal_type")}
+            if deal and deal not in deals:
+                continue
+            sav = 0.0
+            for pr in p["prices"]:
+                o = offs.get(pr["chain"])
+                if o and o.get("price") is not None and pr["price"] is not None:
+                    sav = max(sav, pr["price"] - o["price"])
+            p["_savings"] = sav
+            kept.append(p)
+        out = kept
+    if sort == "savings":
+        out.sort(key=lambda p: (-p.get("_savings", 0), (p["name"] or "").lower()))
+    else:
+        out.sort(key=_BROWSE_SORTS.get(sort) or (lambda p: (
+            -len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9, (p["name"] or "").lower())))
     page = out[offset:offset + limit]
+    for p in page:
+        p.pop("_savings", None)
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
     return page, len(out)
 

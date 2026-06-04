@@ -260,10 +260,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       server-side FÖRE paginering (korrekt med infinite scroll/total) + `browseSort`-dropdown.
       `spread` = största hyllpris-skillnaden mellan kedjor (katalogens analog till "störst besparing",
       gratis ur befintlig data). Filter klart sedan tidigare: kategori, kedja, bara erbjudanden.
-      - [ ] **Kvar: offer-baserad besparings-sort + deal-typ-filter.** Som kartvyns offer-paneler
-        (rea vs ordinarie, multibuy/per vikt). Kräver offer-enrichment av HELA kategorin före
-        paginering (offers-koncept på en hyllpris-katalog) - bygg via `offers_for_eans`/`on_offer_eans`
-        + deal_type per produkt om det blir efterfrågat.
+      - [x] **Offer-baserad besparings-sort + deal-typ-filter BYGGT.** `sort=savings` (störst
+        hyllpris-rea över kedjorna) + `deal=multibuy|by_weight|flat` i `catalog_browse` -
+        offer-enrichment av hela kategorin via `offers_for_eans` (nu chunkat för SQLite-vargränsen),
+        besparing/deal-typ per produkt, begränsar till rea-produkter, server-side före paginering.
+        Dropdowns i bläddra-vyn ("Störst besparing", deal-typ-filter).
     - [x] **Infinite scroll (append, inte ladda om).** Bläddra-vyn appendar nästa sida via
       offset-paginering (`catalog_browse` offset/limit) när man skrollar nära botten
       (IntersectionObserver på `#browseMore` i `#browseView`, rootMargin 400px) - behåller
@@ -275,6 +276,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **Bugg: "Laddar fler…" när allt laddats FIXAD.** `browseLoadingMore` var fortfarande `true`
       när `renderBrowseGrid()`/`renderBrowseProgress()` kördes på första sidan (sattes `false` först i
       `finally`, efter render). Nu sätts den `false` före render -> visar "Alla N produkter visade".
+    - [ ] **Näringsinnehåll i produktinfo som tabell (inte inline).** Produktmodalens näringsvärden
+      visas som löpande text/inline; bör renderas som en TABELL (näringsämne | mängd per 100g, ev.
+      per portion) för läsbarhet. Datan finns i `product_info` (näring), `details.py` parsar den redan
+      i olika format - normalisera till nyckel/värde-par och rendera tabell.
     - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** Man ska kunna lista
       alla produkter från en viss tillverkare/märke (`brand`/`manufacturer`-fältet finns redan i
       katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en
@@ -287,6 +292,9 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       mejeri/ägg/gelatin -> vegansk; ingen kött/fisk -> vegetarisk) - vokabulär likt
       `extract_allergens`; (3) bara LIVSMEDEL (exkludera hygien/hushåll/djur via kanonisk kategori).
       Osäkra fall markeras "ev." snarare än falskt positivt. API-flagga + filter i bläddra-vyn.
+      **Två nivåer: vegan ⊂ vegetariskt** (allt veganskt är vegetariskt) - antingen två kanoniska
+      kategorier/taggar eller ett diet-fält med nivåerna `vegan`/`vegetarian`, så att vegetariskt-
+      filtret även inkluderar de veganska.
     - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
       markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
       delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan

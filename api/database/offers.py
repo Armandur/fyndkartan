@@ -177,22 +177,24 @@ def offers_for_eans(eans):
         return {}
     out = {}
     conn = get_conn()
-    ph = ",".join("?" * len(eans))
-    for r in conn.execute(
-        f"SELECT oe.ean, o.chain, o.price, o.price_text, o.comparison_value, o.comparison_unit, "
-        f"o.valid_to, o.member_price FROM offer_eans oe "
-        f"JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
-        f"WHERE oe.ean IN ({ph})",
-        eans,
-    ):
-        slot = out.setdefault(r["ean"], {})
-        cur = slot.get(r["chain"])
-        if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
-            dt, mq = _deal_type(r["price_text"])
-            slot[r["chain"]] = {"price": r["price"], "price_text": r["price_text"], "deal_type": dt,
-                                "multibuy_qty": mq, "comparison_value": r["comparison_value"],
-                                "comparison_unit": _norm_unit(r["comparison_unit"]), "valid_to": r["valid_to"],
-                                "member_price": bool(r["member_price"])}
+    for i in range(0, len(eans), 900):  # chunka -> klarar hela kategorier (SQLite-vargräns ~999)
+        chunk = eans[i:i + 900]
+        ph = ",".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT oe.ean, o.chain, o.price, o.price_text, o.comparison_value, o.comparison_unit, "
+            f"o.valid_to, o.member_price FROM offer_eans oe "
+            f"JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+            f"WHERE oe.ean IN ({ph})",
+            chunk,
+        ):
+            slot = out.setdefault(r["ean"], {})
+            cur = slot.get(r["chain"])
+            if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
+                dt, mq = _deal_type(r["price_text"])
+                slot[r["chain"]] = {"price": r["price"], "price_text": r["price_text"], "deal_type": dt,
+                                    "multibuy_qty": mq, "comparison_value": r["comparison_value"],
+                                    "comparison_unit": _norm_unit(r["comparison_unit"]), "valid_to": r["valid_to"],
+                                    "member_price": bool(r["member_price"])}
     conn.close()
     return out
 
