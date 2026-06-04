@@ -490,6 +490,8 @@ async def admin_overview(_=Depends(require_admin)):
         "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
         "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
+        "catalog_crawl": {"cron": config.CATALOG_CRAWL_CRON,
+                          "next_run": _next_cron(config.CATALOG_CRAWL_CRON)},
         "offers_sweep": {
             **SWEEP_STATE,
             "cron": config.OFFERS_SWEEP_CRON,
