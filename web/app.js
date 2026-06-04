@@ -1165,7 +1165,13 @@ window.addEventListener("hashchange", () => {
 document.getElementById("viewToggle").addEventListener("click", () =>
   browseGo(document.body.classList.contains("browse-mode") ? "" : "sortiment"));
 // Force-refresh in i #sortiment: visa shellet direkt (produkterna fylls när bootdatan laddats).
-if (location.hash.slice(1).startsWith("sortiment")) showBrowseUI();
+// Deep-link: visa rätt shell/feedback DIREKT, innan bootdatan laddats.
+const _bootHash = location.hash.slice(1);
+if (_bootHash.startsWith("sortiment")) showBrowseUI();
+else if (_bootHash.startsWith("produkt/")) {
+  document.getElementById("productFilterBar").classList.remove("d-none");
+  document.getElementById("productFilterText").textContent = "Laddar butiker med erbjudandet…";
+}
 
 function populateBrowseChain() {
   const sel = document.getElementById("browseChain");
@@ -1508,13 +1514,12 @@ async function submitAuth() {
   state.user = await r.json();
   hideWall();
   renderAuthArea();
-  await loadFavorites();
-  await loadCategories();
-  await loadChains();   // data laddas först efter inloggning (endpoints är gatade)
+  // Data laddas först efter inloggning (endpoints är gatade); småhämtningar parallellt.
+  await Promise.all([loadFavorites(), loadCategories(), loadChains()]);
   await loadStores();
   render();
   populateBrowseChain();
-  applyBrowseHash();    // återställ bläddra-vyn om URL:en har #sortiment
+  applyBrowseHash();    // återställ bläddra-vyn / produktfiltret om URL:en bär det
 }
 
 // ---- Kontoinställningar (utbyggbar; rymmer just nu lösenordsbyte) ----
@@ -1554,12 +1559,11 @@ document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key
 (async function init() {
   await loadUser();
   if (state.user) {
-    await loadFavorites();
-    await loadCategories();
-    await loadChains();
+    // Oberoende småhämtningar parallellt (alla klara innan loadStores renderar -> chains/favoriter finns).
+    await Promise.all([loadFavorites(), loadCategories(), loadChains()]);
     await loadStores();
     populateBrowseChain();
-    applyBrowseHash();   // återställ bläddra-vyn om URL:en har #sortiment
+    applyBrowseHash();   // återställ bläddra-vyn / produktfiltret om URL:en bär det
   } else {
     showWall();  // hela appen kräver inloggning
   }
