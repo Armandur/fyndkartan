@@ -397,6 +397,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     Resolvas vid läsning så ändring slår igenom utan omstart (schemaläggar-loopen läser om nästa
     varv; ev. signal/omstart av loopen för direkt effekt). Validera: cron mot `croniter`, tidszon
     mot `zoneinfo` (avvisa ogiltiga). Visa nästa körning per schema (som Sortiment-fliken redan gör).
+    **UI: dubbelriktat.** Varje cron ska kunna sättas både via dropdown-meny(er) för vanliga
+    intervall (t.ex. "varje timme", "dagligen kl X", "veckovis mån kl X") OCH genom att klistra
+    in/skriva en fri cron-sträng - de två ska vara synkade: en inklistrad sträng som matchar ett
+    förval uppdaterar menyerna, och en sträng utanför förvalen visas/redigeras som råtext
+    (avancerat läge). Live-förhandsvisning av "nästa körning" medan man redigerar.
 
 ### Normalisering (datakvalitet)
 
