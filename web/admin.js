@@ -49,7 +49,7 @@
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda körning</div>
             ${jobs.length
               ? `<div class="fw-bold mt-1">${esc(jobs[0].next)}</div><div class="small text-muted">${esc(jobs[0].name)}</div>`
-                + (jobs.length > 1 ? `<div class="small text-muted mt-1" style="line-height:1.5">${jobs.slice(1).map(j => `${esc(j.name)}: ${esc(j.next.slice(5))}`).join("<br>")}</div>` : "")
+                + (jobs.length > 1 ? `<div class="small text-muted mt-1" style="line-height:1.5">${jobs.slice(1).map(j => `${esc(j.name)}: ${esc(j.next)}`).join("<br>")}</div>` : "")
               : `<div class="fw-bold mt-1">-</div><div class="small text-muted">inga schemalagda körningar</div>`}
           </div></div>
         </div>
@@ -61,12 +61,12 @@
       const rows = d.chains.map(c => `<tr>
         <td>${chip(c.chain)}</td><td>${c.store_count}</td>
         <td class="st-${c.status}">${esc(c.status)}</td>
-        <td class="mono">${esc(c.last_sync || "-")}</td>
+        <td class="mono">${esc(fmtTs(c.last_sync))}</td>
         <td class="text-danger small">${esc(c.error || "")}</td></tr>`).join("");
       const done = d.chains.filter(c => c.status === "ok" || c.status === "error").length;
       const syncState = d.syncing
         ? `<span class="st-running">● synkar… (${done}/${d.chains.length} klara)</span>`
-        : `<span class="text-muted">senast: ${esc(d.chains.map(c=>c.last_sync).filter(Boolean).sort().pop() || "-")}</span>`;
+        : `<span class="text-muted">senast: ${esc(fmtTs(d.chains.map(c=>c.last_sync).filter(Boolean).sort().pop()))}</span>`;
       document.getElementById("kedjor").innerHTML = `
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Kedjor</h5>
@@ -112,7 +112,7 @@
       }), { fetched: 0, skipped: 0, errors: 0 });
       const swState = sw.running
         ? `<span class="st-running">● hämtar erbjudanden… (${swTotals.fetched} hämtade, ${swTotals.skipped} hoppade${swTotals.errors ? `, ${swTotals.errors} fel` : ""})</span>`
-        : `<span class="text-muted">senast: ${esc(sw.finished_at || "-")}</span>`;
+        : `<span class="text-muted">senast: ${esc(fmtTs(sw.finished_at))}</span>`;
       document.getElementById("sweep").innerHTML = `
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Erbjudanden</h5>
@@ -1031,6 +1031,8 @@
       while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
       return `${n < 10 && i ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
     }
+    // Konsekvent ISO 8601 (lokal visning): "2026-06-04T09:33:46Z" / "2026-06-04 12:00" -> "2026-06-04 12:00".
+    const fmtTs = (s) => s ? String(s).slice(0, 16).replace("T", " ") : "-";
     // Live-feed: pollen ger batchar (upp till 14/poll); en klient-kö matar ut produkterna EN
     // och en på jämn takt -> kontinuerligt nedåtflöde (ny överst trycker ner listan) + uttoning.
     let feedQueue = [], feedSeen = new Set(), feedPump = null, feedRunning = false, feedStartedAt = null;
@@ -1124,8 +1126,8 @@
       document.getElementById("catalogLive").innerHTML = d.running ? '<span class="st-running small">● live</span>' : "";
       const sched = document.getElementById("catalogSchedule");
       if (sched) sched.innerHTML = (d.cron && d.cron.trim())
-        ? `Schemalagd crawl: <strong>${esc(d.next_run || "-")}</strong> <span class="mono">${esc(d.cron)}</span>${d.finished_at ? ` &middot; senast klar ${esc((d.finished_at || "").slice(0, 16).replace("T", " "))}` : ""}`
-        : `Manuell (ingen schemalagd crawl)${d.finished_at ? ` &middot; senast klar ${esc((d.finished_at || "").slice(0, 16).replace("T", " "))}` : ""}`;
+        ? `Schemalagd crawl: <strong>${esc(fmtTs(d.next_run))}</strong> <span class="mono">${esc(d.cron)}</span>${d.finished_at ? ` &middot; senast klar ${esc(fmtTs(d.finished_at))}` : ""}`
+        : `Manuell (ingen schemalagd crawl)${d.finished_at ? ` &middot; senast klar ${esc(fmtTs(d.finished_at))}` : ""}`;
       document.getElementById("crawlNow").disabled = d.running;
       document.getElementById("crawlTest").disabled = d.running;
       document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
@@ -1162,7 +1164,7 @@
           ${bar}
           ${timing ? `<div class="small mt-1" style="color:#6b7480">${timing}</div>` : ""}
           <div class="small text-muted mt-2">Cachat totalt: <strong>${(st.total || 0).toLocaleString("sv-SE")}</strong> produkter
-            (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc((st.last_crawl || "").slice(0, 16).replace("T", " "))}` : ""}</div>
+            (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc(fmtTs(st.last_crawl))}` : ""}</div>
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
       }).join("");
