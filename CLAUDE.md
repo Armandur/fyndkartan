@@ -20,6 +20,9 @@ Aktuell status och plan: `ROADMAP.md`.
   `ps aux | grep api.main`) och starta om på samma sätt. Servern nås på `ubuntu-ai:8700`.
   Ingen `.env` krävs (nycklar auto-hämtas). Kör utan `--reload`, så starta om efter
   kodändringar för att de ska slå igenom (admin-kontot skapas t.ex. först vid uppstart).
+- **Ingen Gemini-delegering i detta projekt** (avsteg från den globala regeln). Claude gör
+  alla ändringar direkt, även stora filer och koordinerade flerfils-features - delegera inte
+  läsning/refaktorering/flerfilsändringar till Gemini CLI här.
 - **Deploy:** monolitisk single-container är normalfallet (lokal Unraid) -
   `docker-compose.yml`. Externt hostad med Caddy/TLS = undantag,
   `docker-compose.hetzner.yml`. CI bygger till `ghcr.io/armandur/fyndkartan`. Se `DOCKER.md`.
