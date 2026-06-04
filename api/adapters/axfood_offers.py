@@ -57,7 +57,9 @@ async def fetch_p_meta(client, chain, codes):
                         }
                     if r.status_code == 404:
                         return code, empty  # genuint ej funnen, ingen retry/block
-                    # 403 (WAF-block, HTML) / 429 / 5xx -> throttle: backa av och försök om
+                    if r.status_code == 403:
+                        return code, blocked  # WAF-block: fail-fast (ingen per-kod-retry); circuit-breakern sköter cooldown
+                    # 429 / 5xx -> transient throttle: backa av och försök om
                     if attempt < _EAN_RETRIES:
                         ra = r.headers.get("Retry-After")
                         wait = float(ra) if (ra or "").isdigit() else _EAN_BACKOFF * (2 ** attempt)
