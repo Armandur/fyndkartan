@@ -239,6 +239,29 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     rättvisare cross-chain-jämförelse; (3) store-medveten produktinfo/bild för Coop (perso-fetch
     scopas till 251300 -> produkter som bara finns i andra butiker saknas info/bild). Stort jobb -
     gör (1) först (billig honesty-markör), (2)/(3) vid behov.
+  - [ ] **Spåra ALLA butikspriser för Coop + ICA (geografisk prisintelligens).** Stort, eget projekt -
+    "var är X billigast nära mig" + regionala prisskillnader. Kärnutmaning = skala: ICA ~1300
+    självständigt ägda butiker (potentiellt per-butik-pris -> ~39M pris-punkter), Coop ~800 butiker
+    ägda av ~30 regionala föreningar (`ownerName` i native -> TROLIGEN priszoner per förening). Plus:
+    alla butiks-ledgers svarar inte i perso-söket (ej e-handelsindexerade).
+    - **Steg 0 - billig research FÖRST (avgör allt):** finns priszoner? Coop: jämför butiker inom
+      samma `ownerName` mot annan förening (identiska inom förening -> crawla EN butik/förening, ~30 i
+      st.f. 800). ICA: jämför inom ägare/profil (Maxi/Kvantum/Supermarket/Nära). Kartlägg vilka
+      ledgers/accountNumbers som faktiskt svarar. En kväll med skript; avgör om det är 30 eller 1300
+      crawls.
+    - **Datamodell:** separera produkt-master (butiksoberoende: namn/brand/ean/kategori) från butikspris.
+      Ny `catalog_store_prices (chain, product_id, store)` -> price/comparison/last_seen (PK på trippeln).
+      `catalog_price_observations` + `store`-kolumn -> append-on-change per (chain, product_id, store)
+      (växer med ändringar, inte butiker × dagar -> hanterbart).
+    - **Crawl:** generisk per-butik-rotation ovanpå crawl-maskineriet. Kö av (kedja, store), zon-
+      representanter först. Staggrat N butiker/natt, tungt rate-limitat, egen cadence (`STORE_PRICE_CRON`),
+      circuit-breaker/cooldown vid WAF (som EAN-warmingen). Coop varierar `store={ledger}`, ICA
+      `accountNumber` (finns i butikernas native). Skippa ledgers som svarar tomt (markera ej-e-handel).
+    - **Läs/API + UI:** `GET /v1/products/{ean}/prices?near=lat,lng` (billigast nära dig), prisvärmekarta.
+      Kopplar till statistik-appen (PRO-matkasse per region).
+    - **Inramning:** för cross-chain-jämförelse räcker EN representativ butik/kedja (det vi har). Full
+      per-butik = geografiskt prisintelligens-projekt, värt det bara om det blir en uttalad produkt.
+      Bygg INTE förrän steg 0-researchen säger att det är hanterbart (särskilt om Coop är zon-prissatt).
   - [x] **Unified produktsök (API) BYGGT (`api/catalog.py` + `GET /v1/products/catalog?q=`).**
     Live fan-out mot kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt
     hyllpris** (ej butikslokalt, ej offers - en upptäckts-funktion skild från `/v1/products/search`).
