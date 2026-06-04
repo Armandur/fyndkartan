@@ -289,6 +289,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       "Visa på karta" för en produkt som har erbjudande borde kartans butiks-popup/markör visa
       erbjudandepriset direkt (inte bara filtrera fram butikerna). Idag filtreras kartan på produkten
       men priset syns först när man öppnar butikens erbjudanden.
+    - [ ] **Klickbart erbjudande i bläddra-vyns produktkort -> direkt till erbjudandet.** En kedjas
+      rea-rad i katalogkortet ska gå att klicka för att komma direkt till själva erbjudandet (butikens
+      erbjudande-vy / offer-detalj / kartfilter på den kedjan+produkten), särskilt värdefullt när
+      erbjudandet ser ologiskt ut. Ex: "Citron Lime Fruktdryck" där ICA visar hyllpris 8 kr men
+      "rea 18 kr" (rean HÖGRE än hyllpriset) - troligen olika förpackningsstorlekar grupperade på
+      samma EAN ("2dl/1l"). Att kunna klicka sig till erbjudandet hjälper en förstå det. (Sido-spår
+      värt att kolla: bör olika förpackningsstorlekar verkligen grupperas på samma EAN i katalogen?)
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
