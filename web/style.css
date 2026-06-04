@@ -196,9 +196,12 @@ body {
 /* Pris-chip på markören vid produktfilter (iconSize 0 -> centreras via transform) */
 .marker-price {
   display: inline-block; transform: translate(-50%, -50%);
-  color: #fff; font-weight: 700; font-size: .72rem; line-height: 1;
-  padding: 3px 7px; border-radius: 11px; white-space: nowrap;
+  color: #fff; font-weight: 700; font-size: .72rem; line-height: 1.1;
+  padding: 3px 7px; border-radius: 11px; white-space: nowrap; text-align: center;
   border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.marker-price .mp-deal {
+  display: block; font-size: .6rem; font-weight: 600; opacity: .9; margin-top: 1px;
 }
 
 .pop-offers-btn {

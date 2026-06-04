@@ -67,7 +67,7 @@ function markerIcon(chain, label) {
   if (label != null) {
     return L.divIcon({
       className: "",
-      html: `<div class="marker-price" style="background:${chainColor(chain)}">${esc(label)}</div>`,
+      html: `<div class="marker-price" style="background:${chainColor(chain)}">${label}</div>`,
       iconSize: [0, 0],
       iconAnchor: [0, 0],
     });
@@ -80,12 +80,16 @@ function markerIcon(chain, label) {
   });
 }
 
-// Kompakt pris-etikett per butik. Flerköp visas som beräknat styckpris (jämförbart),
-// annars rakt erbjudandepris.
+// Kompakt pris-etikett (HTML) per butik. Flerköp: beräknat styckpris (jämförbart) +
+// en liten rad med "N för X kr" så det framgår att det är ett flerköp. Annars rakt pris.
 function offerPinLabel(off) {
   if (!off || off.price == null) return "erb";
   const qty = off.multibuy_qty || 1;
-  return qty > 1 ? `${kr(off.price / qty)} kr/st` : `${kr(off.price)} kr`;
+  if (qty > 1) {
+    const deal = off.price_text ? `<span class="mp-deal">${esc(off.price_text)}</span>` : "";
+    return `${kr(off.price / qty)} kr/st${deal}`;
+  }
+  return `${kr(off.price)} kr`;
 }
 
 const DOW = ["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"];
@@ -281,13 +285,17 @@ async function filterMapByProduct(ean, name, chain = null) {
     const offers = new Map(list.map((s) => [`${s.chain}:${s.store_id}`, s]));  // pris per butik
     const stores = new Set(offers.keys());
     state.productFilter = { ean, name: name || ean, chain, offers, stores, count: stores.size };
-    const prices = list.map((s) => s.price).filter((p) => p != null);
-    const priceTxt = prices.length
-      ? (Math.min(...prices) === Math.max(...prices) ? `${kr(Math.min(...prices))} kr` : `${kr(Math.min(...prices))}–${kr(Math.max(...prices))} kr`)
+    // Per-styck (flerköps-totalen / antal) så intervallet är jämförbart över butiker.
+    const perPrices = list.map((s) => (s.price != null ? s.price / (s.multibuy_qty || 1) : null)).filter((p) => p != null);
+    const priceTxt = perPrices.length
+      ? (Math.min(...perPrices) === Math.max(...perPrices) ? `${kr(Math.min(...perPrices))} kr` : `${kr(Math.min(...perPrices))}–${kr(Math.max(...perPrices))} kr`)
       : "";
+    // Flerköps-notis: en distinkt pristext -> visa den ("3 för 18 kr"), flera olika -> generiskt "flerköp".
+    const multiTexts = [...new Set(list.filter((s) => (s.multibuy_qty || 1) > 1 && s.price_text).map((s) => s.price_text))];
+    const dealNote = multiTexts.length === 1 ? ` (${multiTexts[0]})` : (multiTexts.length ? " (flerköp)" : "");
     const chLbl = chain ? ` (${(state.chains[chain] || {}).label || chain})` : "";
     txt.textContent = stores.size
-      ? `Erbjudande på ${state.productFilter.name}${chLbl}: ${priceTxt ? priceTxt + " · " : ""}${stores.size} butik${stores.size === 1 ? "" : "er"}`
+      ? `Erbjudande på ${state.productFilter.name}${chLbl}: ${priceTxt ? priceTxt + dealNote + " · " : ""}${stores.size} butik${stores.size === 1 ? "" : "er"}`
       : `Ingen butik har just nu ${state.productFilter.name}${chLbl} på erbjudande`;
     document.getElementById("productsPanel").classList.add("d-none");
     closeNav();
