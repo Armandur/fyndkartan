@@ -22,11 +22,13 @@
       const d = await (await api("/v1/admin/overview")).json();
       const storeTot = d.chains.reduce((a, c) => a + (c.store_count || 0), 0);
       const sw = d.offers_sweep || {};  // bara nästa-körning-kortet kvar i översikten; resten i Erbjudanden-fliken
+      const pu = d.partial_upgrade || {};
       // Alla schemalagda jobb -> ett kort, soonest överst (next_run = "YYYY-MM-DD HH:MM", strängsortbart).
       const jobs = [
         { name: "Butikssynk", next: (d.scheduler || {}).next_run, cron: (d.scheduler || {}).cron },
         { name: "Erbjudande-sweep", next: sw.next_run, cron: sw.cron },
         { name: "Sortiment-crawl", next: (d.catalog_crawl || {}).next_run, cron: (d.catalog_crawl || {}).cron },
+        { name: "Partial-uppgradering", next: pu.next_run, cron: pu.cron },
       ].filter(j => j.next).sort((a, b) => a.next.localeCompare(b.next));
       const catTot = Object.values(d.catalog || {}).reduce((a, s) => a + (s.total || 0), 0);
       const catAvail = Object.values(d.catalog || {}).reduce((a, s) => a + (s.available || 0), 0);
@@ -48,6 +50,7 @@
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Sortimentprodukter (crawlade)</div><div class="stat">${fmtNum(catTot)}</div><div class="small text-muted">${fmtNum(catAvail)} tillgängliga</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Distinkta EAN</div><div class="stat">${fmtNum(d.ean_stats.distinct)}</div><div class="small text-muted">${fmtNum(d.ean_stats.with_info)} med produktinfo · ${fmtNum(d.ean_stats.axfood_cache)} Axfood-resolvade</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${fmtNum(d.price_history.rows)}</div><div class="small text-muted">${fmtNum(d.price_history.products)} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Partial-rader (piggyback)</div><div class="stat">${fmtNum((pu.counts || {}).partial || 0)}</div><div class="small text-muted">${fmtNum((pu.counts || {}).sparse || 0)} glesa &rarr; uppgraderas${pu.running ? ` · <span class="st-running">uppgraderar… ${fmtNum(pu.done || 0)}/${fmtNum(pu.total || 0)}</span>` : (pu.finished_at ? ` · senast ${fmtNum(pu.upgraded || 0)} st ${esc(fmtTs(pu.finished_at))}` : "")}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda körning</div>
             ${jobs.length
@@ -1260,6 +1263,7 @@
       { key: "sync_cron", name: "Butikssynk" },
       { key: "offers_sweep_cron", name: "Erbjudande-sweep" },
       { key: "catalog_crawl_cron", name: "Sortiment-crawl" },
+      { key: "partial_upgrade_cron", name: "Partial-uppgradering" },
     ];
     let settingsPreviewTimer = null;
 

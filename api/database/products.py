@@ -169,6 +169,17 @@ def sparse_partial_eans(limit=None):
     return [r["ean"] for r in rows]
 
 
+def partial_info_counts():
+    """{partial: antal partial-rader, sparse: antal med gles näring (<4, uppgraderingskandidater)}."""
+    conn = get_conn()
+    total = conn.execute("SELECT COUNT(*) FROM product_info WHERE json_extract(data,'$.partial')=1").fetchone()[0]
+    sparse = conn.execute(
+        "SELECT COUNT(*) FROM product_info WHERE json_extract(data,'$.partial')=1 "
+        "AND COALESCE(json_array_length(json_extract(data,'$.nutrition')),0) < 4").fetchone()[0]
+    conn.close()
+    return {"partial": total, "sparse": sparse}
+
+
 def product_info_fresh_set(eans):
     """Mängd EAN som har en EJ utgången product_info-rad (full/partial/negativ). För piggyback-
     skrivningarnas skip-if-fresh - utgångna återfylls av nästa crawl/warm."""

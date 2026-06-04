@@ -527,6 +527,12 @@ async def admin_overview(_=Depends(require_admin)):
         "scheduler": {"cron": settings.get("sync_cron"), "tz": settings.get("sync_tz"), "next_run": next_run},
         "catalog_crawl": {"cron": settings.get("catalog_crawl_cron"),
                           "next_run": _next_cron(settings.get("catalog_crawl_cron"))},
+        "partial_upgrade": {
+            **PARTIAL_UPGRADE_STATE,
+            "cron": settings.get("partial_upgrade_cron"),
+            "next_run": _next_cron(settings.get("partial_upgrade_cron")),
+            "counts": database.partial_info_counts(),  # {partial, sparse}
+        },
         "offers_sweep": {
             **SWEEP_STATE,
             "cron": settings.get("offers_sweep_cron"),
