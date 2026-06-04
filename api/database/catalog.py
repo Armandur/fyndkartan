@@ -43,6 +43,12 @@ def _browse_groups():
     return _BROWSE_IDX["groups"]
 
 
+def warm_catalog_cache():
+    """Förvärm browse-/summary-cachen (anropas i lifespan) så första bläddringen slipper
+    kallstarten (~700ms). Idempotent och snabb när redan varm."""
+    _browse_groups()
+
+
 def _diff(a, b):
     """True om två pris/jämförvärden skiljer sig (tolerant; None hanteras)."""
     if (a is None) != (b is None):

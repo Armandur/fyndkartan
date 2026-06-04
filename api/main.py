@@ -83,6 +83,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(warm_axfood_eans())
         asyncio.create_task(warm_coop_categories())
         asyncio.create_task(warm_ica_categories())
+        # Katalog-grupperingscachen (~700ms blockerande läsning) -> tråd, blockar inte loopen.
+        asyncio.create_task(asyncio.to_thread(database.warm_catalog_cache))
     scheduler = asyncio.create_task(
         run_scheduler(config.SYNC_CRON, config.SYNC_TZ, sync_and_warm, "butikssynk"))
     # Erbjudande-sweepen har egen (tätare) cadence. Ingen kall sweep vid uppstart -
