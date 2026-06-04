@@ -1181,7 +1181,96 @@
       loadCatalog();
     }
 
-    const LOADERS = { overview: loadOverview, kedjor: loadKedjor, sweep: loadSweep, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys };
+    // ---- Inställningar (schemaläggning: cron + tidszon, DB-override > env > default) ----
+    const CRON_PRESETS = [
+      { label: "Av (ingen schemaläggning)", value: "off" },
+      { label: "Varje timme", value: "0 * * * *" },
+      { label: "Var 6:e timme", value: "0 */6 * * *" },
+      { label: "Var 12:e timme", value: "0 */12 * * *" },
+      { label: "Dagligen 03:00", value: "0 3 * * *" },
+      { label: "Dagligen 04:00", value: "0 4 * * *" },
+      { label: "Veckovis (mån 03:00)", value: "0 3 * * 1" },
+    ];
+    const TZ_PRESETS = ["Europe/Stockholm", "Europe/Helsinki", "Europe/London", "UTC", "America/New_York"];
+    const CRON_FIELDS = [
+      { key: "sync_cron", name: "Butikssynk" },
+      { key: "offers_sweep_cron", name: "Erbjudande-sweep" },
+      { key: "catalog_crawl_cron", name: "Sortiment-crawl" },
+    ];
+    let settingsPreviewTimer = null;
+
+    function presetOptions(presets, value) {
+      const matched = presets.some(p => (p.value ?? p) === value);
+      return presets.map(p => { const v = p.value ?? p, l = p.label ?? p;
+        return `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`; }).join("")
+        + `<option value="__custom"${matched ? "" : " selected"}>Anpassad…</option>`;
+    }
+    function overrideBadge(item) {
+      return item.overridden
+        ? `<span class="badge bg-warning text-dark ms-2">override</span>`
+        : `<span class="badge bg-light text-muted ms-2">env-default</span>`;
+    }
+    function settingRow(key, name, item, presets, isCron) {
+      return `<div class="set-row mb-3" data-key="${esc(key)}" data-cron="${isCron ? 1 : 0}">
+        <div class="d-flex align-items-center mb-1"><strong>${esc(name)}</strong>${overrideBadge(item)}
+          <span class="set-preview small text-muted ms-auto"></span></div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <select class="form-select form-select-sm set-preset" style="width:auto">${presetOptions(presets, item.value)}</select>
+          <input class="form-control form-control-sm set-val mono" style="max-width:220px" value="${esc(item.value || "")}" placeholder="${isCron ? "min tim dag mån vecka" : "Region/Stad"}">
+          <button class="btn btn-sm btn-dark set-save">Spara</button>
+          <button class="btn btn-sm btn-outline-secondary set-reset"${item.overridden ? "" : " disabled"}>Återställ env</button>
+        </div></div>`;
+    }
+
+    async function loadSettings() {
+      const d = await (await api("/v1/admin/settings")).json();
+      const s = d.settings || {};
+      document.getElementById("settings").innerHTML = `
+        <h5 class="mb-3">Inställningar</h5>
+        <div class="text-muted small mb-3">Schemaläggning. Effektivt värde = DB-override &gt; env &gt; kod-default. Ändringar slår igenom <strong>utan omstart</strong> (inom ~30 s). Tomt/"Av" pausar schemat; "Återställ env" tar bort overriden. Cron: <span class="mono">min tim dag månad veckodag</span>.</div>
+        <div class="card p-3 mb-3"><h6 class="mb-3">Tidszon</h6>${settingRow("sync_tz", "Tidszon (alla scheman)", s.sync_tz || {}, TZ_PRESETS, false)}</div>
+        <div class="card p-3"><h6 class="mb-3">Scheman</h6>${CRON_FIELDS.map(f => settingRow(f.key, f.name, s[f.key] || {}, CRON_PRESETS, true)).join("")}</div>`;
+      document.querySelectorAll("#settings .set-row").forEach(wireSettingRow);
+    }
+
+    function wireSettingRow(row) {
+      const key = row.dataset.key, isCron = row.dataset.cron === "1";
+      const sel = row.querySelector(".set-preset"), val = row.querySelector(".set-val");
+      const prev = row.querySelector(".set-preview");
+      const syncPresetToVal = () => {
+        const opts = [...sel.options].map(o => o.value);
+        sel.value = opts.includes(val.value) ? val.value : "__custom";
+      };
+      const preview = () => {
+        if (!isCron) { prev.textContent = ""; return; }
+        clearTimeout(settingsPreviewTimer);
+        settingsPreviewTimer = setTimeout(async () => {
+          try {
+            const r = await (await api(`/v1/admin/settings/cron-preview?cron=${encodeURIComponent(val.value)}`)).json();
+            prev.className = "set-preview small ms-auto " + (r.valid ? "text-muted" : "text-danger");
+            prev.textContent = !r.valid ? "Ogiltigt cron-uttryck" : r.disabled ? "Pausad (ingen körning)" : `Nästa: ${r.next_run || "-"}`;
+          } catch (e) { prev.textContent = ""; }
+        }, 250);
+      };
+      sel.addEventListener("change", () => { if (sel.value !== "__custom") { val.value = sel.value; preview(); } else val.focus(); });
+      val.addEventListener("input", () => { syncPresetToVal(); preview(); });
+      row.querySelector(".set-save").addEventListener("click", async () => {
+        const r = await api("/v1/admin/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value: val.value.trim() }) });
+        if (r.ok) { loadSettings(); return; }
+        const j = await r.json().catch(() => ({}));
+        prev.className = "set-preview small text-danger ms-auto";
+        prev.textContent = j.detail || "Kunde inte spara.";
+      });
+      row.querySelector(".set-reset").addEventListener("click", async () => {
+        await api("/v1/admin/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, reset: true }) });
+        loadSettings();
+      });
+      preview();
+    }
+
+    const LOADERS = { overview: loadOverview, kedjor: loadKedjor, sweep: loadSweep, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys, settings: loadSettings };
 
     function show(tab) {
       active = tab;
