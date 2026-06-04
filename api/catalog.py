@@ -351,6 +351,10 @@ def _enrich_with_offers(products):
                     "offer_member": o["member_price"]})
         op = [o["price"] for o in offs.values() if o.get("price") is not None]
         p["offer_min"] = min(op) if op else None
+        # Sortera kedjornas prisrader på effektivt pris (erbjudandepris om det finns, annars
+        # hyllpris) -> billigaste kedjan inkl. rea hamnar överst i kortet.
+        p["prices"].sort(key=lambda pr: pr["offer_price"] if pr.get("offer_price") is not None
+                         else (pr["price"] if pr.get("price") is not None else 9e9))
 
 
 def _normalize_products(products):
