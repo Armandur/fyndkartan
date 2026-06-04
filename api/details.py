@@ -83,6 +83,7 @@ def extract_allergens(ingredients):
 # Näringsdeklaration: kanonisk etikett-form + standardordning + enhetsförkortningar.
 _NUT_ORDER = [
     "Energi", "Fett", "Varav mättat fett", "Varav enkelomättat fett", "Varav fleromättat fett",
+    "Omega-3", "Övriga omega-3",
     "Kolhydrat", "Varav sockerarter", "Varav polyoler", "Fiber", "Protein", "Salt",
     "Vitamin A", "Vitamin D", "Vitamin E", "Vitamin C", "Tiamin", "Riboflavin", "Niacin",
     "Vitamin B6", "Folsyra", "Vitamin B12", "Biotin", "Kalcium", "Kalium", "Natrium",
@@ -95,6 +96,8 @@ _NUT_CANON = {  # lowercased variant -> kanonisk (de flesta är redan kanoniska)
     "varav socker": "Varav sockerarter", "varav sockerarter": "Varav sockerarter",
     "mättat fett": "Varav mättat fett",
     "fibrer": "Fiber", "kostfiber": "Fiber",
+    # GS1/Axfood-koder som ibland läcker igenom rått (omega-3-fettsyror, t.ex. på fet fisk)
+    "fan3": "Omega-3", "x_omega_3_other": "Övriga omega-3",
 }
 _NUT_UNIT = {"kilojoule": "kJ", "kilokalori": "kcal", "gram": "g", "milligram": "mg", "mikrogram": "µg"}
 
