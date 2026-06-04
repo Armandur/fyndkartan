@@ -202,20 +202,20 @@ def catalog_upsert(chain, rows):
                 r.get("image"), json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
                 r.get("price"), r.get("comparison_value"), r.get("comparison_unit"),
                 r.get("package_size"), r.get("package_value"), r.get("package_unit"),
-                r.get("category_raw"), now, now, now,
+                r.get("category_raw"), r.get("store"), now, now, now,
             ))
         conn.executemany(
             "INSERT INTO catalog_products "
             "(chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
-            "comparison_unit, package_size, package_value, package_unit, category_raw, "
+            "comparison_unit, package_size, package_value, package_unit, category_raw, store, "
             "first_seen, last_seen, fetched_at, available) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) "
             "ON CONFLICT(chain, product_id) DO UPDATE SET "
             "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
             "origin=excluded.origin, price=excluded.price, comparison_value=excluded.comparison_value, "
             "comparison_unit=excluded.comparison_unit, package_size=excluded.package_size, "
             "package_value=excluded.package_value, package_unit=excluded.package_unit, "
-            "category_raw=excluded.category_raw, last_seen=excluded.last_seen, "
+            "category_raw=excluded.category_raw, store=excluded.store, last_seen=excluded.last_seen, "
             "fetched_at=excluded.fetched_at, available=1",
             params,
         )

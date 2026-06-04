@@ -229,6 +229,16 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
           första träffen (LIMIT 1). Bildcachen rensad så det slår igenom.
   - [ ] **Fulla sortiment** (ej bara offers) - eget hämtnings-/lagringsprojekt. **Detaljerad,
     resumerbar implementationsplan: se "Steg 5 - Fulla sortiment" sist i detta dokument.**
+  - [ ] **Butiksmedveten Coop/ICA-prissättning (hyllpris är butiksspecifikt).** Empiriskt bekräftat:
+    Coop (`store`-ledger) och ICA (`accountNumber`) returnerar olika pris OCH sortiment per butik
+    (se Kända datakälle-fakta). Vi crawlar idag en FAST butik per kedja (Coop 251300, ICA 1003647) -
+    katalogradens hyllpris är den butikens, inte nationellt. Halvbyggt: `catalog_products.store`
+    taggar raden med ledger:t (NULL = nationellt, Axfood/CG); Coop/ICA backfillade. **Kvar:**
+    (1) exponera `store` i katalog-API:t + en "(butik X)/≈"-markör i UI:t så Coop/ICA-hyllpris inte
+    läses som nationellt; (2) ev. crawla flera representativa butiker per kedja (per region) för en
+    rättvisare cross-chain-jämförelse; (3) store-medveten produktinfo/bild för Coop (perso-fetch
+    scopas till 251300 -> produkter som bara finns i andra butiker saknas info/bild). Stort jobb -
+    gör (1) först (billig honesty-markör), (2)/(3) vid behov.
   - [x] **Unified produktsök (API) BYGGT (`api/catalog.py` + `GET /v1/products/catalog?q=`).**
     Live fan-out mot kedjornas NATIVA sök-API:er -> **hela sortimentet, nationellt/representativt
     hyllpris** (ej butikslokalt, ej offers - en upptäckts-funktion skild från `/v1/products/search`).

@@ -302,6 +302,16 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   `mainCategoryName`, `countryOfOriginName`. INGET jämförpris i söket. Via API-gatewayen, INTE
   den WAF-blockade ehandeln - så ICA:s katalog ÄR sökbar server-side (till skillnad från
   produktdetaljen som är WAF-skyddad).
+- **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
+  scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
+  sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
+  Hallsberg 176110); ICA Vetenudlar 11,80 (profil 1003647) vs 14,14 (1003458). **Vi crawlar en FAST
+  butik per kedja:** Coop `COOP_DETAIL_STORE` (251300, verkar vara den mest kompletta), ICA
+  `ica_resolve_accounts()[0]` (1003647). Katalogradens hyllpris är alltså den butikens, inte
+  nationellt - taggat i `catalog_products.store` (NULL = nationellt: Axfood/CG). Påverkar även
+  **produktinfo + bilder** för Coop (perso-fetch scopas till 251300, så produkter som bara finns i
+  andra butiker saknas; ICA-detaljen provar dock flera profiler via `ica_resolve_accounts`). Andra
+  butikers ledgers (t.ex. 196183/176310) kan ge tomt i perso-söket (ej e-handelsindexerade).
 - **Willys/Hemköp produktsök (fullkatalog):** `GET {willys|hemkop}.se/search?q=&page=&size=`
   (ingen auth) -> `results[]` + `pagination.totalNumberOfResults`. Item: `code` (Axfood-
   artikelkod - EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,

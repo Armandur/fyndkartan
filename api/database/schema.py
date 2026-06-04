@@ -3,7 +3,7 @@ import json
 from ._conn import _ensure_column, get_conn
 from ..categories import raw_key
 from ..config import (
-    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS,
+    BUILTIN_TAG_TYPES, COOP_DETAIL_STORE, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS,
     DEFAULT_PROVIDERS, DEFAULT_TAG_TYPES,
 )
 
@@ -292,5 +292,11 @@ def init_db():
     _ensure_column(conn, "offer_observations", "savings", "REAL")  # för att spåra ordinarie pris
     _ensure_column(conn, "offer_observations", "member_price", "INTEGER")
     _ensure_column(conn, "stores", "hours", "TEXT")  # JSON {week, exceptions} - normaliserad veckoöppettid
+    # store: Coop-priser/sortiment är BUTIKSSPECIFIKA (perso-API:t scopar på ledger) - vi crawlar en
+    # fast COOP_DETAIL_STORE. Tagga raden med ledger:t så priset inte misstas för nationellt; NULL =
+    # nationellt/ej butiksscopat (Axfood/CG). ICA är också flaggskepps-scopat (se Kända datakälle-fakta).
+    _ensure_column(conn, "catalog_products", "store", "TEXT")
+    conn.execute("UPDATE catalog_products SET store=? WHERE chain='coop' AND store IS NULL",
+                 (COOP_DETAIL_STORE,))  # backfill (crawlat med fast butik innan kolumnen fanns)
     conn.commit()
     conn.close()

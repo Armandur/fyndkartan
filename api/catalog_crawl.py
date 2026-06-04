@@ -193,10 +193,11 @@ async def _crawl_citygross(client, limit_categories):
 _ICA_URL = "https://apimgw-pub.ica.se/sverige/digx/globalsearch/v1/search/quicksearch"
 
 
-def _ica_row(doc):
+def _ica_row(doc, acct):
     # Återanvänd katalog-sökets normalisering; lägg product_id (gtin) + category_raw (mainCategoryName).
+    # ICA-pris är butiksspecifikt (per accountNumber) -> tagga med butiksprofilen vi crawlade med.
     return {**catalog._norm_ica(doc), "product_id": str(doc.get("gtin") or ""),
-            "category_raw": doc.get("mainCategoryName")}
+            "category_raw": doc.get("mainCategoryName"), "store": acct}
 
 
 async def _crawl_ica(client, limit_pages):
@@ -239,7 +240,7 @@ async def _crawl_ica(client, limit_pages):
             pid = str(d.get("gtin") or "")
             if pid and pid not in seen:
                 seen.add(pid)
-                rows.append(_ica_row(d))
+                rows.append(_ica_row(d, acct))
         if rows:
             new, known, changed = database.catalog_upsert("ica", rows)
             st["new"] += new; st["known"] += known; st["changed"] += changed
@@ -319,7 +320,8 @@ async def _coop_harvest_roots(client):
 def _coop_row(it):
     base = catalog._norm_coop(it)
     raw = details._parse_coop_item(it).get("category_raw")
-    return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw}
+    # Coop-pris/sortiment är butiksspecifikt (perso-API:t scopar på ledger) -> tagga med butiken.
+    return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw, "store": config.COOP_DETAIL_STORE}
 
 
 def _piggyback_coop_info(items):
