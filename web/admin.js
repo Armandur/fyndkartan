@@ -1141,8 +1141,15 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
             <h6 class="mb-0">Prisändringar (hyllpris)</h6>
             <span id="pcCount" class="small text-muted"></span>
-            <select id="pcChain" class="form-select form-select-sm ms-auto" style="width:auto"><option value="">Alla kedjor</option>${CATALOG_IMPLEMENTED.map(c => `<option value="${c}">${esc(CHAIN_LABELS[c] || c)}</option>`).join("")}</select>
-            <input id="pcSearch" class="form-control form-control-sm" style="width:200px" placeholder="Sök produkt…">
+            <select id="pcSort" class="form-select form-select-sm ms-auto" style="width:auto">
+              <option value="recent">Senaste</option>
+              <option value="abs_desc">Största ändring</option>
+              <option value="abs_asc">Minsta ändring</option>
+              <option value="inc">Största höjning</option>
+              <option value="dec">Största sänkning</option>
+            </select>
+            <select id="pcChain" class="form-select form-select-sm" style="width:auto"><option value="">Alla kedjor</option>${CATALOG_IMPLEMENTED.map(c => `<option value="${c}">${esc(CHAIN_LABELS[c] || c)}</option>`).join("")}</select>
+            <input id="pcSearch" class="form-control form-control-sm" style="width:180px" placeholder="Sök produkt…">
           </div>
           <div class="text-muted small mb-2">Beständig logg av hyllpris-ändringar per kedja (rensas aldrig). Pil + färg visar upp/ner. Senaste överst.</div>
           <div id="priceChanges" style="max-height:420px;overflow-y:auto"><div class="text-muted small">Laddar…</div></div>
@@ -1161,6 +1168,7 @@
         if (b && !b.disabled) triggerCrawl(b.dataset.limit ? Number(b.dataset.limit) : null, b.dataset.chain);
       });
       document.getElementById("pcChain").addEventListener("change", loadPriceChanges);
+      document.getElementById("pcSort").addEventListener("change", loadPriceChanges);
       document.getElementById("pcSearch").addEventListener("input", () => { clearTimeout(pcTimer); pcTimer = setTimeout(loadPriceChanges, 300); });
       loadPriceChanges();  // initial fyllning (beständig data, oberoende av crawl-status)
     }
@@ -1168,10 +1176,12 @@
 
     async function loadPriceChanges() {
       const chainEl = document.getElementById("pcChain"), qEl = document.getElementById("pcSearch");
+      const sortEl = document.getElementById("pcSort");
       if (!chainEl) return;
       const p = new URLSearchParams();
       if (chainEl.value) p.set("chain", chainEl.value);
       if (qEl.value.trim()) p.set("q", qEl.value.trim());
+      if (sortEl && sortEl.value !== "recent") p.set("sort", sortEl.value);
       const d = await (await api(`/v1/admin/catalog/price-changes?${p.toString()}`)).json();
       renderPriceChanges(d.changes || []);
     }
@@ -1208,9 +1218,10 @@
       document.getElementById("crawlTest").disabled = d.running;
       renderEanWarm(d.ean_warm || {}, d.running);
       renderPartialUpgrade(pu, d.running || warm.running);
-      // Live-uppdatera prisändrings-loggen under crawl - men inte medan man söker eller skrollat ner.
+      // Live-uppdatera prisändrings-loggen under crawl - bara i "Senaste"-läge, ej medan man söker/skrollat.
       const pcEl = document.getElementById("priceChanges");
-      if (d.running && document.activeElement?.id !== "pcSearch" && (!pcEl || pcEl.scrollTop < 10)) loadPriceChanges();
+      const pcSortVal = document.getElementById("pcSort")?.value || "recent";
+      if (d.running && pcSortVal === "recent" && document.activeElement?.id !== "pcSearch" && (!pcEl || pcEl.scrollTop < 10)) loadPriceChanges();
       document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
         const s = (d.chains || {})[c] || {};
         const st = stats[c] || {};

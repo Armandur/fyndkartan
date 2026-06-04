@@ -1386,6 +1386,7 @@ async def catalog_crawl_status(_=Depends(require_admin)):
 
 @app.get("/v1/admin/catalog/price-changes")
 async def catalog_price_changes(chain: str | None = None, q: str | None = None,
-                                limit: int = 500, _=Depends(require_admin)):
-    """Hyllpris-ändringar ur katalogen (beständiga, append-only). Filtrerbart på kedja + namn."""
-    return {"changes": database.catalog_price_changes(chain=chain, q=q, limit=min(limit, 2000))}
+                                sort: str = "recent", limit: int = 500, _=Depends(require_admin)):
+    """Hyllpris-ändringar ur katalogen (beständiga, append-only). Filtrerbart på kedja + namn,
+    sorterbart (recent/abs_desc/abs_asc/inc/dec)."""
+    return {"changes": database.catalog_price_changes(chain=chain, q=q, sort=sort, limit=min(limit, 2000))}

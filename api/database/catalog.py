@@ -67,11 +67,20 @@ def catalog_names_for_codes(chain, codes):
     return {r["product_id"]: r["name"] for r in rows}
 
 
-def catalog_price_changes(chain=None, q=None, limit=500):
+_PC_SORT = {
+    "recent": "id DESC",
+    "abs_desc": "ABS(price - prev_price) DESC",   # största ändring (oavsett riktning)
+    "abs_asc": "ABS(price - prev_price) ASC",      # minsta ändring
+    "inc": "(price - prev_price) DESC",            # största höjning
+    "dec": "(price - prev_price) ASC",             # största sänkning
+}
+
+
+def catalog_price_changes(chain=None, q=None, sort="recent", limit=500):
     """Hyllpris-ÄNDRINGAR (föregående -> nytt) ur catalog_price_observations, med produktnamn.
-    Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`).
-    Bara faktiska ändringar (tidigare observation finns, annat pris) - initialt pris räknas inte.
-    Korrelerad delfråga för föregående pris (indexerat på (chain, product_id))."""
+    Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`),
+    sorterbar (`sort`: recent/abs_desc/abs_asc/inc/dec). Bara faktiska ändringar (föregående
+    observation finns, annat pris). LAG-fönster för föregående pris (ett pass, sorterbart på diffen)."""
     where, params = [], []
     if chain:
         where.append("o.chain=?")
@@ -80,23 +89,21 @@ def catalog_price_changes(chain=None, q=None, limit=500):
         where.append("cp.name LIKE ?")
         params.append(f"%{q.strip()}%")
     cond = (" WHERE " + " AND ".join(where)) if where else ""
+    order = _PC_SORT.get(sort, _PC_SORT["recent"])
     conn = get_conn()
     rows = conn.execute(
         f"""SELECT chain, product_id, ean, name, prev_price, price, comparison_value, comparison_unit, observed_at
             FROM (
               SELECT o.id, o.chain, o.product_id, o.ean, o.price, o.comparison_value, o.comparison_unit,
                      o.observed_at, cp.name,
-                     (SELECT p.price FROM catalog_price_observations p
-                      WHERE p.chain=o.chain AND p.product_id=o.product_id AND p.id < o.id
-                      ORDER BY p.id DESC LIMIT 1) AS prev_price
+                     LAG(o.price) OVER (PARTITION BY o.chain, o.product_id ORDER BY o.id) AS prev_price
               FROM catalog_price_observations o
               LEFT JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
               {cond}
-              ORDER BY o.id DESC LIMIT ?
             )
             WHERE prev_price IS NOT NULL AND prev_price != price
-            ORDER BY id DESC LIMIT ?""",
-        (*params, int(limit) * 3, int(limit))).fetchall()
+            ORDER BY {order} LIMIT ?""",
+        (*params, int(limit))).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
