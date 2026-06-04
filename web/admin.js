@@ -1130,10 +1130,22 @@
         </div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
-          <div class="col-12 col-lg-5"><div class="card p-3">
-            <h6 class="mb-2">Senast inlästa produkter <span id="catalogLive"></span></h6>
-            <div id="catalogFeed"><div id="catalogFeedInner"><div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div></div></div>
-          </div></div>
+          <div class="col-12 col-lg-5">
+            <div class="card p-3">
+              <h6 class="mb-2">Senast inlästa produkter <span id="catalogLive"></span></h6>
+              <div id="catalogFeed"><div id="catalogFeedInner"><div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card p-3 mt-3">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <h6 class="mb-0">Prisändringar (hyllpris)</h6>
+            <span id="pcCount" class="small text-muted"></span>
+            <select id="pcChain" class="form-select form-select-sm ms-auto" style="width:auto"><option value="">Alla kedjor</option>${CATALOG_IMPLEMENTED.map(c => `<option value="${c}">${esc(CHAIN_LABELS[c] || c)}</option>`).join("")}</select>
+            <input id="pcSearch" class="form-control form-control-sm" style="width:200px" placeholder="Sök produkt…">
+          </div>
+          <div class="text-muted small mb-2">Beständig logg av hyllpris-ändringar per kedja (rensas aldrig). Pil + färg visar upp/ner. Senaste överst.</div>
+          <div id="priceChanges" style="max-height:420px;overflow-y:auto"><div class="text-muted small">Laddar…</div></div>
         </div>`;
       document.getElementById("crawlNow").addEventListener("click", () => triggerCrawl(null, null));
       document.getElementById("crawlTest").addEventListener("click", () => triggerCrawl(2, null));
@@ -1148,6 +1160,20 @@
         const b = e.target.closest(".catalog-chain-btn");
         if (b && !b.disabled) triggerCrawl(b.dataset.limit ? Number(b.dataset.limit) : null, b.dataset.chain);
       });
+      document.getElementById("pcChain").addEventListener("change", loadPriceChanges);
+      document.getElementById("pcSearch").addEventListener("input", () => { clearTimeout(pcTimer); pcTimer = setTimeout(loadPriceChanges, 300); });
+      loadPriceChanges();  // initial fyllning (beständig data, oberoende av crawl-status)
+    }
+    let pcTimer = null;
+
+    async function loadPriceChanges() {
+      const chainEl = document.getElementById("pcChain"), qEl = document.getElementById("pcSearch");
+      if (!chainEl) return;
+      const p = new URLSearchParams();
+      if (chainEl.value) p.set("chain", chainEl.value);
+      if (qEl.value.trim()) p.set("q", qEl.value.trim());
+      const d = await (await api(`/v1/admin/catalog/price-changes?${p.toString()}`)).json();
+      renderPriceChanges(d.changes || []);
     }
 
     async function loadCatalog() {
@@ -1182,6 +1208,9 @@
       document.getElementById("crawlTest").disabled = d.running;
       renderEanWarm(d.ean_warm || {}, d.running);
       renderPartialUpgrade(pu, d.running || warm.running);
+      // Live-uppdatera prisändrings-loggen under crawl - men inte medan man söker eller skrollat ner.
+      const pcEl = document.getElementById("priceChanges");
+      if (d.running && document.activeElement?.id !== "pcSearch" && (!pcEl || pcEl.scrollTop < 10)) loadPriceChanges();
       document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
         const s = (d.chains || {})[c] || {};
         const st = stats[c] || {};
@@ -1275,6 +1304,25 @@
       } else if (pu.finished_at) {
         prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(pu.finished_at))}: ${(pu.upgraded || 0).toLocaleString("sv-SE")} uppgraderade av ${(pu.total || 0).toLocaleString("sv-SE")}${pu.failed ? `, ${pu.failed} fel` : ""}</div>`;
       } else { prog.innerHTML = ""; }
+    }
+
+    function renderPriceChanges(changes) {
+      const el = document.getElementById("priceChanges"), cnt = document.getElementById("pcCount");
+      if (!el) return;
+      if (cnt) cnt.textContent = changes.length ? `${fmtNum(changes.length)} st` : "";
+      if (!changes.length) { el.innerHTML = '<div class="text-muted small">Inga prisändringar matchar. Kör en crawl - ändringar mot förra crawlen dyker upp här.</div>'; return; }
+      el.innerHTML = changes.map(c => {
+        const down = c.price < c.prev_price;
+        const cls = down ? "text-success" : "text-danger";
+        const arrow = down ? "&darr;" : "&uarr;";
+        const diff = Math.round((c.price - c.prev_price) * 100) / 100;
+        const pct = c.prev_price ? Math.round(Math.abs(diff) / c.prev_price * 100) : 0;
+        return `<div class="d-flex align-items-center gap-2 small py-1" style="border-bottom:1px solid #eef1f4">
+          ${chip(c.chain)}
+          <span class="text-truncate" title="${esc(c.name || c.ean)}">${esc(c.name || c.ean)}</span>
+          <span class="ms-auto text-nowrap"><s class="text-muted">${fmtNum(c.prev_price)}</s> <span class="${cls} fw-semibold">${arrow} ${fmtNum(c.price)} kr</span> <span class="${cls}">(${diff > 0 ? "+" : "−"}${fmtNum(Math.abs(diff))}${pct ? `, ${pct}%` : ""})</span></span>
+        </div>`;
+      }).join("");
     }
 
     async function triggerPartialUpgrade(cap) {

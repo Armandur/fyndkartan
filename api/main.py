@@ -1382,3 +1382,10 @@ async def catalog_crawl_status(_=Depends(require_admin)):
                                 "cron": settings.get("partial_upgrade_cron"),
                                 "next_run": _next_cron(settings.get("partial_upgrade_cron")),
                                 "counts": database.partial_info_counts()}}
+
+
+@app.get("/v1/admin/catalog/price-changes")
+async def catalog_price_changes(chain: str | None = None, q: str | None = None,
+                                limit: int = 500, _=Depends(require_admin)):
+    """Hyllpris-ändringar ur katalogen (beständiga, append-only). Filtrerbart på kedja + namn."""
+    return {"changes": database.catalog_price_changes(chain=chain, q=q, limit=min(limit, 2000))}

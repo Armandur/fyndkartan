@@ -67,6 +67,40 @@ def catalog_names_for_codes(chain, codes):
     return {r["product_id"]: r["name"] for r in rows}
 
 
+def catalog_price_changes(chain=None, q=None, limit=500):
+    """Hyllpris-ÄNDRINGAR (föregående -> nytt) ur catalog_price_observations, med produktnamn.
+    Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`).
+    Bara faktiska ändringar (tidigare observation finns, annat pris) - initialt pris räknas inte.
+    Korrelerad delfråga för föregående pris (indexerat på (chain, product_id))."""
+    where, params = [], []
+    if chain:
+        where.append("o.chain=?")
+        params.append(chain)
+    if q and len(q.strip()) >= 2:
+        where.append("cp.name LIKE ?")
+        params.append(f"%{q.strip()}%")
+    cond = (" WHERE " + " AND ".join(where)) if where else ""
+    conn = get_conn()
+    rows = conn.execute(
+        f"""SELECT chain, product_id, ean, name, prev_price, price, comparison_value, comparison_unit, observed_at
+            FROM (
+              SELECT o.id, o.chain, o.product_id, o.ean, o.price, o.comparison_value, o.comparison_unit,
+                     o.observed_at, cp.name,
+                     (SELECT p.price FROM catalog_price_observations p
+                      WHERE p.chain=o.chain AND p.product_id=o.product_id AND p.id < o.id
+                      ORDER BY p.id DESC LIMIT 1) AS prev_price
+              FROM catalog_price_observations o
+              LEFT JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
+              {cond}
+              ORDER BY o.id DESC LIMIT ?
+            )
+            WHERE prev_price IS NOT NULL AND prev_price != price
+            ORDER BY id DESC LIMIT ?""",
+        (*params, int(limit) * 3, int(limit))).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def catalog_names_for_eans(eans):
     """{ean: name} ur katalogen (för partial-uppgraderingens feed-visning). Första namn per EAN."""
     eans = [str(e) for e in eans if e]
