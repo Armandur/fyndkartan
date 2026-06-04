@@ -864,7 +864,7 @@ function catalogCard(p) {
     <div class="o-body">
       <div class="o-name">${esc(p.name || "")}</div>
       <div class="o-meta">${meta}</div>
-      <div class="o-price-row"><span class="o-price">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span>${offerBadge}</div>
+      <div class="o-price-row"><span class="o-price o-price--shelf">${esc(range)}</span> <span class="o-shelf-tag">hyllpris</span>${offerBadge}</div>
       <div class="o-shelf">${prices}</div>
       <div class="o-foot">${catChip}</div>
       ${actions}
