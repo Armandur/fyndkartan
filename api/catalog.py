@@ -316,6 +316,7 @@ async def catalog_search(client, q, per_chain=20, limit=60):
         groups.setdefault(gkey, []).append(it)
     products = [_build_product(g) for g in groups.values()]
     _enrich_with_offers(products)
+    _normalize_products(products)  # delad visnings-normalisering (enhet/förpackning/land)
     # Flest kedjor först, sedan billigast, sedan namn.
     products.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                                  (p["name"] or "").lower()))
@@ -350,6 +351,16 @@ def _enrich_with_offers(products):
                     "offer_member": o["member_price"]})
         op = [o["price"] for o in offs.values() if o.get("price") is not None]
         p["offer_min"] = min(op) if op else None
+
+
+def _normalize_products(products):
+    """Visnings-normalisera (samma hjälpare som offers/bläddra): förpackning -> normalized_package,
+    jämförenhet -> _norm_unit (inkl. offer-överlagrade rader), land -> norm_origin (title-case)."""
+    for p in products:
+        p["package_size"] = db.normalized_package(p["package_size"])
+        for pr in p["prices"]:
+            pr["comparison_unit"] = matching._norm_unit(pr["comparison_unit"])
+        p["origin"] = db.norm_origin(p["origin"])
 
 
 def _build_product(group):

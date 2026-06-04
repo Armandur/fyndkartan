@@ -3,7 +3,10 @@ Crawlen (api/catalog_crawl.py) upsertar hit; `catalog_browse` läser EAN-grupper
 import json
 
 from ._conn import _now, get_conn
+from .ean import get_axfood_origins
+from .offers import norm_origin, normalized_package
 from ..categories import category_for, category_from_detail
+from ..matching import _norm_unit
 
 _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
@@ -154,8 +157,9 @@ def catalog_browse(q=None, category=None, chain=None, limit=60):
     if q is not None and len(ql) < 2:
         return []
     conn = get_conn()
-    sql = ("SELECT chain, ean, name, brand, image, origin, price, comparison_value, comparison_unit, "
-           "package_size, package_value, package_unit, category_raw FROM catalog_products WHERE available=1")
+    sql = ("SELECT chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
+           "comparison_unit, package_size, package_value, package_unit, category_raw "
+           "FROM catalog_products WHERE available=1")
     params = []
     if chain:
         sql += " AND chain=?"
@@ -179,20 +183,48 @@ def catalog_browse(q=None, category=None, chain=None, limit=60):
                    "comparison_unit": m["comparison_unit"], "comparison_derived": False}
                   for m in g if m["price"] is not None]
         pv = [p["price"] for p in prices]
-        origin = None
-        if rep.get("origin"):
-            try:
-                origin = json.loads(rep["origin"])
-            except (json.JSONDecodeError, TypeError):
-                origin = None
         out.append({
             "ean": rep["ean"], "name": rep["name"], "brand": _cat_pick(g, "brand"),
-            "origin": origin, "image": _cat_pick(g, "image"), "category": cat,
+            "origin": _parse_origin(_cat_pick(g, "origin")),  # cross-chain: första medlem med origin
+            "image": _cat_pick(g, "image"), "category": cat,
             "package_size": _cat_pick(g, "package_size"), "package_value": rep["package_value"],
             "package_unit": rep["package_unit"], "chains": sorted({m["chain"] for m in g}),
             "prices": sorted(prices, key=lambda p: p["price"]),
             "price_min": min(pv) if pv else None, "price_max": max(pv) if pv else None,
+            "_ax": [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")],
         })
     out.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                             (p["name"] or "").lower()))
-    return out[:limit]
+    page = out[:limit]
+    _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
+    return page
+
+
+def _parse_origin(s):
+    """Lagrat origin (JSON-lista) -> Python-lista, annars None."""
+    if not s:
+        return None
+    try:
+        v = json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return v if isinstance(v, list) and v else None
+
+
+def _normalize_catalog_page(page):
+    """Visnings-normalisera EN sida katalogprodukter, samma hjälpare som offers-vyn:
+    förpackning -> normalized_package (vikt/volym), jämförenhet -> _norm_unit, land title-case.
+    Axfood-rader saknar lagrat origin -> backfill ur ean_cache (warmat svenskt ursprung); bara
+    sidans koder slås upp (bunden mängd, undviker full-table + SQLite-vargränsen)."""
+    need = [c for p in page if not p["origin"] for c in p.get("_ax", [])]
+    ax_origin = get_axfood_origins(need) if need else {}
+    for p in page:
+        p["package_size"] = normalized_package(p["package_size"])
+        for pr in p["prices"]:
+            pr["comparison_unit"] = _norm_unit(pr["comparison_unit"])
+        if p["origin"]:
+            p["origin"] = norm_origin(p["origin"])
+        else:  # Axfood-backfill: första kod i EAN-gruppen med warmat ursprung (ean_cache, sträng)
+            hit = next((ax_origin[c] for c in p.get("_ax", []) if c in ax_origin), None)
+            p["origin"] = norm_origin(hit.replace(",", "/").split("/")) if hit else None
+        p.pop("_ax", None)

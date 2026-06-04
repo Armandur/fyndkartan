@@ -6,6 +6,7 @@ from .ean import get_axfood_categories, get_axfood_origins, get_cached_eans
 from .products import get_product_categories
 from ..categories import category_for, category_from_detail, category_from_name, raw_key
 from ..config import AXFOOD_CHAINS, ORIGIN_COUNTRIES
+from ..matching import _norm_unit
 
 
 _OFFER_COLS = (
@@ -298,8 +299,15 @@ def normalized_package(pkg):
     if value is not None and unit in ("ml", "g") and value >= 1000 and value % 1000 == 0:
         value, unit = value / 1000, {"ml": "l", "g": "kg"}[unit]
     if value is not None and unit:
-        return ("ca " if approx else "") + f"{value:g} {unit}"
+        num = f"{value:g}".replace(".", ",")  # svensk decimal: 1.5 -> 1,5
+        return ("ca " if approx else "") + f"{num} {_norm_unit(unit) or unit}"
     return s
+
+
+def norm_origin(items):
+    """Title-case en lista ursprungsländer för visning ('SVERIGE' -> 'Sverige'). Delad
+    visnings-normalisering för offers OCH katalog (samma svenska CLDR-landnamn, olika versalisering)."""
+    return [str(x).strip().title() for x in (items or []) if str(x).strip()] or None
 
 
 def _origin_list(s):
@@ -350,8 +358,11 @@ def get_store_offers(chain, store_id):
         d["eans"] = json.loads(d["eans"]) if d["eans"] else []
         d["category"] = category_for(chain, d.get("category_raw"))  # offer-nivå (fallback)
         d["deal_type"], d["multibuy_qty"] = _deal_type(d.get("price_text"))
-        d["package_size"], d["package_value"], d["package_unit"], d["package_approx"] = _clean_package(d.get("package"))
-        d["brand"], d["origin"] = _split_brand_origin(chain, d.get("brand"))
+        _, d["package_value"], d["package_unit"], d["package_approx"] = _clean_package(d.get("package"))
+        d["package_size"] = normalized_package(d.get("package"))  # generell visnings-normalisering
+        b, orig = _split_brand_origin(chain, d.get("brand"))
+        d["brand"], d["origin"] = b, norm_origin(orig)
+        d["comparison_unit"] = _norm_unit(d.get("comparison_unit"))
         d["comparison_derived"] = False
         # Härlett jämförpris (UNGEFÄRLIGT): fyll bara när kedjans saknas, dealen är flat och
         # storleken är parsbar. Markeras så UI/compare vet att det är en uppskattning.
@@ -429,7 +440,9 @@ def list_products(q=None, category=None, chain=None, limit=40):
         if cat == "ovrigt":
             cat = category_from_name(rep.get("name")) or "ovrigt"
         brand, origin = _split_brand_origin(ch, rep.get("brand"))
-        psize, pval, punit, _ = _clean_package(rep.get("package"))
+        origin = norm_origin(origin)
+        _, pval, punit, _ = _clean_package(rep.get("package"))
+        psize = normalized_package(rep.get("package"))
         dt, mb = _deal_type(rep.get("price_text"))
         prices = [o["price"] for o in g["offs"] if o.get("price") is not None]
         out.append({
