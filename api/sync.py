@@ -7,10 +7,12 @@ from croniter import croniter
 
 from . import apilog, config, details
 from .adapters import axfood_offers, citygross, coop, hemkop, ica, lidl, willys
+from .matching import normalize_ean
 from .database import (
     axfood_offer_codes,
     backfill_catalog_eans,
     catalog_axfood_codes_missing_ean,
+    catalog_names_for_codes,
     codes_missing_category,
     coop_offer_eans,
     get_conn,
@@ -140,7 +142,22 @@ async def warm_axfood_eans():
 # Progress för Axfood-katalog-EAN-warmingen (visas i konsolens Sortiment-flik).
 CATALOG_EAN_STATE = {"running": False, "total": 0, "done": 0, "resolved": 0, "empty": 0,
                      "updated": 0, "current_chain": None, "started_at": None, "finished_at": None,
-                     "error": None}
+                     "error": None, "recent": []}
+_EAN_FEED_MAX = 60
+
+
+def _ean_feed(chain, meta):
+    """Lägg nyss resolvade produkter (med EAN) i CATALOG_EAN_STATE['recent'] för feed-visningen
+    (samma {chain, name, ean}-form som crawlens feed)."""
+    got = {code: m["ean"] for code, m in meta.items() if m.get("ean")}
+    if not got:
+        return
+    names = catalog_names_for_codes(chain, list(got))
+    rows = [{"chain": chain, "name": names[code], "ean": e}
+            for code, raw in got.items() if names.get(code) and (e := normalize_ean(raw))]
+    buf = CATALOG_EAN_STATE["recent"]
+    buf[:0] = rows[::-1]  # nyast först
+    del buf[_EAN_FEED_MAX:]
 
 
 async def warm_axfood_catalog_eans(cap=None):
@@ -159,7 +176,7 @@ async def warm_axfood_catalog_eans(cap=None):
             to_fetch[chain] = miss
     CATALOG_EAN_STATE.update(running=True, total=sum(len(v) for v in to_fetch.values()), done=0,
                              resolved=0, empty=0, updated=0, current_chain=None,
-                             started_at=_now(), finished_at=None, error=None)
+                             started_at=_now(), finished_at=None, error=None, recent=[])
     try:
         async with apilog.make_client(follow_redirects=True) as client:
             for chain, codes in to_fetch.items():
@@ -168,6 +185,7 @@ async def warm_axfood_catalog_eans(cap=None):
                     batch = codes[i:i + 200]
                     meta = await axfood_offers.fetch_p_meta(client, chain, batch)
                     save_ean_meta(meta)
+                    _ean_feed(chain, meta)  # mata in resolvade i feeden
                     CATALOG_EAN_STATE["done"] += len(batch)
                     CATALOG_EAN_STATE["resolved"] += sum(1 for m in meta.values() if m.get("ean"))
                     CATALOG_EAN_STATE["empty"] += sum(1 for m in meta.values() if not m.get("ean"))

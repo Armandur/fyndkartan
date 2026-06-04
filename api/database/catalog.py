@@ -52,6 +52,19 @@ def warm_catalog_cache():
     _browse_groups()
 
 
+def catalog_names_for_codes(chain, codes):
+    """{product_id: name} för en kedjas katalogkoder (för EAN-resolvningens feed-visning)."""
+    if not codes:
+        return {}
+    conn = get_conn()
+    ph = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"SELECT product_id, name FROM catalog_products WHERE chain=? AND product_id IN ({ph})",
+        (chain, *codes)).fetchall()
+    conn.close()
+    return {r["product_id"]: r["name"] for r in rows}
+
+
 def catalog_axfood_codes_missing_ean():
     """{chain: [product_id]} för Willys/Hemköp-katalograder som saknar EAN (koder att resolva)."""
     conn = get_conn()

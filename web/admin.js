@@ -1123,23 +1123,25 @@
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       ensureCatalogSkeleton();
-      // Ny crawl (started_at ändrad) -> nollställ feeden så produkterna flödar in på nytt.
-      if (d.started_at !== feedStartedAt) {
-        feedStartedAt = d.started_at;
+      // Feeden delas av crawl OCH EAN-resolvning. Ny körning (started_at ändrad) -> nollställ.
+      const warm = d.ean_warm || {};
+      const feedKey = d.running ? "c:" + d.started_at : (warm.running ? "w:" + warm.started_at : feedStartedAt);
+      if (feedKey !== feedStartedAt) {
+        feedStartedAt = feedKey;
         feedSeen = new Set(); feedQueue = [];
         const inner = document.getElementById("catalogFeedInner");
         if (inner) {
           inner.style.transition = "none"; inner.style.transform = "translateY(0)";
-          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl för att se produkter strömma in.</div>';
+          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl eller EAN-resolvning för att se produkter strömma in.</div>';
         }
       }
-      feedRunning = !!d.running;
-      enqueueFeed(d.recent || []);
+      feedRunning = !!(d.running || warm.running);
+      enqueueFeed(d.running ? (d.recent || []) : (warm.running ? (warm.recent || []) : []));
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'
         : "";  // "senast" visas per kedja nedan -> ingen redundant topp-rad
-      document.getElementById("catalogLive").innerHTML = d.running ? '<span class="st-running small">● live</span>' : "";
+      document.getElementById("catalogLive").innerHTML = (d.running || warm.running) ? '<span class="st-running small">● live</span>' : "";
       const sched = document.getElementById("catalogSchedule");
       if (sched) sched.innerHTML = (d.cron && d.cron.trim())
         ? `Schemalagd crawl: <strong>${esc(fmtTs(d.next_run))}</strong> <span class="mono">${esc(d.cron)}</span>${d.finished_at ? ` &middot; senast klar ${esc(fmtTs(d.finished_at))}` : ""}`
