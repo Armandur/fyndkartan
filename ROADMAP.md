@@ -849,11 +849,12 @@ jämförpris-ändring (+ baslinje vid första pris).
   föregående pris) + `GET /v1/admin/catalog/price-changes` + konsolens Sortiment-flik: beständig,
   filtrerbar (kedja + sök) och sorterbar (största/minsta ändring, höjning/sänkning) prisändrings-logg
   med upp/ner-visualisering, klickbar rad -> produktmodal. Live-uppdateras under crawl.
-- [ ] **Kvar: per-EAN tidsserie + graf i KONSUMENT-appens produktmodal, SAMMANSLAGEN med
-  erbjudande-historiken**: `database.catalog_price_history(ean)` (per kedja) + endpoint, och en vy som
-  visar både ordinarie hyllpris (linje) och fynd-dipparna (offer_observations). Återanvänd inline-SVG-
-  stegfunktionen; hyllpris som andra serie (streckad/grå). Honest: hyllpris = butik/nationellt (se
-  Steg 6 om butiksscoping), offer = butikslokalt.
+- [x] **BYGGT: per-EAN hyllpris-tidsserie + graf i KONSUMENT-modalen, sammanslagen med erbjudande-
+  historiken.** `database.catalog_price_history(ean)` (per kedja, kollapsad på lika pris) -> `shelf`
+  i `GET /v1/products/{ean}/history`-svaret. Modalens inline-SVG ritar nu hyllpriset som en STRECKAD
+  kontinuerlig stegfunktion (ordinarie) bakom erbjudande-seriernas heldragna fynd-dippar. Honest:
+  hyllpris för Coop/ICA är butiksscopat (se Steg 6), offer butikslokalt. (Serien kort tills crawl-
+  historiken vuxit.)
 
 ### Avgörande beslut (ta UPP innan bygge)
 - **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",

@@ -1271,7 +1271,9 @@ async def product_price_history(ean: str, _auth=Depends(require_consumer)):
     e = matching.normalize_ean(ean)
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
-    return database.price_history(e)
+    hist = database.price_history(e)
+    hist["shelf"] = database.catalog_price_history(e)  # hyllpris-serie (ordinarie) sammanslagen i grafen
+    return hist
 
 
 @app.get("/v1/products/{ean}/stores", responses={200: {"model": schemas.ProductStoresResponse}})

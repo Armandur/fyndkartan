@@ -483,7 +483,8 @@ function fmtPHDate(iso) {
 // Bygger en inline-SVG prishistorik-graf. Erbjudande-data = fyndspårning: varje punkt är en
 // prisändring, en punkt hålls (stegfunktion) till sitt valid_to, och linjen BRYTS där nästa
 // observation ligger efter valid_to (varan var inte nedsatt -> lucka, inte en rät linje över).
-function priceHistorySvg(chains) {
+function priceHistorySvg(chains, shelf) {
+  shelf = shelf || [];
   const W = 320, H = 150, ML = 38, MR = 10, MT = 12, MB = 22;
   const ts = (s) => (s ? new Date(s).getTime() : NaN);
   let tmin = Infinity, tmax = -Infinity, pmin = Infinity, pmax = -Infinity;
@@ -492,6 +493,12 @@ function priceHistorySvg(chains) {
     const o = ts(p.observed_at), v = ts(p.valid_to) || o;
     if (!isNaN(o)) { tmin = Math.min(tmin, o); tmax = Math.max(tmax, o); }
     if (!isNaN(v)) tmax = Math.max(tmax, v);
+    pmin = Math.min(pmin, p.price); pmax = Math.max(pmax, p.price);
+  }
+  for (const c of shelf) for (const p of c.points) {  // hyllpris-serien med i skalan
+    if (p.price == null) continue;
+    const o = ts(p.observed_at);
+    if (!isNaN(o)) { tmin = Math.min(tmin, o); tmax = Math.max(tmax, o); }
     pmin = Math.min(pmin, p.price); pmax = Math.max(pmax, p.price);
   }
   if (!isFinite(pmin)) return "";
@@ -506,6 +513,19 @@ function priceHistorySvg(chains) {
   for (const pv of [pmin, pmax]) {
     parts.push(`<line x1="${ML}" y1="${y(pv).toFixed(1)}" x2="${W - MR}" y2="${y(pv).toFixed(1)}" stroke="#eee"/>`);
     parts.push(`<text x="${ML - 4}" y="${(y(pv) + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#999">${kr(pv)}</text>`);
+  }
+  // Hyllpris (ordinarie): kontinuerlig STRECKAD stegfunktion per kedja, bakom offers.
+  for (const c of shelf) {
+    const col = (state.chains[c.chain] || {}).color || "#666";
+    const lab = (state.chains[c.chain] || {}).label || c.chain;
+    const pts = c.points.filter((p) => p.price != null);
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], o = ts(p.observed_at), yp = y(p.price);
+      const next = i + 1 < pts.length ? ts(pts[i + 1].observed_at) : tmax;
+      parts.push(`<line x1="${x(o).toFixed(1)}" y1="${yp.toFixed(1)}" x2="${x(next).toFixed(1)}" y2="${yp.toFixed(1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.55"/>`);
+      if (i + 1 < pts.length) parts.push(`<line x1="${x(next).toFixed(1)}" y1="${yp.toFixed(1)}" x2="${x(next).toFixed(1)}" y2="${y(pts[i + 1].price).toFixed(1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.55"/>`);
+      parts.push(`<circle cx="${x(o).toFixed(1)}" cy="${yp.toFixed(1)}" r="2" fill="none" stroke="${col}" stroke-width="1" opacity="0.7"><title>${esc(lab + " hyllpris " + fmtPHDate(p.observed_at) + ": " + kr(p.price) + " kr")}</title></circle>`);
+    }
   }
   for (const c of chains) {
     const col = (state.chains[c.chain] || {}).color || "#666";
@@ -533,22 +553,23 @@ function priceHistorySvg(chains) {
 
 function renderPriceHistory(h) {
   const chains = (h && h.chains) || [];
+  const shelf = (h && h.shelf) || [];
   const total = chains.reduce((a, c) => a + (c.points ? c.points.length : 0), 0);
-  if (!total) {
-    return '<div class="small"><strong>Prishistorik</strong><div class="text-muted">Ingen prishistorik än - byggs upp vid kommande synkar.</div></div>';
+  const shelfTotal = shelf.reduce((a, c) => a + (c.points ? c.points.length : 0), 0);
+  if (!total && !shelfTotal) {
+    return '<div class="small"><strong>Prishistorik</strong><div class="text-muted">Ingen prishistorik än - byggs upp vid kommande synkar/crawlar.</div></div>';
   }
-  const svg = priceHistorySvg(chains);
+  const svg = priceHistorySvg(chains, shelf);
   const legend = chains.map((c) => {
     const m = state.chains[c.chain] || {};
     const last = c.points[c.points.length - 1];
     const px = last && last.price != null ? ` ${kr(last.price)} kr` : "";
     return `<span class="badge" style="background:${m.color || "#666"};color:#fff">${esc(m.label || c.chain)}${px}</span>`;
   }).join(" ");
-  const single = total <= chains.length;
-  const note = single
-    ? "Bara en observation per kedja än - kurvan växer vid kommande synkar."
+  const note = shelfTotal
+    ? "Heldragen = kampanjpris (fyndspårning, bryts där varan ej var nedsatt). Streckad = ordinarie hyllpris. Ring = medlemspris."
     : "Varje punkt = en prisändring. Ring = medlemspris. Linjen bryts där varan inte var nedsatt.";
-  return `<div class="small"><strong>Prishistorik</strong> <span class="text-muted">(kampanjpris, fyndspårning)</span>
+  return `<div class="small"><strong>Prishistorik</strong> <span class="text-muted">(kampanj + hyllpris)</span>
     <div class="my-1">${legend}</div>${svg}
     <div class="text-muted" style="font-size:11px">${note}</div></div>`;
 }

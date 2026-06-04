@@ -76,6 +76,32 @@ _PC_SORT = {
 }
 
 
+def catalog_price_history(ean):
+    """Hyllpris-tidsserie för en EAN ur catalog_price_observations, per kedja, kollapsad på lika pris
+    i rad (en punkt per ändring + baslinje). Coop/ICA är butiksscopat (se `catalog_products.store`),
+    Axfood/CG nationellt. För konsument-modalens graf, sammanslagen med offer-historiken."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT chain, price, comparison_value, comparison_unit, observed_at "
+        "FROM catalog_price_observations WHERE ean=? ORDER BY chain, observed_at", (str(ean),)).fetchall()
+    conn.close()
+    by_chain = {}
+    for r in rows:
+        by_chain.setdefault(r["chain"], []).append(r)
+    out = []
+    for chain, obs in by_chain.items():
+        pts = []
+        for o in obs:
+            last = pts[-1] if pts else None
+            if last and last["price"] is not None and o["price"] is not None and abs(last["price"] - o["price"]) < 0.005:
+                continue  # oförändrat pris -> kollapsa
+            pts.append({"observed_at": o["observed_at"], "price": o["price"],
+                        "comparison_value": o["comparison_value"], "comparison_unit": o["comparison_unit"]})
+        if pts:
+            out.append({"chain": chain, "points": pts})
+    return out
+
+
 def catalog_price_changes(chain=None, q=None, sort="recent", limit=500):
     """Hyllpris-ÄNDRINGAR (föregående -> nytt) ur catalog_price_observations, med produktnamn.
     Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`),

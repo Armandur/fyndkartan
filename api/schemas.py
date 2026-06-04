@@ -328,7 +328,8 @@ class PriceHistoryChain(BaseModel):
 class PriceHistoryResponse(BaseModel):
     ean: str = Field(..., description="Normaliserad EAN/GTIN")
     name: str | None = Field(None, description="Produktnamn (representativt)")
-    chains: list[PriceHistoryChain] = Field(..., description="Prishistorik per kedja")
+    chains: list[PriceHistoryChain] = Field(..., description="Erbjudande-/kampanjpris-historik per kedja (fyndspårning, luckor vid utgång)")
+    shelf: list[dict] | None = Field(None, description="Hyllpris-/ordinarie-historik per kedja (catalog_price_observations); Coop/ICA butiksscopat")
 
 
 class ProductStore(BaseModel):
