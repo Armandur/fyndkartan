@@ -1210,8 +1210,11 @@
       const blk = w.blocked ? ` &middot; <span class="text-danger">${(w.blocked).toLocaleString("sv-SE")} blockerade</span>` : "";
       if (w.running) {
         const pct = w.total ? Math.round((w.done / w.total) * 100) : 0;
-        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar ${w.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
-          <div class="small text-muted mt-1">${(w.done || 0).toLocaleString("sv-SE")}/${(w.total || 0).toLocaleString("sv-SE")} koder${w.current_chain ? ` &middot; ${chip(w.current_chain)}` : ""} &middot; ${w.resolved || 0} med EAN, ${w.empty || 0} utan${blk}${w.cooldown ? " &middot; <em>cooldown</em>" : ""}</div>`;
+        const cd = w.cooldown
+          ? `<div class="alert alert-warning py-1 px-2 mb-1 small d-flex align-items-center gap-2"><span class="st-running">⏸</span> Pausad - ${w.current_chain ? chip(w.current_chain) + " " : ""}WAF-blockerade. Väntar (cooldown) och försöker igen automatiskt - inte hängd.</div>`
+          : "";
+        prog.innerHTML = cd + `<div class="progress" style="height:6px"><div class="progress-bar ${w.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
+          <div class="small text-muted mt-1">${(w.done || 0).toLocaleString("sv-SE")}/${(w.total || 0).toLocaleString("sv-SE")} koder${w.current_chain ? ` &middot; ${chip(w.current_chain)}` : ""} &middot; ${w.resolved || 0} med EAN, ${w.empty || 0} utan${blk}</div>`;
       } else if (w.finished_at) {
         const skipped = (w.skipped_chains || []).length ? ` &middot; <span class="text-danger">hoppade: ${w.skipped_chains.map(esc).join(", ")}</span>` : "";
         prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(w.finished_at))}: ${(w.resolved || 0).toLocaleString("sv-SE")} med EAN, ${w.empty || 0} utan${blk} &middot; <strong>${(w.updated || 0).toLocaleString("sv-SE")}</strong> katalograder sammanslagna cross-chain${skipped}${w.error ? ` &middot; <span class="text-danger">fel: ${esc(w.error)}</span>` : ""}</div>`;
