@@ -189,6 +189,8 @@ async def warm_axfood_catalog_eans(cap=None):
                     CATALOG_EAN_STATE["done"] += len(batch)
                     CATALOG_EAN_STATE["resolved"] += sum(1 for m in meta.values() if m.get("ean"))
                     CATALOG_EAN_STATE["empty"] += sum(1 for m in meta.values() if not m.get("ean"))
+                    if config.CATALOG_EAN_PACE and i + 200 < len(codes):
+                        await asyncio.sleep(config.CATALOG_EAN_PACE)  # skonsam takt mellan batchar
         CATALOG_EAN_STATE["updated"] = backfill_catalog_eans()
         log.info("Axfood-katalog-EAN klar: %d resolved, %d empty, %d rader backfilllade",
                  CATALOG_EAN_STATE["resolved"], CATALOG_EAN_STATE["empty"], CATALOG_EAN_STATE["updated"])

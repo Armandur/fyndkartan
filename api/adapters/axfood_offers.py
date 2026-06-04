@@ -25,33 +25,48 @@ UA = (
 DOMAIN = {"willys": "www.willys.se", "hemkop": "www.hemkop.se"}
 
 _EAN_CONCURRENCY = 10
+_EAN_RETRIES = 3       # försök vid 429/5xx/timeout innan koden ges upp (-> tom)
+_EAN_BACKOFF = 1.0     # bas-sekunder, exponentiell (1, 2, 4...); Retry-After respekteras vid 429
 
 
 async def fetch_p_meta(client, chain, codes):
     """{code: {"ean":..., "category":..., "origin":...}} via produktdetaljen
     (`/axfood/rest/p/{code}`). category = googleAnalyticsCategory (pipe-path); origin =
     `tradeItemCountryOfOrigin` översatt till svenska (None om saknas - ofta för färskvaror).
-    Bunden parallellism."""
+    Bunden parallellism + 429/5xx-medveten retry med exponentiell backoff (skonsamt vid throttling;
+    backoffen håller semafor-platsen -> sänker farten automatiskt när Axfood stryper)."""
     domain = DOMAIN.get(chain)
     if not domain or not codes:
         return {}
     headers = {"Accept": "application/json", "User-Agent": UA}
     sem = asyncio.Semaphore(_EAN_CONCURRENCY)
+    empty = {"ean": "", "category": None, "origin": None}
 
     async def one(code):
         async with sem:
-            try:
-                r = await client.get(f"https://{domain}/axfood/rest/p/{code}", headers=headers, timeout=15)
-                if r.status_code == 200:
-                    d = r.json()
-                    return code, {
-                        "ean": d.get("ean") or "",
-                        "category": d.get("googleAnalyticsCategory") or None,
-                        "origin": _country_en_to_sv(d.get("tradeItemCountryOfOrigin")),
-                    }
-            except Exception as e:  # noqa: BLE001
-                log.warning("Axfood meta %s misslyckades: %s", code, e)
-        return code, {"ean": "", "category": None, "origin": None}
+            for attempt in range(_EAN_RETRIES + 1):
+                try:
+                    r = await client.get(f"https://{domain}/axfood/rest/p/{code}", headers=headers, timeout=15)
+                    if r.status_code == 200:
+                        d = r.json()
+                        return code, {
+                            "ean": d.get("ean") or "",
+                            "category": d.get("googleAnalyticsCategory") or None,
+                            "origin": _country_en_to_sv(d.get("tradeItemCountryOfOrigin")),
+                        }
+                    if r.status_code in (429,) or r.status_code >= 500:
+                        if attempt < _EAN_RETRIES:
+                            ra = r.headers.get("Retry-After")
+                            wait = float(ra) if (ra or "").isdigit() else _EAN_BACKOFF * (2 ** attempt)
+                            await asyncio.sleep(min(wait, 30))
+                            continue
+                    return code, empty  # 404 e.d., eller retries slut
+                except Exception as e:  # noqa: BLE001
+                    if attempt < _EAN_RETRIES:
+                        await asyncio.sleep(_EAN_BACKOFF * (2 ** attempt))
+                        continue
+                    log.warning("Axfood meta %s misslyckades: %s", code, e)
+        return code, empty
 
     return dict(await asyncio.gather(*(one(c) for c in codes)))
 

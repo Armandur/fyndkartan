@@ -46,6 +46,8 @@ CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * 1")
 # Max Axfood-katalogkoder/kedja som EAN-resolvas efter en crawl (cross-chain-merge). Engångs-bulken
 # körs ocapad manuellt; detta är den inkrementella påfyllningen så nya koder täcks över tid.
 CATALOG_EAN_WARM_CAP = int(os.getenv("CATALOG_EAN_WARM_CAP", "1000"))
+# Paus (s) mellan batchar (200 koder) i Axfood-katalog-EAN-resolvningen - skonsamt mot API:t.
+CATALOG_EAN_PACE = float(os.getenv("CATALOG_EAN_PACE", "0.5"))
 CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkter per sida (take)
 CATALOG_CRAWL_PACE = float(os.getenv("CATALOG_CRAWL_PACE", "0.3"))   # paus mellan sidor (s)
 CATALOG_CRAWL_RETRIES = int(os.getenv("CATALOG_CRAWL_RETRIES", "3"))
