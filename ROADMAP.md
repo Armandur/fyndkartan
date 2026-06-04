@@ -244,11 +244,19 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     självständigt ägda butiker (potentiellt per-butik-pris -> ~39M pris-punkter), Coop ~800 butiker
     ägda av ~30 regionala föreningar (`ownerName` i native -> TROLIGEN priszoner per förening). Plus:
     alla butiks-ledgers svarar inte i perso-söket (ej e-handelsindexerade).
-    - **Steg 0 - billig research FÖRST (avgör allt):** finns priszoner? Coop: jämför butiker inom
-      samma `ownerName` mot annan förening (identiska inom förening -> crawla EN butik/förening, ~30 i
-      st.f. 800). ICA: jämför inom ägare/profil (Maxi/Kvantum/Supermarket/Nära). Kartlägg vilka
-      ledgers/accountNumbers som faktiskt svarar. En kväll med skript; avgör om det är 30 eller 1300
-      crawls.
+    - **Steg 0 - research GJORD (2026-06-04), nedslående för zon-genvägen:**
+      - **Coop:** 722 butiker / 27 föreningar. **Bara ~43% av ledgers är frågbara** (bred sökning
+        "mjölk" gav träffar i 13/30; resten 0 även på vanlig vara -> ej e-handelsindexerade; `storeId`
+        funkar ej, `ledger` är rätt param). **Zoner är INKONSEKVENTA:** Coop Nord lika pris inom
+        föreningen (231400=231500), men Coop Östra ALLA 10 gemensamma OLIKA inom föreningen -> ingen
+        säker "en butik/förening"-förenkling. Per-butik-Coop = crawla de ~310 frågbara (av 722).
+      - **ICA:** 1289 butiker, **alla har accountNumber och ALLA svarar** (100% queryable via API-
+        gatewayen, 20/20 i urval). Självständigt ägda -> per-butik-pris (bekräftat), ingen förenings-
+        struktur. Per-butik-ICA = crawla alla 1289 (fullt frågbara men störst skala).
+      - **Metod-läxa:** queryability MÅSTE testas med bred SÖKNING, inte by-id på fasta EAN - butikens
+        sortiment skiljer sig, så 0 träffar på 5 EAN betyder "saknar de varorna", inte "ofrågbar".
+      - **Slutsats:** ingen billig zon-genväg finns (Coop-zoner inkonsekventa, ICA saknar zoner). Full
+        per-butik = ~310 Coop + 1289 ICA staggrat över ~en månad. Hanterbart men inte trivialt.
     - **Datamodell:** separera produkt-master (butiksoberoende: namn/brand/ean/kategori) från butikspris.
       Ny `catalog_store_prices (chain, product_id, store)` -> price/comparison/last_seen (PK på trippeln).
       `catalog_price_observations` + `store`-kolumn -> append-on-change per (chain, product_id, store)
