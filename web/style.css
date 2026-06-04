@@ -267,9 +267,13 @@ img.o-img { cursor: zoom-in; }
 .o-chainchip { font-size: .6rem; font-weight: 700; color: #fff; padding: 1px 6px; border-radius: 10px; }
 .o-stores { font-size: .64rem; color: #6b7480; }
 .o-shelf-tag { font-size: .6rem; font-weight: 700; color: #6b7480; text-transform: uppercase; letter-spacing: .03em; }
-.o-shelf { display: flex; flex-direction: column; gap: 2px; margin-top: .15rem; }
-.o-shelf-row { display: flex; align-items: baseline; gap: .4rem; font-size: .72rem; color: #46505c; }
-.o-shelf-row .o-chainchip { flex: 0 0 auto; }
+/* Per-kedje-priser som grid: ett gemensamt 5-kolumners rutnät -> priserna linjerar rad för rad. */
+.o-shelf { display: grid; grid-template-columns: max-content max-content max-content max-content auto;
+  gap: 2px .55rem; margin-top: .25rem; align-items: baseline; font-size: .72rem; color: #46505c; }
+.o-sc-chain { font-size: 0; }                 /* bara chippet syns; nollar radmellanrum */
+.o-sc-cmp { text-align: right; white-space: nowrap; }
+.o-sc-valid { white-space: nowrap; font-size: .68rem; }
+.o-shelf .o-chainchip { flex: 0 0 auto; }
 .o-offer { color: #c0392b; font-weight: 700; }
 .o-offer-badge {
   font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;
@@ -383,7 +387,7 @@ body.browse-mode .sidebar { display: none; }
 .browse-cat.on { background: #19c37d; border-color: #19c37d; color: #04231a; font-weight: 700; }
 .browse-title { max-width: 1200px; margin: 0 auto .5rem; font-weight: 700; color: #1c2530; }
 .browse-grid { max-width: 1200px; margin: 0 auto;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .6rem; }
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: .6rem; }
 .browse-grid .offer-card { background: #fff; border: 1px solid #e6e9ec; border-radius: 9px; padding: .55rem .65rem;
   animation: cardFadeIn .3s ease both; }  /* `both` -> osynlig under animation-delay = staggad infällning */
 @keyframes cardFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

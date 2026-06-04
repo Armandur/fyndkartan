@@ -837,18 +837,20 @@ function catalogCard(p) {
   const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
   const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
   const catChip = p.category ? `<span class="o-cat">${esc(catLabels[p.category] || p.category)}</span>` : "";
+  // Per-kedje-priser i ett gemensamt grid (chip | hyllpris | rea | t.o.m. | jämförpris) -> kolumnerna
+  // linjerar rad för rad ("tabbstopp"). Tomma celler där en kedja saknar erbjudande/jämförpris.
   const prices = (p.prices || []).map((pr) => {
     const m = state.chains[pr.chain] || {};
-    const cmp = pr.comparison_value != null
-      ? ` <span class="text-muted">(${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")})</span>`
-      : "";
     const hasOffer = pr.offer_price != null;
-    // hyllpris (struket om erbjudande finns) + ev. aktuellt erbjudandepris
-    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : (hasOffer ? "" : "-");
-    const offer = hasOffer
-      ? `<span class="o-offer">rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}${pr.offer_valid_to ? ` <span class="text-muted">t.o.m. ${esc(pr.offer_valid_to)}</span>` : ""}</span>`
-      : "";
-    return `<div class="o-shelf-row"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span><span>${shelf}${shelf && offer ? " " : ""}${offer}${cmp}</span></div>`;
+    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
+    const rea = hasOffer ? `rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}` : "";
+    const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc(pr.offer_valid_to)}` : "";
+    const cmp = pr.comparison_value != null ? `${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")}` : "";
+    return `<span class="o-sc-chain"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span></span>`
+      + `<span class="o-sc-shelf">${shelf}</span>`
+      + `<span class="o-sc-rea o-offer">${rea}</span>`
+      + `<span class="o-sc-valid text-muted">${valid}</span>`
+      + `<span class="o-sc-cmp text-muted">${cmp}</span>`;
   }).join("");
   const range = p.price_min != null
     ? (p.price_min === p.price_max ? `${kr(p.price_min)} kr` : `${kr(p.price_min)}–${kr(p.price_max)} kr`)
