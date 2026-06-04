@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -276,9 +276,28 @@ def _query_stores(chain=None, city=None, q=None, brand=None, features=None, has_
     return stores
 
 
-@app.get("/", response_class=FileResponse)
+# Cache-busting: stämpla /static/*.js|css-referenser med filens mtime så att en ändrad fil
+# ger ny URL och webbläsaren hämtar om automatiskt (HTML:en serveras färsk varje navigering).
+_STATIC_REF_RX = re.compile(r"/static/[\w./-]+\.(?:js|css)")
+
+
+def _html_versioned(filename):
+    html = (WEB_DIR / filename).read_text(encoding="utf-8")
+
+    def stamp(m):
+        ref = m.group(0)
+        try:
+            v = int((WEB_DIR / ref[len("/static/"):]).stat().st_mtime)
+        except OSError:
+            return ref
+        return f"{ref}?v={v}"
+
+    return HTMLResponse(_STATIC_REF_RX.sub(stamp, html))
+
+
+@app.get("/", response_class=HTMLResponse)
 async def index():
-    return FileResponse(WEB_DIR / "index.html")
+    return _html_versioned("index.html")
 
 
 @app.get("/healthz")
@@ -402,10 +421,10 @@ async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
 require_admin = auth.require_admin  # bor i auth.py; alias för befintliga Depends nedan
 
 
-@app.get("/admin", response_class=FileResponse)
+@app.get("/admin", response_class=HTMLResponse)
 async def admin_page():
     # Konsolen har egen inloggningsruta; data-endpoints är gatade (403 tills inloggad).
-    return FileResponse(WEB_DIR / "admin.html")
+    return _html_versioned("admin.html")
 
 
 @app.post("/v1/console/auth/login")
