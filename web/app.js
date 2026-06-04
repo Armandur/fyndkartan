@@ -369,7 +369,8 @@ function offerCard(o) {
   const save = sv > 0 ? `<span class="o-save">spara ${sv} kr</span>` : "";
   const deal = dealBadge(o);
   const pkg = o.package_size || o.package;
-  const origin = (o.origin && o.origin.length) ? o.origin.join("/") : "";
+  const oFlags = (o.origin_codes || []).map(flagEmoji).filter(Boolean).join("");
+  const origin = (o.origin && o.origin.length) ? (oFlags ? oFlags + " " : "") + o.origin.join("/") : "";
   const meta = [o.brand, pkg, origin].filter(Boolean).map(esc).join(" &middot; ");
   const catChip = o.category ? `<span class="o-cat">${esc(catLabels[o.category] || o.category)}</span>` : "";
   const foot = (catChip || valid)
@@ -931,7 +932,8 @@ function productCard(p) {
   const img = imgSrc
     ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
-  const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
+  const pFlags = (p.origin_codes || []).map(flagEmoji).filter(Boolean).join("");
+  const origin = (p.origin && p.origin.length) ? (pFlags ? pFlags + " " : "") + p.origin.join("/") : "";
   const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
   const catChip = p.category ? `<span class="o-cat">${esc(catLabels[p.category] || p.category)}</span>` : "";
   const chains = (p.chains || []).map((c) => {
@@ -964,7 +966,8 @@ function catalogCard(p) {
   const img = imgSrc
     ? `<img class="o-img" src="${esc(imgSrc)}" loading="lazy" alt="" onload="this.classList.add('loaded')"${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
     : `<div class="o-img o-img--ph"></div>`;
-  const origin = (p.origin && p.origin.length) ? p.origin.join("/") : "";
+  const pFlags = (p.origin_codes || []).map(flagEmoji).filter(Boolean).join("");
+  const origin = (p.origin && p.origin.length) ? (pFlags ? pFlags + " " : "") + p.origin.join("/") : "";
   const meta = [p.brand, p.package_size, origin].filter(Boolean).map(esc).join(" &middot; ");
   const catChip = p.category ? `<span class="o-cat">${esc(catLabels[p.category] || p.category)}</span>` : "";
   // Per-kedje-priser i ett gemensamt grid (chip | hyllpris | rea | t.o.m. | jämförpris) -> kolumnerna

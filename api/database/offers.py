@@ -6,6 +6,7 @@ from .ean import get_axfood_categories, get_axfood_origins, get_cached_eans
 from .products import get_product_categories
 from ..categories import category_for, category_from_detail, category_from_name, raw_key
 from ..config import AXFOOD_CHAINS, ORIGIN_COUNTRIES
+from .. import countries
 from ..matching import _norm_unit
 
 
@@ -400,6 +401,7 @@ def get_store_offers(chain, store_id):
         d["package_size"] = normalized_package(d.get("package"))  # generell visnings-normalisering
         b, orig = _split_brand_origin(chain, d.get("brand"))
         d["brand"], d["origin"] = b, norm_origin(orig)
+        d["origin_codes"] = countries.codes_for(d["origin"])
         d["comparison_unit"] = _norm_unit(d.get("comparison_unit"))
         d["comparison_derived"] = False
         # Härlett jämförpris (UNGEFÄRLIGT): fyll bara när kedjans saknas, dealen är flat och
@@ -490,6 +492,7 @@ def list_products(q=None, category=None, chain=None, limit=40):
             "name": rep.get("name"),
             "brand": brand,
             "origin": origin,
+            "origin_codes": countries.codes_for(origin),
             "image": rep.get("image"),
             "category": cat,
             "package_size": psize,

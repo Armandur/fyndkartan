@@ -20,7 +20,7 @@ import logging
 import re
 import time
 
-from . import categories, config, database as db, details, matching
+from . import categories, config, countries, database as db, details, matching
 from .adapters import axfood_offers, ica_token
 
 log = logging.getLogger("matbutiker")
@@ -369,6 +369,7 @@ def _normalize_products(products):
         for pr in p["prices"]:
             pr["comparison_unit"] = matching._norm_unit(pr["comparison_unit"])
         p["origin"] = db.norm_origin(p["origin"])
+        p["origin_codes"] = countries.codes_for(p["origin"])
 
 
 def _build_product(group):

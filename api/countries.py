@@ -34,15 +34,31 @@ def flag_emoji(code):
     return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in code.upper())
 
 
+def codes_for(names):
+    """Lista (redan uppdelade) landnamn -> lista ISO-koder (dedup, ordningsbevarande). För kort
+    som redan har normaliserade origin-namn (offers/bläddra/katalog) och bara behöver flagg-koder."""
+    out = []
+    for n in names or []:
+        code = country_code(n)
+        if code and code not in out:
+            out.append(code)
+    return out
+
+
 def split_origins(text):
     """Ursprungssträng -> (normaliserat svenskt namn, [ISO-koder]). Hanterar komma/snedstreck-
     separerade fleruländer ('Sverige, Norge', 'EU/Marocko'); igenkända delar översätts till
     svenska och ger en kod, okända delar ('Icke-EU', fiskeområden) behålls som text utan kod."""
     if not text:
         return text, []
-    parts = [p.strip() for p in re.split(r"[,/]", str(text)) if p.strip()]
+    # Sanera skrapskräp: kapa vid HTML-tagg/radbrytning, och släng absurt långa strängar
+    # (origin-fältet har ibland förorenats med produkttext/SVG-markup) -> inget ursprung.
+    s = re.sub(r"\s+", " ", re.split(r"[<\n]", str(text))[0]).strip()
+    if not s or len(s) > 60:
+        return None, []
+    parts = [p.strip() for p in re.split(r"[,/]", s) if p.strip()]
     if not parts:
-        return text, []
+        return None, []
     names, codes = [], []
     for p in parts:
         code = country_code(p)

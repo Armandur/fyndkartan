@@ -23,6 +23,7 @@ class Product(BaseModel):
     name: str | None = Field(None, description="Produktnamn")
     brand: str | None = Field(None, description="Varumärke (ursprung utbrutet till origin)")
     origin: list[str] | None = Field(None, description="Ursprungsländer (lista) eller null")
+    origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166-koder (för flagg-emoji)")
     image: str | None = Field(None, description="Representativ bild-URL")
     category: str | None = Field(None, description="Kanonisk kategori-nyckel (se /v1/categories)")
     package_size: str | None = Field(None, description="Normaliserad förpacknings-storlek (sträng)")
@@ -60,6 +61,7 @@ class CatalogProduct(BaseModel):
     name: str | None = Field(None, description="Produktnamn")
     brand: str | None = Field(None, description="Varumärke eller null")
     origin: list[str] | None = Field(None, description="Ursprungsländer (lista) eller null")
+    origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166-koder (för flagg-emoji)")
     image: str | None = Field(None, description="Bild-URL")
     category: str | None = Field(None, description="Kanonisk kategori-nyckel")
     package_size: str | None = Field(None, description="Förpackningsstorlek (sträng) eller null")
@@ -197,6 +199,7 @@ class Offer(BaseModel):
     member_price: int | None = Field(None, description="Medlemspris-flagga (Coop/Axfood)")
     savings: float | None = Field(None, description="Besparing i kr")
     origin: list[str] | None = Field(None, description="Ursprungsländer eller null")
+    origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166-koder (för flagg-emoji)")
     fetched_at: str | None = Field(None, description="Hämtad (ISO)")
 
 
