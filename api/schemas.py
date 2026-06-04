@@ -233,6 +233,8 @@ class CompareGroup(BaseModel):
     manual: bool = Field(..., description="Manuellt parad grupp")
     name: str | None = Field(None, description="Produktnamn")
     brand: str | None = Field(None, description="Varumärke")
+    origin: list[str] | None = Field(None, description="Ursprungsländer eller null")
+    origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166-koder (för flagg-emoji)")
     image: str | None = Field(None, description="Bild-URL")
     category: str | None = Field(None, description="Kanonisk kategori-nyckel")
     compare_by: str = Field(..., description="unit_price | price")

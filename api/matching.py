@@ -143,6 +143,8 @@ def build_comparisons(entries, min_chains=2, manual_groups=None, min_stores=1):
                 "manual": group_id is not None,
                 "name": named.get("name"),
                 "brand": named.get("brand"),
+                "origin": named.get("origin"),
+                "origin_codes": named.get("origin_codes"),
                 "image": named.get("image"),
                 "category": named.get("category"),  # kanonisk nyckel (samma som offers)
                 "compare_by": compare_by,

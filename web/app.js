@@ -745,7 +745,9 @@ function compareCard(p) {
     ? ` <span class="cmp-variants" title="${esc((p.variants || []).join(", "))}">${p.variant_count} sorter</span>`
     : "";
   const catLabel = p.category ? (catLabels[p.category] || p.category) : "";
-  const sub = [p.brand, catLabel].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
+  const cFlags = (p.origin_codes || []).map(flagEmoji).filter(Boolean).join("");
+  const cOrigin = (p.origin && p.origin.length) ? (cFlags ? cFlags + " " : "") + p.origin.join("/") : "";
+  const sub = [p.brand, catLabel, cOrigin].filter(Boolean).map(esc).join(" &middot; ") + variantTag;
   const cmpSrc = p.ean ? `/v1/products/${encodeURIComponent(p.ean)}/image?size=thumb` : p.image;
   const img = cmpSrc
     ? `<img class="o-img" src="${esc(cmpSrc)}" loading="lazy" alt=""${p.ean && p.image ? ` onerror="this.onerror=null;this.src='${esc(p.image)}'"` : ""}>`
