@@ -1170,6 +1170,10 @@
       document.getElementById("pcChain").addEventListener("change", loadPriceChanges);
       document.getElementById("pcSort").addEventListener("change", loadPriceChanges);
       document.getElementById("pcSearch").addEventListener("input", () => { clearTimeout(pcTimer); pcTimer = setTimeout(loadPriceChanges, 300); });
+      document.getElementById("priceChanges").addEventListener("click", (e) => {
+        const row = e.target.closest(".pc-row");
+        if (row && row.dataset.ean) openProductModal(row.dataset.ean, row.dataset.name);
+      });
       loadPriceChanges();  // initial fyllning (beständig data, oberoende av crawl-status)
     }
     let pcTimer = null;
@@ -1184,6 +1188,65 @@
       if (sortEl && sortEl.value !== "recent") p.set("sort", sortEl.value);
       const d = await (await api(`/v1/admin/catalog/price-changes?${p.toString()}`)).json();
       renderPriceChanges(d.changes || []);
+    }
+
+    function flagEmoji(code) {
+      if (!code || !/^[A-Za-z]{2}$/.test(code)) return "";
+      return code.toUpperCase().replace(/./g, c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65));
+    }
+
+    function ensureProdModal() {
+      if (document.getElementById("prodModal")) return;
+      const m = document.createElement("div");
+      m.id = "prodModal"; m.className = "overlay d-none";
+      m.style.cssText = "background:rgba(0,0,0,.45);z-index:3500";
+      m.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:560px;width:92vw;max-height:85vh;overflow:auto;padding:1.2rem">
+        <div class="d-flex align-items-start mb-2"><h6 id="prodModalTitle" class="mb-0 me-2"></h6><button id="prodClose" class="btn-close ms-auto"></button></div>
+        <div id="prodModalBody"></div></div>`;
+      document.body.appendChild(m);
+      m.addEventListener("click", e => { if (e.target.id === "prodModal") m.classList.add("d-none"); });
+      document.getElementById("prodClose").addEventListener("click", () => m.classList.add("d-none"));
+    }
+
+    async function openProductModal(ean, name) {
+      ensureProdModal();
+      const m = document.getElementById("prodModal");
+      document.getElementById("prodModalTitle").textContent = name || ean;
+      const body = document.getElementById("prodModalBody");
+      body.innerHTML = '<div class="text-muted small">Laddar produktinfo&hellip;</div>';
+      m.classList.remove("d-none");
+      try {
+        const d = await (await api(`/v1/admin/products/${encodeURIComponent(ean)}/info`)).json();
+        body.innerHTML = renderProdInfo(d, ean);
+      } catch (e) { body.innerHTML = '<div class="text-danger small">Kunde inte hämta produktinfo.</div>'; }
+    }
+
+    function renderProdInfo(d, ean) {
+      const img = `<img src="/v1/admin/products/${encodeURIComponent(ean)}/image?size=thumb" style="max-width:120px;max-height:120px;float:right;margin:0 0 .5rem .5rem;border-radius:8px" onerror="this.style.display='none'">`;
+      if (!d.found || !d.info) return `${img}<div class="text-muted small">Ingen produktinfo hittades.</div><div class="small text-muted mt-2">EAN: ${esc(ean)}</div>`;
+      const x = d.info, P = [img];
+      if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
+      if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
+      if (x.allergens && x.allergens.length) P.push(`<p class="small mb-1"><strong>Allergener:</strong> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</p>`);
+      const flags = (x.origin_codes || []).map(flagEmoji).filter(Boolean).join(" ");
+      const orig = [x.origin, x.province].filter(Boolean).join(" · ");
+      if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${flags ? flags + " " : ""}${esc(orig)}</p>`);
+      if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
+      if (x.nutrition && x.nutrition.length) {
+        const seen = new Map(), order = [];
+        for (const n of x.nutrition) {
+          const key = n.label || "";
+          const piece = `${n.value != null ? n.value : ""}${n.unit ? " " + n.unit : ""}`.trim();
+          if (!seen.has(key)) { seen.set(key, []); order.push(key); }
+          seen.get(key).push(piece);
+        }
+        const basis = x.nutrition_basis ? `per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")}` : "";
+        const rows = order.map(k => `<tr><td>${esc(k)}</td><td class="text-end">${esc(seen.get(k).join(" / "))}</td></tr>`).join("");
+        P.push(`<table class="table table-sm small mb-1"><thead><tr><th>Näringsvärde</th><th class="text-end">${basis}</th></tr></thead><tbody>${rows}</tbody></table>`);
+      }
+      if (x.sources && x.sources.length) P.push(`<p class="small mb-0 mt-1"><span class="text-muted">Källa:</span> ${x.sources.map(c => chip(c)).join(" ")}</p>`);
+      P.push(`<p class="small text-muted mb-0 mt-1">EAN ${esc(ean)}${d.fetched_at ? ` &middot; uppdaterad ${esc(fmtTs(d.fetched_at))}` : ""}</p>`);
+      return P.join("");
     }
 
     async function loadCatalog() {
@@ -1322,18 +1385,20 @@
       if (!el) return;
       if (cnt) cnt.textContent = changes.length ? `${fmtNum(changes.length)} st` : "";
       if (!changes.length) { el.innerHTML = '<div class="text-muted small">Inga prisändringar matchar. Kör en crawl - ändringar mot förra crawlen dyker upp här.</div>'; return; }
-      el.innerHTML = changes.map(c => {
+      const rows = changes.map(c => {
         const down = c.price < c.prev_price;
         const cls = down ? "text-success" : "text-danger";
         const arrow = down ? "&darr;" : "&uarr;";
         const diff = Math.round((c.price - c.prev_price) * 100) / 100;
         const pct = c.prev_price ? Math.round(Math.abs(diff) / c.prev_price * 100) : 0;
-        return `<div class="d-flex align-items-center gap-2 small py-1" style="border-bottom:1px solid #eef1f4">
-          ${chip(c.chain)}
-          <span class="text-truncate" title="${esc(c.name || c.ean)}">${esc(c.name || c.ean)}</span>
-          <span class="ms-auto text-nowrap"><s class="text-muted">${fmtNum(c.prev_price)}</s> <span class="${cls} fw-semibold">${arrow} ${fmtNum(c.price)} kr</span> <span class="${cls}">(${diff > 0 ? "+" : "−"}${fmtNum(Math.abs(diff))}${pct ? `, ${pct}%` : ""})</span></span>
-        </div>`;
+        return `<tr class="pc-row" data-ean="${esc(c.ean || "")}" data-name="${esc(c.name || "")}" style="cursor:pointer" title="Visa produkt">
+          <td>${chip(c.chain)}</td>
+          <td class="text-truncate" style="max-width:340px" title="${esc(c.name || c.ean)}">${esc(c.name || c.ean)}</td>
+          <td class="text-nowrap text-end"><s class="text-muted">${fmtNum(c.prev_price)} kr</s> <span class="${cls} fw-semibold">${fmtNum(c.price)} kr</span></td>
+          <td class="text-nowrap text-end ${cls} fw-semibold">${arrow} ${diff > 0 ? "+" : "−"}${fmtNum(Math.abs(diff))} kr <span class="fw-normal">(${pct}%)</span></td>
+        </tr>`;
       }).join("");
+      el.innerHTML = `<table class="table table-sm small mb-0 align-middle"><thead><tr class="text-muted"><th>Kedja</th><th>Produkt</th><th class="text-end">Pris</th><th class="text-end">Förändring</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     async function triggerPartialUpgrade(cap) {

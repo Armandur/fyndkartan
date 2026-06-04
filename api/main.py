@@ -1188,14 +1188,13 @@ async def products_catalog_summary(chain: str | None = None, only_offers: bool =
     return database.catalog_summary(chain=chain, only_offers=only_offers, fav_stores=fav_stores)
 
 
-@app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})
-async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
-    """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad.
-    Publik (konsument-appen + konsolen delar den). prefer_chain hintar rikare
-    native-källa (Axfood har näring); annars Coops EAN-DB. `source` i svaret."""
+async def _resolve_product_info(ean: str, prefer_chain: str | None = None):
+    """Delad produktinfo-resolver (cached-or-fetch + partial-uppgradering). Returnerar svars-dicten,
+    eller None vid ogiltig EAN. Delas av konsument-endpointen och konsolens admin-endpoint så att
+    admin-UI:t inte behöver anropa konsument-ytan (decoupling inför en framtida api/app/admin-split)."""
     e = matching.normalize_ean(ean)
     if not e:
-        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+        return None
     present, cached, fetched_at = database.product_info_cached(e)
     # Partial = EN-källa-piggyback (Coop/Axfood ur crawl/warm) -> uppgradera till full korsskällig
     # merge nu när någon faktiskt vill se detaljerna (annars servera cache-träffen direkt).
@@ -1217,10 +1216,25 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
             "info": details.normalize_info(info), "fetched_at": fetched_at}
 
 
-@app.get("/v1/products/{ean}/image")
-async def product_image(ean: str, size: str = "default", _auth=Depends(require_consumer)):
-    """Lokalt cachad produktbild för EAN:en (proxas + cachas -> CDN-oberoende).
-    `size` = thumb|default|full (cachas separat). Same-origin <img> skickar cookie."""
+@app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})
+async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(require_consumer)):
+    """EAN-global produktinfo (ingredienser/näring/ursprung), lazy + EAN-cachad. prefer_chain hintar
+    rikare native-källa (Axfood har näring); annars Coops EAN-DB. `source` i svaret."""
+    r = await _resolve_product_info(ean, prefer_chain)
+    return r if r is not None else JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+
+
+@app.get("/v1/admin/products/{ean}/info", responses={200: {"model": schemas.ProductInfoResponse}})
+async def admin_product_info(ean: str, prefer_chain: str | None = None, _=Depends(require_admin)):
+    """Produktinfo för konsolen (admin-gated, samma resolver som konsument-endpointen). Egen route
+    så konsol-UI:t bara talar med /v1/admin/* - håller admin frikopplat från konsument-ytan inför
+    en framtida api/app/admin-split."""
+    r = await _resolve_product_info(ean, prefer_chain)
+    return r if r is not None else JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+
+
+async def _resolve_product_image(ean: str, size: str):
+    """Delad bild-resolver (proxa + cacha -> CDN-oberoende). Delas av konsument- och admin-route."""
     e = matching.normalize_ean(ean)
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
@@ -1231,6 +1245,20 @@ async def product_image(ean: str, size: str = "default", _auth=Depends(require_c
         return JSONResponse({"detail": "Ingen bild hittades."}, status_code=404)
     path, ct = res
     return FileResponse(path, media_type=ct, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/v1/products/{ean}/image")
+async def product_image(ean: str, size: str = "default", _auth=Depends(require_consumer)):
+    """Lokalt cachad produktbild för EAN:en (proxas + cachas -> CDN-oberoende).
+    `size` = thumb|default|full (cachas separat). Same-origin <img> skickar cookie."""
+    return await _resolve_product_image(ean, size)
+
+
+@app.get("/v1/admin/products/{ean}/image")
+async def admin_product_image(ean: str, size: str = "default", _=Depends(require_admin)):
+    """Produktbild för konsolen (admin-gated, samma resolver). Egen route så konsol-UI:t bara
+    talar med /v1/admin/* (decoupling inför en framtida api/app/admin-split)."""
+    return await _resolve_product_image(ean, size)
 
 
 @app.get("/v1/products/{ean}/history", responses={200: {"model": schemas.PriceHistoryResponse}})

@@ -230,7 +230,11 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   `/v1/sync*`. Synk-knapp + status bor i konsolens Översikt-flik (inte i appen).
   Konsolkontot seedas vid uppstart (`ensure_admin` -> `admin_users`) från `ADMIN_EMAIL`
   (generisk default `admin@example.com` i koden, sätts per instans via env/`.env`) +
-  `ADMIN_PASSWORD` (annars genererat + loggat en gång).
+  `ADMIN_PASSWORD` (annars genererat + loggat en gång). **Decoupling:** konsol-UI:t anropar bara
+  `/v1/admin/*` (och `/v1/console/auth/*`), aldrig konsument-endpoints - inför en framtida api/app/
+  admin-split. Där konsolen behöver konsument-data finns admin-speglade routes (`/v1/admin/products/
+  {ean}/info|image`) som delar resolver-helper med konsument-endpointen (`_resolve_product_info`/
+  `_resolve_product_image`). Speglas/dupliceras vid en riktig split; lägg nya konsol-behov under `/v1/admin/*`.
 - **Produktsök/-bläddring (`database.list_products` + `GET /v1/products/search|by-category`):**
   distinkta produkter ur **offers-cachen**, grupperade på EAN (cross-chain, Axfood-EAN via
   `ean_cache`) annars (kedja, namn), med samma berikning som `get_store_offers` (kanonisk
