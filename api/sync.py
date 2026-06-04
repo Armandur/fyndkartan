@@ -13,6 +13,7 @@ from .database import (
     backfill_catalog_eans,
     catalog_axfood_codes_missing_ean,
     catalog_names_for_codes,
+    catalog_names_for_eans,
     codes_missing_category,
     coop_offer_eans,
     get_conn,
@@ -165,7 +166,14 @@ CATALOG_EAN_STATE = {"running": False, "total": 0, "done": 0, "resolved": 0, "em
                      "error": None, "recent": []}
 
 PARTIAL_UPGRADE_STATE = {"running": False, "total": 0, "done": 0, "upgraded": 0, "failed": 0,
-                         "started_at": None, "finished_at": None}
+                         "started_at": None, "finished_at": None, "recent": []}
+
+
+def _partial_feed(ean, name, sources):
+    """Lägg en nyss uppgraderad produkt i feeden (samma {chain, name, ean}-form som crawlens)."""
+    buf = PARTIAL_UPGRADE_STATE["recent"]
+    buf.insert(0, {"chain": (sources or [None])[0], "name": name or ean, "ean": ean})
+    del buf[_EAN_FEED_MAX:]
 
 
 async def upgrade_sparse_partials(cap=None):
@@ -175,8 +183,9 @@ async def upgrade_sparse_partials(cap=None):
     if PARTIAL_UPGRADE_STATE["running"]:
         return
     eans = sparse_partial_eans(cap or config.PARTIAL_UPGRADE_CAP)
+    names = catalog_names_for_eans(eans)
     PARTIAL_UPGRADE_STATE.update(running=True, total=len(eans), done=0, upgraded=0, failed=0,
-                                 started_at=_now(), finished_at=None)
+                                 started_at=_now(), finished_at=None, recent=[])
     sem = asyncio.Semaphore(config.PARTIAL_UPGRADE_CONC)
     try:
         async with apilog.make_client(follow_redirects=True) as client:
@@ -188,6 +197,7 @@ async def upgrade_sparse_partials(cap=None):
                         if info is not None:  # None = inget hittades nu -> behåll partial (clobbra ej)
                             save_product_info(ean, info)  # full -> faller ur kandidatmängden
                             PARTIAL_UPGRADE_STATE["upgraded"] += 1
+                            _partial_feed(ean, names.get(ean), info.get("sources"))
                     except Exception as e:  # noqa: BLE001
                         PARTIAL_UPGRADE_STATE["failed"] += 1
                         log.warning("partial-uppgradering %s: %s", ean, e)

@@ -67,6 +67,22 @@ def catalog_names_for_codes(chain, codes):
     return {r["product_id"]: r["name"] for r in rows}
 
 
+def catalog_names_for_eans(eans):
+    """{ean: name} ur katalogen (för partial-uppgraderingens feed-visning). Första namn per EAN."""
+    eans = [str(e) for e in eans if e]
+    if not eans:
+        return {}
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT ean, name FROM catalog_products WHERE ean IN ({','.join('?' * len(eans))})",
+        eans).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(r["ean"], r["name"])
+    return out
+
+
 def catalog_axfood_codes_missing_ean():
     """{chain: [product_id]} för Willys/Hemköp-katalograder som saknar EAN (koder att resolva)."""
     conn = get_conn()

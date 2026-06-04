@@ -1115,6 +1115,19 @@
           </div>
           <div id="eanWarmProgress"></div>
         </div>
+        <div class="card p-3 mb-3">
+          <div class="d-flex align-items-center mb-1">
+            <h6 class="mb-0">Partial-uppgradering (näring)</h6>
+            <span id="partialStatus" class="ms-2 small text-muted"></span>
+          </div>
+          <div class="text-muted small mb-2">Hämtar glesa partial-rader (piggyback med tunn näring, &lt; 4 värden) på nytt med full korsskällig merge (Axfood+Coop+ICA). Rate-limitat - ICA-detaljen är WAF-känslig. Körs även schemalagt. <span id="partialSched"></span></div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span id="partialCounts" class="small text-muted"></span>
+            <button class="btn btn-sm btn-outline-dark ms-auto partial-run" data-cap="50">Testa (50)</button>
+            <button class="btn btn-sm btn-dark partial-run">Uppgradera alla glesa</button>
+          </div>
+          <div id="partialProgress"></div>
+        </div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5"><div class="card p-3">
@@ -1127,6 +1140,8 @@
       document.getElementById("catalog").addEventListener("click", (e) => {
         const b = e.target.closest(".warm-ean");
         if (b && !b.disabled) triggerWarmEans(b.dataset.cap ? Number(b.dataset.cap) : null, b.dataset.chain);
+        const p = e.target.closest(".partial-run");
+        if (p && !p.disabled) triggerPartialUpgrade(p.dataset.cap ? Number(p.dataset.cap) : null);
       });
       // Per-kedja-knappar (korten re-renderas varje poll -> delegerad lyssnare på containern).
       document.getElementById("catalogChains").addEventListener("click", (e) => {
@@ -1138,25 +1153,27 @@
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       ensureCatalogSkeleton();
-      // Feeden delas av crawl OCH EAN-resolvning. Ny körning (started_at ändrad) -> nollställ.
+      // Feeden delas av crawl, EAN-resolvning OCH partial-uppgradering. Ny körning -> nollställ.
       const warm = d.ean_warm || {};
-      const feedKey = d.running ? "c:" + d.started_at : (warm.running ? "w:" + warm.started_at : feedStartedAt);
+      const pu = d.partial_upgrade || {};
+      const feedKey = d.running ? "c:" + d.started_at
+        : (warm.running ? "w:" + warm.started_at : (pu.running ? "p:" + pu.started_at : feedStartedAt));
       if (feedKey !== feedStartedAt) {
         feedStartedAt = feedKey;
         feedSeen = new Set(); feedQueue = [];
         const inner = document.getElementById("catalogFeedInner");
         if (inner) {
           inner.style.transition = "none"; inner.style.transform = "translateY(0)";
-          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl eller EAN-resolvning för att se produkter strömma in.</div>';
+          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl, EAN-resolvning eller partial-uppgradering för att se produkter strömma in.</div>';
         }
       }
-      feedRunning = !!(d.running || warm.running);
-      enqueueFeed(d.running ? (d.recent || []) : (warm.running ? (warm.recent || []) : []));
+      feedRunning = !!(d.running || warm.running || pu.running);
+      enqueueFeed(d.running ? (d.recent || []) : (warm.running ? (warm.recent || []) : (pu.running ? (pu.recent || []) : [])));
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'
         : "";  // "senast" visas per kedja nedan -> ingen redundant topp-rad
-      document.getElementById("catalogLive").innerHTML = (d.running || warm.running) ? '<span class="st-running small">● live</span>' : "";
+      document.getElementById("catalogLive").innerHTML = (d.running || warm.running || pu.running) ? '<span class="st-running small">● live</span>' : "";
       const sched = document.getElementById("catalogSchedule");
       if (sched) sched.innerHTML = (d.cron && d.cron.trim())
         ? `Schemalagd crawl: <strong>${esc(fmtTs(d.next_run))}</strong> <span class="mono">${esc(d.cron)}</span>${d.finished_at ? ` &middot; senast klar ${esc(fmtTs(d.finished_at))}` : ""}`
@@ -1164,6 +1181,7 @@
       document.getElementById("crawlNow").disabled = d.running;
       document.getElementById("crawlTest").disabled = d.running;
       renderEanWarm(d.ean_warm || {}, d.running);
+      renderPartialUpgrade(pu, d.running || warm.running);
       document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
         const s = (d.chains || {})[c] || {};
         const st = stats[c] || {};
@@ -1203,7 +1221,7 @@
         </div>`;
       }).join("");
       clearTimeout(catalogTimer);
-      if ((d.running || (d.ean_warm && d.ean_warm.running)) && active === "catalog")
+      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
     }
 
@@ -1236,6 +1254,31 @@
       if (chain) p.set("chain", chain);
       const qs = p.toString();
       await api(`/v1/admin/catalog/warm-eans${qs ? "?" + qs : ""}`, { method: "POST" });
+      loadCatalog();
+    }
+
+    function renderPartialUpgrade(pu, otherRunning) {
+      const prog = document.getElementById("partialProgress"), status = document.getElementById("partialStatus");
+      const counts = document.getElementById("partialCounts"), sched = document.getElementById("partialSched");
+      document.querySelectorAll(".partial-run").forEach(b => { b.disabled = pu.running || otherRunning; });
+      const c = pu.counts || {};
+      if (counts) counts.innerHTML = `${(c.partial || 0).toLocaleString("sv-SE")} partial-rader &middot; <strong>${(c.sparse || 0).toLocaleString("sv-SE")}</strong> glesa kvar`;
+      if (sched) sched.innerHTML = (pu.cron && pu.cron.trim())
+        ? `Schemalagt: <strong>${esc(fmtTs(pu.next_run))}</strong> <span class="mono">${esc(pu.cron)}</span>`
+        : "Manuell (ej schemalagd)";
+      if (status) status.innerHTML = pu.running ? '<span class="st-running">● uppgraderar…</span>' : "";
+      if (!prog) return;
+      if (pu.running) {
+        const pct = pu.total ? Math.round((pu.done / pu.total) * 100) : 0;
+        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
+          <div class="small text-muted mt-1">${(pu.done || 0).toLocaleString("sv-SE")}/${(pu.total || 0).toLocaleString("sv-SE")} &middot; ${pu.upgraded || 0} uppgraderade${pu.failed ? `, ${pu.failed} fel` : ""}</div>`;
+      } else if (pu.finished_at) {
+        prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(pu.finished_at))}: ${(pu.upgraded || 0).toLocaleString("sv-SE")} uppgraderade av ${(pu.total || 0).toLocaleString("sv-SE")}${pu.failed ? `, ${pu.failed} fel` : ""}</div>`;
+      } else { prog.innerHTML = ""; }
+    }
+
+    async function triggerPartialUpgrade(cap) {
+      await api(`/v1/admin/partials/upgrade${cap ? `?cap=${cap}` : ""}`, { method: "POST" });
       loadCatalog();
     }
 

@@ -1377,4 +1377,8 @@ async def catalog_crawl_status(_=Depends(require_admin)):
     return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats(),
             "cron": settings.get("catalog_crawl_cron"),
             "next_run": _next_cron(settings.get("catalog_crawl_cron")),
-            "ean_warm": CATALOG_EAN_STATE}
+            "ean_warm": CATALOG_EAN_STATE,
+            "partial_upgrade": {**PARTIAL_UPGRADE_STATE,
+                                "cron": settings.get("partial_upgrade_cron"),
+                                "next_run": _next_cron(settings.get("partial_upgrade_cron")),
+                                "counts": database.partial_info_counts()}}
