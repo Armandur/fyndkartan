@@ -553,9 +553,10 @@ function fmtInfoDate(iso) {
 }
 
 function renderProductInfo(d, chain) {
+  const eanLine = d.ean ? `<p class="small text-muted mb-0 mt-1">EAN: ${esc(d.ean)}</p>` : "";
   if (!d.found || !d.info) {
     const checked = d.fetched_at ? ` <span class="text-muted">(kontrollerad ${fmtInfoDate(d.fetched_at)})</span>` : "";
-    return `<div class="text-muted small">Ingen produktinfo hittades för den här varan.${checked}</div>`;
+    return `<div class="text-muted small">Ingen produktinfo hittades för den här varan.${checked}</div>${eanLine}`;
   }
   const x = d.info, P = [];
   if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
@@ -567,7 +568,7 @@ function renderProductInfo(d, chain) {
   if (x.nutrition && x.nutrition.length) {
     const basis = x.nutrition_basis ? `per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")}` : "";
     const rows = x.nutrition.map((n) =>
-      `<tr><td>${esc(n.label)}</td><td class="nut-val">${esc(n.value)}${esc(n.unit || "")}</td></tr>`).join("");
+      `<tr><td>${esc(n.label)}</td><td class="nut-val">${esc(n.value)}${n.unit ? " " + esc(n.unit) : ""}</td></tr>`).join("");
     P.push(`<table class="nut-table small mb-1"><thead><tr><th>Näringsvärde</th><th class="nut-val">${basis}</th></tr></thead><tbody>${rows}</tbody></table>`);
   }
   if (x.sources && x.sources.length) {
@@ -577,6 +578,7 @@ function renderProductInfo(d, chain) {
     }).join(" ");
     P.push(`<p class="small mb-0 mt-1"><span class="text-muted">Källa:</span> ${chips}</p>`);
   }
+  if (eanLine) P.push(eanLine);
   const upd = fmtInfoDate(d.fetched_at);
   if (upd) P.push(`<p class="small text-muted mb-0 mt-1">Uppdaterad ${upd}</p>`);
   return P.join("") || '<div class="text-muted small">Ingen detaljdata.</div>';
