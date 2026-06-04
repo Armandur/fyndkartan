@@ -252,6 +252,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       störst besparing, lägst pris, A-Ö, samt deal-typ. Idag har bläddra-vyn bara kategori-/kedje-/
       "bara erbjudanden"-filter och en fast sortering. Kräver att `catalog_browse`/`/catalog/browse`
       exponerar de fält som behövs (savings/jämförpris) och sorterings-/filterkontroller i `web/`.
+    - [ ] **"Visa fler" ska ladda fler i den nuvarande listan (append), inte ladda om sidan.** Idag
+      ökar `browseState.limit` och `loadBrowse()` hämtar om HELA listan och re-renderar `browseGrid`
+      från noll - man tappar scrollpositionen och hamnar längst upp. Ska istället hämta nästa sida
+      (offset/limit) och appenda korten till befintligt rutnät (behåll scrollposition).
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
