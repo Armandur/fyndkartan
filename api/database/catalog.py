@@ -6,7 +6,7 @@ from ._conn import _now, get_conn
 from .ean import get_axfood_origins
 from .offers import norm_origin, normalized_package, on_offer_eans
 from ..categories import category_for, category_from_detail
-from ..matching import _norm_unit
+from ..matching import _norm_unit, normalize_ean
 
 _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
@@ -50,6 +50,41 @@ def warm_catalog_cache():
     """Förvärm browse-/summary-cachen (anropas i lifespan) så första bläddringen slipper
     kallstarten (~700ms). Idempotent och snabb när redan varm."""
     _browse_groups()
+
+
+def catalog_axfood_codes_missing_ean():
+    """{chain: [product_id]} för Willys/Hemköp-katalograder som saknar EAN (koder att resolva)."""
+    conn = get_conn()
+    out = {}
+    for chain in ("willys", "hemkop"):
+        codes = [r["product_id"] for r in conn.execute(
+            "SELECT DISTINCT product_id FROM catalog_products WHERE chain=? AND available=1 "
+            "AND (ean IS NULL OR ean='')", (chain,))]
+        if codes:
+            out[chain] = codes
+    conn.close()
+    return out
+
+
+def backfill_catalog_eans():
+    """Fyll catalog_products.ean ur ean_cache för Axfood-rader utan EAN (kod = product_id),
+    NORMALISERAT (`normalize_ean`) så strängen matchar övriga kedjors form -> cross-chain-merge.
+    Bumpar katalog-versionen (browse-cachen byggs om). Returnerar antal uppdaterade rader."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT cp.chain, cp.product_id, ec.ean FROM catalog_products cp "
+        "JOIN ean_cache ec ON ec.code = cp.product_id "
+        "WHERE cp.chain IN ('willys','hemkop') AND (cp.ean IS NULL OR cp.ean='') "
+        "AND ec.ean IS NOT NULL AND ec.ean != ''").fetchall()
+    updates = [(e, r["chain"], r["product_id"]) for r in rows if (e := normalize_ean(r["ean"]))]
+    if updates:
+        conn.executemany("UPDATE catalog_products SET ean=? WHERE chain=? AND product_id=?", updates)
+        conn.commit()
+    conn.close()
+    global _CATALOG_VER
+    if updates:
+        _CATALOG_VER += 1
+    return len(updates)
 
 
 def _diff(a, b):

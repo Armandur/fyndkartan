@@ -9,6 +9,8 @@ from . import apilog, config, details
 from .adapters import axfood_offers, citygross, coop, hemkop, ica, lidl, willys
 from .database import (
     axfood_offer_codes,
+    backfill_catalog_eans,
+    catalog_axfood_codes_missing_ean,
     codes_missing_category,
     coop_offer_eans,
     get_conn,
@@ -133,6 +135,52 @@ async def warm_axfood_eans():
             codes = {c for lst in lists for c in lst}
             resolved += await _resolve_axfood_codes(client, chain, codes)
     log.info("EAN/kategori-förvärmning klar (%d nya kategorier cachade)", resolved)
+
+
+# Progress för Axfood-katalog-EAN-warmingen (visas i konsolens Sortiment-flik).
+CATALOG_EAN_STATE = {"running": False, "total": 0, "done": 0, "resolved": 0, "empty": 0,
+                     "updated": 0, "current_chain": None, "started_at": None, "finished_at": None,
+                     "error": None}
+
+
+async def warm_axfood_catalog_eans(cap=None):
+    """Resolva Axfood-KATALOGkoder (catalog_products utan EAN) till EAN via `/p/{code}`, fyll
+    ean_cache och backfilla `catalog_products.ean` (normaliserat) -> Willys/Hemköp slås ihop
+    cross-chain med kedjor som redan har EAN. `cap` = max koder/kedja (None = alla, engångs-bulk).
+    Hämtar bara ej-cachade koder (`codes_missing_category`). Progress i CATALOG_EAN_STATE."""
+    if CATALOG_EAN_STATE["running"]:
+        return 0
+    to_fetch = {}
+    for chain, codes in catalog_axfood_codes_missing_ean().items():
+        miss = codes_missing_category(codes)
+        if cap:
+            miss = miss[:cap]
+        if miss:
+            to_fetch[chain] = miss
+    CATALOG_EAN_STATE.update(running=True, total=sum(len(v) for v in to_fetch.values()), done=0,
+                             resolved=0, empty=0, updated=0, current_chain=None,
+                             started_at=_now(), finished_at=None, error=None)
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            for chain, codes in to_fetch.items():
+                CATALOG_EAN_STATE["current_chain"] = chain
+                for i in range(0, len(codes), 200):
+                    batch = codes[i:i + 200]
+                    meta = await axfood_offers.fetch_p_meta(client, chain, batch)
+                    save_ean_meta(meta)
+                    CATALOG_EAN_STATE["done"] += len(batch)
+                    CATALOG_EAN_STATE["resolved"] += sum(1 for m in meta.values() if m.get("ean"))
+                    CATALOG_EAN_STATE["empty"] += sum(1 for m in meta.values() if not m.get("ean"))
+        CATALOG_EAN_STATE["updated"] = backfill_catalog_eans()
+        log.info("Axfood-katalog-EAN klar: %d resolved, %d empty, %d rader backfilllade",
+                 CATALOG_EAN_STATE["resolved"], CATALOG_EAN_STATE["empty"], CATALOG_EAN_STATE["updated"])
+        return CATALOG_EAN_STATE["updated"]
+    except Exception as e:  # noqa: BLE001
+        CATALOG_EAN_STATE["error"] = str(e)
+        log.exception("Axfood-katalog-EAN-warming misslyckades")
+        return 0
+    finally:
+        CATALOG_EAN_STATE.update(running=False, current_chain=None, finished_at=_now())
 
 
 async def warm_axfood_eans_cached():

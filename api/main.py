@@ -24,10 +24,12 @@ from .database import (
 )
 from .geo import haversine
 from .sync import (
+    CATALOG_EAN_STATE,
     STATE,
     run_scheduler,
     run_sync,
     sync_and_warm,
+    warm_axfood_catalog_eans,
     warm_axfood_eans,
     warm_coop_categories,
     warm_ica_categories,
@@ -112,7 +114,7 @@ async def lifespan(app: FastAPI):
         run_scheduler(lambda: settings.get("offers_sweep_cron"), _tz, sweep_offers, "erbjudande-sweep"))
     # Fulla sortiment-crawlen (tung) har egen gles cadence (default veckovis). Tomt cron = av.
     crawl_scheduler = asyncio.create_task(
-        run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, catalog_crawl.crawl_all, "sortiment-crawl"))
+        run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, crawl_and_warm, "sortiment-crawl"))
     yield
     scheduler.cancel()
     offers_scheduler.cancel()
@@ -1269,12 +1271,37 @@ async def trigger_catalog_crawl(limit_categories: int | None = None, chains: str
     if catalog_crawl.CRAWL_STATE["running"]:
         return {"status": "running", "detail": "En crawl pågår redan."}
     chain_list = [c.strip() for c in chains.split(",")] if chains else None
-    asyncio.create_task(catalog_crawl.crawl_all(limit_categories=limit_categories, chains=chain_list))
+    asyncio.create_task(crawl_and_warm(limit_categories=limit_categories, chains=chain_list))
     return {"status": "started", "limit_categories": limit_categories, "chains": chain_list}
+
+
+async def crawl_and_warm(limit_categories=None, chains=None):
+    """Katalog-crawl + inkrementell Axfood-EAN-warming (capad) efteråt -> nya koder resolvas över tid.
+    Testkörningar (`limit_categories`) hoppar warmingen."""
+    await catalog_crawl.crawl_all(limit_categories=limit_categories, chains=chains)
+    if limit_categories:
+        return
+    try:
+        await warm_axfood_catalog_eans(cap=config.CATALOG_EAN_WARM_CAP)
+    except Exception:  # noqa: BLE001
+        log.exception("Axfood-katalog-EAN-warming efter crawl misslyckades")
+
+
+@app.post("/v1/admin/catalog/warm-eans")
+async def trigger_catalog_ean_warm(cap: int | None = None, _=Depends(require_admin)):
+    """Resolva Axfood-katalogkoder till EAN (cross-chain-merge) i bakgrunden. `cap` = max koder/kedja
+    (default: alla = engångs-bulk). Progress i crawl-status (`ean_warm`)."""
+    if CATALOG_EAN_STATE["running"]:
+        return {"status": "running", "detail": "En EAN-resolvning pågår redan."}
+    if catalog_crawl.CRAWL_STATE["running"]:
+        return {"status": "blocked", "detail": "En crawl pågår - vänta tills den är klar."}
+    asyncio.create_task(warm_axfood_catalog_eans(cap=cap))
+    return {"status": "started", "cap": cap}
 
 
 @app.get("/v1/admin/catalog/crawl/status")
 async def catalog_crawl_status(_=Depends(require_admin)):
     return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats(),
             "cron": settings.get("catalog_crawl_cron"),
-            "next_run": _next_cron(settings.get("catalog_crawl_cron"))}
+            "next_run": _next_cron(settings.get("catalog_crawl_cron")),
+            "ean_warm": CATALOG_EAN_STATE}
