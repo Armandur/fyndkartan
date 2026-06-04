@@ -1227,6 +1227,7 @@
       if (!d.found || !d.info) return `${img}<div class="text-muted small">Ingen produktinfo hittades.</div><div class="small text-muted mt-2">EAN: ${esc(ean)}</div>`;
       const x = d.info, P = [img];
       if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
+      if (x.diet === "vegan" || x.diet === "vegetarian") P.push(`<p class="mb-1"><span class="badge bg-success" title="Härledd ur ingredienserna">${x.diet === "vegan" ? "🌱 Vegansk" : "🥬 Vegetarisk"} (härledd)</span></p>`);
       if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
       if (x.allergens && x.allergens.length) P.push(`<p class="small mb-1"><strong>Allergener:</strong> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</p>`);
       const flags = (x.origin_codes || []).map(flagEmoji).filter(Boolean).join(" ");

@@ -80,6 +80,39 @@ def extract_allergens(ingredients):
     return [name for name, terms in _ALLERGENS.items() if any(_allergen_hit(term, t) for term in terms)]
 
 
+# Kost-klassificering (HÄRLEDD ur ingredienser): kött/fisk -> varken; mejeri/ägg/honung/gelatin
+# -> vegetarisk; annars vegansk. \b = ordstart så "kokosmjölk"/"havremjölk" (växt) inte träffar
+# "mjölk". PLANT_OK nollar växt-kompositer som börjar med en djur-delsträng (äggplanta osv).
+_DIET_MEAT = re.compile(
+    r"\b(nötkött|fläsk|griskött|kyckling|kalkon|anka|bacon|skinka|prosciutto|korv|salami|chorizo|"
+    r"lamm|vilt|älgkött|renkött|köttfärs|fläskfärs|blandfärs|kött|charkuteri|fisk|lax|sill|makrill|"
+    r"tonfisk|torsk|sej|räk|krabba|hummer|mussl|ostron|ansjovis|sardin|skaldjur|kräft|blodpudding|"
+    r"leverpastej|fiskolja|fiskbuljong|hönsbuljong|köttbuljong|hönskött)", re.I)
+_DIET_ANIMAL = re.compile(
+    r"\b(mjölk|grädde|gräddfil|filmjölk|smör|ost|yoghurt|kvarg|kesella|vassle|mjölkprotein|"
+    r"mjölkpulver|kasein|laktos|ägg|äggula|äggvita|honung|gelatin|bivax|lanolin|löpe|smörfett|"
+    r"vasslepulver|skummjölk)", re.I)
+_DIET_PLANT_OK = ("kokosmjölk", "havremjölk", "sojamjölk", "mandelmjölk", "risdryck", "havredryck",
+                  "sojadryck", "äggplanta", "jordnötssmör", "mandelsmör", "kakaosmör", "sheasmör",
+                  "jordnötter", "frukost")
+
+
+def classify_diet(ingredients):
+    """Härled kost ur ingredienser: 'none' (kött/fisk) | 'vegetarian' (mejeri/ägg/honung/gelatin) |
+    'vegan' | None (ingen ingredienslista). Heuristik (markeras 'härledd' i UI:t); icke-livsmedel kan
+    bli falskt 'vegan'."""
+    if not ingredients:
+        return None
+    s = ingredients.lower()
+    for ok in _DIET_PLANT_OK:
+        s = s.replace(ok, " ")
+    if _DIET_MEAT.search(s):
+        return "none"
+    if _DIET_ANIMAL.search(s):
+        return "vegetarian"
+    return "vegan"
+
+
 # Näringsdeklaration: kanonisk etikett-form + standardordning + enhetsförkortningar.
 _NUT_ORDER = [
     "Energi", "Fett", "Varav mättat fett", "Varav enkelomättat fett", "Varav fleromättat fett",
@@ -158,6 +191,7 @@ def normalize_info(info):
     info.pop("partial", None)  # intern piggyback-flagga, exponeras inte i API:t
     info["nutrition"] = _normalize_nutrition(info.get("nutrition"))
     info["allergens"] = extract_allergens(info.get("ingredients"))
+    info["diet"] = classify_diet(info.get("ingredients"))  # härledd vegan/vegetarian/none
     info["labels"] = _normalize_labels(info.get("labels"))
     # Ursprung: normalisera till svenskt CLDR-namn ("Sweden"->"Sverige") + ISO-koder (-> flaggor i
     # appen). Hanterar fleruländer ("Sverige, Norge"); okända delar (fiskeområden) lämnas utan kod.

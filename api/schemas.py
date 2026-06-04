@@ -291,6 +291,7 @@ class ProductInfoData(BaseModel):
     nutrition: list[dict] | None = Field(None, description="Näringsvärden (label/value/unit)")
     nutrition_basis: dict | None = Field(None, description="Näringsbas (per 100 g/ml)")
     allergens: list[str] | None = Field(None, description="Allergener (ur VERSALA ord)")
+    diet: str | None = Field(None, description="Härledd kost ur ingredienser: vegan|vegetarian|none (kött/fisk)|null (okänt)")
     origin: str | None = Field(None, description="Ursprung (normaliserat till svenska landnamn)")
     origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166 alfa-2-koder (för flagg-emoji); flera vid fleruländer, tom om ej igenkänt land")
     province: str | None = Field(None, description="Provins/region")

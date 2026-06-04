@@ -588,6 +588,10 @@ function renderProductInfo(d, chain) {
   }
   const x = d.info, P = [];
   if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
+  if (x.diet === "vegan" || x.diet === "vegetarian") {
+    const veg = x.diet === "vegan";
+    P.push(`<p class="mb-1"><span class="badge ${veg ? "bg-success" : "bg-success-subtle text-success-emphasis border border-success-subtle"}" title="Härledd ur ingredienserna - heuristik, kontrollera vid behov">${veg ? "🌱 Vegansk" : "🥬 Vegetarisk"} <span style="opacity:.8;font-weight:400">(härledd)</span></span></p>`);
+  }
   if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
   if (x.allergens && x.allergens.length) P.push(`<p class="small mb-1"><strong>Allergener:</strong> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</p>`);
   const flags = (x.origin_codes || []).map(flagEmoji).filter(Boolean).join(" ");

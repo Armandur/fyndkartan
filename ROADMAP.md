@@ -331,16 +331,19 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       tillverkar-katalog/aggregat), kanske inte i nuvarande kart-app men i en kommande konsument-/
       analys-app. **Beror på tillverkarnamn-normaliseringen ovan** - utan den splittras märket på
       olika stavningar. En råname-exakt v1 går att göra tidigare men ger begränsat värde.
-    - [ ] **Kost-filter: vegan/vegetariskt (+ härled när otaggat).** Kunna filtrera produkter på
-      vegansk/vegetarisk - som ett TVÄRGÅENDE kost-filter (vegetariska varor finns i alla kategorier,
-      inte bara kanoniska `vegetariskt`). Steg: (1) använd kedjornas ev. taggar/kategori när de finns;
-      (2) **härled annars ur produktinfo** (`details.py` ingredienser/allergener: ingen kött/fisk/
-      mejeri/ägg/gelatin -> vegansk; ingen kött/fisk -> vegetarisk) - vokabulär likt
-      `extract_allergens`; (3) bara LIVSMEDEL (exkludera hygien/hushåll/djur via kanonisk kategori).
-      Osäkra fall markeras "ev." snarare än falskt positivt. API-flagga + filter i bläddra-vyn.
-      **Två nivåer: vegan ⊂ vegetariskt** (allt veganskt är vegetariskt) - antingen två kanoniska
-      kategorier/taggar eller ett diet-fält med nivåerna `vegan`/`vegetarian`, så att vegetariskt-
-      filtret även inkluderar de veganska.
+    - **Kost-filter: vegan/vegetariskt (+ härled när otaggat).**
+      - [x] **v1 BYGGT - härledning + badge.** `details.classify_diet(ingredients)` -> `diet`-fält
+        (`vegan`/`vegetarian`/`none`/null) deriverat read-time i `normalize_info` (vokabulär likt
+        `extract_allergens`: kött/fisk -> none; mejeri/ägg/honung/gelatin -> vegetarisk; annars vegan;
+        `\b`-ordstart så "kokosmjölk" ej träffar "mjölk", PLANT_OK-allowlist för "äggplanta" mfl).
+        Exponerat i `ProductInfoData.diet`; produktmodalen (konsument + konsol) visar "🌱 Vegansk"/
+        "🥬 Vegetarisk (härledd)"-badge. Kalibrerat på ~11k ingredienslistor (52% vegan/33% veg/15% none).
+      - [ ] **Kvar: TVÄRGÅENDE filter i bläddra-vyn** (vegan ⊂ vegetariskt). Kräver att `diet`-flaggan
+        finns per katalog-EAN för server-side-filtrering före paginering - `diet` deriveras idag bara
+        read-time ur `product_info` (lazy, ~11k av 35k). Behöver warmas/lagras (t.ex. `diet` i
+        `product_info` vid save + `get_product_diets(eans)` likt kategori/origin) ELLER en diet-warm.
+        (3) bara LIVSMEDEL (icke-livsmedel med ingredienslista kan bli falskt vegan) - exkludera via
+        kanonisk kategori. Osäkra fall markeras "härledd" (gjort i badgen).
     - [x] **Filtrera bläddra-vyn på "rea hos favoriter" BYGGT.** Toggle "★ Rea hos favoriter"
       (login-only) -> visar bara produkter som har ett ERBJUDANDE hos användarens specifika
       favoritbutiker (per-butik-exakt via `eans_on_offer_at_stores`, chunkat). Favoriterna hämtas
