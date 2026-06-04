@@ -247,6 +247,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       "städad horisontell": större bild (56px), namn klippt till 2 rader (jämn topphöjd), tydligare
       rea-vs-hyllpris (hyllpris neutralt via `o-price--shelf`, rött reserverat för faktisk rea),
       meta på en rad i rutnätet. Kompakt-vs-detaljerat-läge medvetet bortvalt (horisontell räckte).
+    - [ ] **Svensk tusentalsavgränsning (visuellt) överallt.** Utvärdera/inför blanksteg som
+      tusentalsavgränsare i visade tal (12345 -> 12 345) i både konsument-appen och konsolen - rent
+      presentationslager (`toLocaleString("sv-SE")` eller en delad `fmtNum`-hjälpare), aldrig på
+      lagrade/skickade värden. Redan använt på ett par ställen i konsolen (crawl-feeden); gör det
+      konsekvent (stat-kort, antal, prishistorik-räknare m.m.). Akta priser/decimaler (kr) så
+      avgränsaren inte krockar med `kr()`-formateringen.
     - [ ] **Sortering & filtrering i bläddra-vyn (kategori + sökresultat).** Bläddra-vyn ska kunna
       sortera/filtrera produkter på samma sätt som kartvyns erbjudande-/jämförelsepaneler - t.ex.
       störst besparing, lägst pris, A-Ö, samt deal-typ. Idag har bläddra-vyn bara kategori-/kedje-/
