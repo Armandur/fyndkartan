@@ -384,7 +384,10 @@ body.browse-mode .sidebar { display: none; }
 .browse-title { max-width: 1200px; margin: 0 auto .5rem; font-weight: 700; color: #1c2530; }
 .browse-grid { max-width: 1200px; margin: 0 auto;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: .6rem; }
-.browse-grid .offer-card { background: #fff; border: 1px solid #e6e9ec; border-radius: 9px; padding: .55rem .65rem; }
+.browse-grid .offer-card { background: #fff; border: 1px solid #e6e9ec; border-radius: 9px; padding: .55rem .65rem;
+  animation: cardFadeIn .3s ease both; }  /* `both` -> osynlig under animation-delay = staggad infällning */
+@keyframes cardFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .browse-grid .offer-card { animation: none; } }
 /* I rutnätet: håll meta på en rad (ellipsis) så korten blir jämna; sidopanelens listkort
    får fortsatt wrappa (butiksnamn m.m. ska synas där). */
 .browse-grid .o-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1081,7 +1081,9 @@ function renderBrowseGrid() {
   const head = browseState.q ? `Sök: "${browseState.q}"` : (catLabels[browseState.category] || browseState.category);
   title.textContent = head ? `${head} (${products.length}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
   grid.innerHTML = products.length
-    ? products.map(catalogCard).join("")
+    // Staggad fade-in (animation-delay per kort, capad) -> korten "fylls i" istället för att poppa.
+    ? products.map((p, i) => catalogCard(p).replace(
+        'class="offer-card"', `class="offer-card" style="animation-delay:${Math.min(i, 14) * 25}ms"`)).join("")
     : `<div class="text-muted p-3">${browseState.onlyOffers && browseProducts.length ? "Inga produkter med erbjudande i urvalet." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
   more.innerHTML = browseProducts.length >= browseState.limit
     ? `<button id="browseMoreBtn" class="btn btn-sm btn-outline-dark">Visa fler</button>` : "";
