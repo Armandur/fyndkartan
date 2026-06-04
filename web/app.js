@@ -565,8 +565,10 @@ function renderProductInfo(d, chain) {
   if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${esc(orig)}</p>`);
   if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
   if (x.nutrition && x.nutrition.length) {
-    const b = x.nutrition_basis ? ` (per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")})` : "";
-    P.push(`<p class="small mb-1"><strong>Näring${b}:</strong> ${x.nutrition.map(n => `${esc(n.label)} ${esc(n.value)}${esc(n.unit || "")}`).join(", ")}</p>`);
+    const basis = x.nutrition_basis ? `per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")}` : "";
+    const rows = x.nutrition.map((n) =>
+      `<tr><td>${esc(n.label)}</td><td class="nut-val">${esc(n.value)}${esc(n.unit || "")}</td></tr>`).join("");
+    P.push(`<table class="nut-table small mb-1"><thead><tr><th>Näringsvärde</th><th class="nut-val">${basis}</th></tr></thead><tbody>${rows}</tbody></table>`);
   }
   if (x.sources && x.sources.length) {
     const chips = x.sources.map((c) => {

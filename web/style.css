@@ -304,6 +304,11 @@ img.o-img { cursor: zoom-in; }
   font-size: .68rem; font-weight: 600; padding: 2px 9px; border-radius: 20px; cursor: pointer;
 }
 .od-map:hover { background: #eef1f4; }
+/* Näringstabell i produktmodalen */
+.nut-table { width: 100%; border-collapse: collapse; }
+.nut-table th { font-weight: 700; color: #46505c; border-bottom: 1px solid #d4dae0; padding: 2px 4px; text-align: left; }
+.nut-table td { padding: 2px 4px; border-bottom: 1px solid #eef1f4; color: #1c2530; }
+.nut-table .nut-val { text-align: right; white-space: nowrap; }
 .o-offer-badge {
   font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;
   padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .02em;
