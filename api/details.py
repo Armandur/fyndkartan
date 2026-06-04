@@ -512,8 +512,10 @@ async def fetch_for_ean(client, ean, prefer_chain=None):
     co = await _fetch_coop(client, ean) if need_more else None
     parts = [p for p in (ax, co) if p and (p.get("ingredients") or p.get("description"))]
     # ICA-detalj: enda källan för ICA:s egna märken (ICA-intern EAN, prefix 731869) som
-    # Axfood/Coop saknar; även fallback när de andra gett tomt.
-    if str(ean).lstrip("0").startswith("731869") or not parts:
+    # Axfood/Coop saknar; fallback när de andra gett tomt; OCH när näringen fortfarande är
+    # gles (Axfood ger ofta bara energi och Coop saknade varan) - ICA bär full näringsdeklaration.
+    nut_best = max((len(p.get("nutrition") or []) for p in parts), default=0)
+    if str(ean).lstrip("0").startswith("731869") or not parts or nut_best < 4:
         ic = await _fetch_ica(client, ean)
         if ic and (ic.get("ingredients") or ic.get("description")):
             parts.append(ic)
