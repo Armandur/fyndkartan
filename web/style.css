@@ -383,8 +383,9 @@ img.o-img { cursor: zoom-in; }
 #browseView { flex: 1 1 auto; min-width: 0; overflow-y: auto; background: #f4f6f8;
   padding: .9rem 1.1rem 2rem; }
 body.browse-mode .sidebar { display: none; }
-.browse-head { display: flex; gap: .5rem; align-items: center; max-width: 720px; margin: 0 auto .8rem; }
-.browse-head #browseSearch { flex: 1 1 auto; }
+.browse-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; max-width: 1000px; margin: 0 auto .8rem; }
+.browse-head #browseSearch { flex: 1 1 220px; min-width: 200px; }
+.browse-head select { flex: 0 0 auto; }
 .browse-cats { display: flex; flex-wrap: wrap; gap: .35rem; justify-content: center;
   max-width: 900px; margin: 0 auto .5rem; }
 .browse-summary { max-width: 900px; margin: 0 auto .9rem; text-align: center; }
@@ -397,10 +398,14 @@ body.browse-mode .sidebar { display: none; }
 .browse-cat:hover { background: #eef1f4; }
 .browse-cat.on { background: #19c37d; border-color: #19c37d; color: #04231a; font-weight: 700; }
 .browse-title { max-width: 1200px; margin: 0 auto .5rem; font-weight: 700; color: #1c2530; }
-.browse-grid { max-width: 1240px; margin: 0 auto;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: .6rem; }
+.browse-grid { max-width: 1560px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(490px, 1fr)); gap: .6rem; }
 .browse-grid .offer-card { background: #fff; border: 1px solid #e6e9ec; border-radius: 9px; padding: .55rem .65rem;
+  overflow: hidden;  /* sista utväg: klipp ev. spill (lång rea+ISO-datum) i stället för utanför kortet */
   animation: cardFadeIn .3s ease both; }  /* `both` -> osynlig under animation-delay = staggad infällning */
+/* Prisgridet får krympa inom kortet (annars trycker max-content-kolumnerna ut texten utanför) */
+.browse-grid .o-shelf { min-width: 0; }
+.browse-grid .o-shelf > span { min-width: 0; }
 @keyframes cardFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .browse-grid .offer-card { animation: none; } }
 /* Produktbilden tonas in när den laddats (onload -> .loaded). Bara i rutnätet; div-platshållaren

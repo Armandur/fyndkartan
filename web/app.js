@@ -1104,11 +1104,15 @@ function populateBrowseChain() {
 
 let browseSummary = null, _summaryChain = " ";  // sentinel: ingen summary hämtad än
 async function loadBrowseSummary() {
-  if (_summaryChain === browseState.chain && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
-  _summaryChain = browseState.chain;
+  // Kategori-siffrorna speglar samma filter som bläddra-vyn (kedja + bara erbjudanden + favoriter).
+  const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}`;
+  if (_summaryChain === key && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
+  _summaryChain = key;
   try {
     const p = new URLSearchParams();
     if (browseState.chain) p.set("chain", browseState.chain);
+    if (browseState.onlyOffers) p.set("only_offers", "1");
+    if (browseState.favorites) p.set("favorites", "1");
     browseSummary = await (await fetch(`/v1/products/catalog/summary?${p}`)).json();
   } catch (e) { browseSummary = null; }
   renderBrowseCats();
@@ -1274,6 +1278,7 @@ document.getElementById("browseChain").addEventListener("change", (e) => {
 });
 document.getElementById("browseOffers").addEventListener("change", (e) => {
   browseState.onlyOffers = e.target.checked;
+  loadBrowseSummary();  // kategori-siffrorna speglar filtret
   loadBrowse();  // server-filter -> hämta om sidan (lätt toggle, korrekta totaler)
 });
 document.getElementById("browseSort").addEventListener("change", (e) => {
@@ -1286,6 +1291,7 @@ document.getElementById("browseDeal").addEventListener("change", (e) => {
 });
 document.getElementById("browseFav").addEventListener("change", (e) => {
   browseState.favorites = e.target.checked;
+  loadBrowseSummary();  // kategori-siffrorna speglar filtret
   loadBrowse();  // bara rea hos favoritbutikerna (server-side, inloggad)
 });
 document.getElementById("browseCats").addEventListener("click", (e) => {

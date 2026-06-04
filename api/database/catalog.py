@@ -198,16 +198,24 @@ def catalog_stats():
                          "missing_ean": r["missing_ean"] or 0, "last_crawl": r["last"]} for r in rows}
 
 
-def catalog_summary(chain=None):
+def catalog_summary(chain=None, only_offers=False, fav_stores=None):
     """Översikt av den persisterade katalogen (available=1): antal distinkta produkter
     (EAN-grupperat cross-chain) per kanonisk kategori, totalsumma, samt råa produktantal
-    per kedja (cross-chain-delade EAN räknas i varje kedja -> summan kan vara > total)."""
+    per kedja. `only_offers`/`fav_stores` begränsar till rea-produkter (globalt resp. hos
+    favoritbutiker) -> kategori-siffrorna speglar samma filter som bläddra-vyn."""
+    oset = None  # EAN-restriktion (None = ingen)
+    if fav_stores:
+        oset = eans_on_offer_at_stores(fav_stores)
+    elif only_offers:
+        oset = on_offer_eans()
     by_chain = {}
     cats = {}
     total = 0
     for g in _browse_groups().values():  # samma cachade gruppering som catalog_browse
         members = [m for m in g if m["chain"] == chain] if chain else g
         if not members:
+            continue
+        if oset is not None and (members[0]["ean"] not in oset):  # gruppen delar en EAN
             continue
         total += 1
         for m in members:

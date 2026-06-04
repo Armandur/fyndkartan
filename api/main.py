@@ -1134,10 +1134,15 @@ async def products_catalog_browse(
 
 
 @app.get("/v1/products/catalog/summary")
-async def products_catalog_summary(chain: str | None = None, _auth=Depends(require_consumer)):
+async def products_catalog_summary(chain: str | None = None, only_offers: bool = False,
+                                   favorites: bool = False, user=Depends(require_consumer)):
     """Översikt av den persisterade katalogen: antal distinkta produkter per kanonisk kategori,
-    total, samt produktantal per kedja. Driver bläddra-vyns kategori-räknare och totaler."""
-    return database.catalog_summary(chain=chain)
+    total, samt produktantal per kedja. Driver bläddra-vyns kategori-räknare och totaler.
+    `only_offers`/`favorites` speglar bläddra-vyns filter (rea globalt resp. hos favoriter)."""
+    fav_stores = None
+    if favorites and user:
+        fav_stores = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
+    return database.catalog_summary(chain=chain, only_offers=only_offers, fav_stores=fav_stores)
 
 
 @app.get("/v1/products/{ean}", responses={200: {"model": schemas.ProductInfoResponse}})
