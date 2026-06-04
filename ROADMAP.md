@@ -280,6 +280,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en
       tillverkar-katalog/aggregat), kanske inte i nuvarande kart-app men i en kommande konsument-/
       analys-app. Kräver normalisering av tillverkarnamn (samma märke stavas olika per kedja).
+    - [ ] **Kost-filter: vegan/vegetariskt (+ härled när otaggat).** Kunna filtrera produkter på
+      vegansk/vegetarisk - som ett TVÄRGÅENDE kost-filter (vegetariska varor finns i alla kategorier,
+      inte bara kanoniska `vegetariskt`). Steg: (1) använd kedjornas ev. taggar/kategori när de finns;
+      (2) **härled annars ur produktinfo** (`details.py` ingredienser/allergener: ingen kött/fisk/
+      mejeri/ägg/gelatin -> vegansk; ingen kött/fisk -> vegetarisk) - vokabulär likt
+      `extract_allergens`; (3) bara LIVSMEDEL (exkludera hygien/hushåll/djur via kanonisk kategori).
+      Osäkra fall markeras "ev." snarare än falskt positivt. API-flagga + filter i bläddra-vyn.
     - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
       markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
       delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan

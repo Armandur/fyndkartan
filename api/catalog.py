@@ -339,6 +339,9 @@ def _enrich_with_offers(products):
             o = offs.get(pr["chain"])
             if o:
                 pr["offer_price"] = o["price"]
+                pr["offer_text"] = o.get("price_text")
+                pr["offer_deal"] = o.get("deal_type")
+                pr["offer_multibuy"] = o.get("multibuy_qty")
                 pr["offer_valid_to"] = o["valid_to"]
                 pr["offer_member"] = o["member_price"]
             seen.add(pr["chain"])
@@ -347,8 +350,9 @@ def _enrich_with_offers(products):
                 p["prices"].append({
                     "chain": chain, "price": None, "comparison_value": o["comparison_value"],
                     "comparison_unit": o["comparison_unit"], "comparison_derived": False,
-                    "offer_price": o["price"], "offer_valid_to": o["valid_to"],
-                    "offer_member": o["member_price"]})
+                    "offer_price": o["price"], "offer_text": o.get("price_text"),
+                    "offer_deal": o.get("deal_type"), "offer_multibuy": o.get("multibuy_qty"),
+                    "offer_valid_to": o["valid_to"], "offer_member": o["member_price"]})
         op = [o["price"] for o in offs.values() if o.get("price") is not None]
         p["offer_min"] = min(op) if op else None
         # Sortera kedjornas prisrader på effektivt pris (erbjudandepris om det finns, annars

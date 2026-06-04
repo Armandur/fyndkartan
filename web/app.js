@@ -902,12 +902,14 @@ function catalogCard(p) {
     const m = state.chains[pr.chain] || {};
     const hasOffer = pr.offer_price != null;
     const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
-    // Rea-cellen är klickbar -> kartan filtrerad på den kedjans erbjudande för produkten.
-    const reaTxt = hasOffer ? `rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}` : "";
+    // Rea-cellen klickbar -> aktuellt erbjudande. Flerköp visas som sin pristext ("3 för 18 kr")
+    // i stället för det missvisande "rea 18 kr" (rean är då flerköps-totalen, ej styckpris).
+    const dealTxt = (pr.offer_deal === "multibuy" && pr.offer_text) ? esc(pr.offer_text) : `rea ${kr(pr.offer_price)} kr`;
+    const reaTxt = hasOffer ? `${dealTxt}${pr.offer_member ? " klubb" : ""}` : "";
     const rea = (hasOffer && p.ean)
-      ? `<a class="o-offer-link" data-ean="${esc(p.ean)}" data-chain="${esc(pr.chain)}" data-name="${esc(p.name || "")}" title="Visa erbjudandet på kartan">${reaTxt}</a>`
+      ? `<a class="o-offer-link" data-ean="${esc(p.ean)}" data-chain="${esc(pr.chain)}" data-name="${esc(p.name || "")}" title="Visa det aktuella erbjudandet">${reaTxt}</a>`
       : reaTxt;
-    const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc((pr.offer_valid_to || "").slice(5))}` : "";
+    const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc(pr.offer_valid_to)}` : "";
     const cmp = pr.comparison_value != null ? `${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")}` : "";
     return `<span class="o-sc-chain"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span></span>`
       + `<span class="o-sc-shelf">${shelf}</span>`
