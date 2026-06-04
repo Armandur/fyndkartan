@@ -47,6 +47,7 @@ api/                 # Python-paketet (importeras som `api`)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
   categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
+  countries.py       # landnamn <-> ISO-kod (babel): split_origins() (sv-normaliserat ursprung + flerland-koder), flag_emoji()
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories()/warm_ica_categories() (kategori-förvärmning; ICA capad+inkrementell). STATE per kedja
   adapters/

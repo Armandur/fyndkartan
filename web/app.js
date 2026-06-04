@@ -50,6 +50,12 @@ function esc(s) {
 }
 const fmtNum = (n) => (n ?? 0).toLocaleString("sv-SE");  // svensk tusentalsavgränsning (blanksteg)
 
+// Flagg-emoji ur en ISO-3166 alfa-2-kod (regional indicator-par). "" om ogiltig.
+function flagEmoji(code) {
+  if (!code || !/^[A-Za-z]{2}$/.test(code)) return "";
+  return code.toUpperCase().replace(/./g, (c) => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65));
+}
+
 // Avrunda pris till max 2 decimaler (strippar avrundnings-artefakter som 8.333333... -> 8.33).
 function kr(v) {
   if (v == null || v === "") return v ?? "";
@@ -562,8 +568,9 @@ function renderProductInfo(d, chain) {
   if (x.description) P.push(`<p class="small">${esc(x.description)}</p>`);
   if (x.ingredients) P.push(`<p class="small mb-1"><strong>Innehåll:</strong> ${esc(x.ingredients)}</p>`);
   if (x.allergens && x.allergens.length) P.push(`<p class="small mb-1"><strong>Allergener:</strong> ${x.allergens.map(a => `<span class="badge bg-warning text-dark">${esc(a)}</span>`).join(" ")}</p>`);
+  const flags = (x.origin_codes || []).map(flagEmoji).filter(Boolean).join(" ");
   const orig = [x.origin, x.province].filter(Boolean).join(" · ");
-  if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${esc(orig)}</p>`);
+  if (orig) P.push(`<p class="small mb-1"><strong>Ursprung:</strong> ${flags ? flags + " " : ""}${esc(orig)}</p>`);
   if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
   if (x.nutrition && x.nutrition.length) {
     const basis = x.nutrition_basis ? `per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")}` : "";

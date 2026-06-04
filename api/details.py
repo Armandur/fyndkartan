@@ -14,7 +14,7 @@ import json
 import logging
 import re
 
-from . import config, database as db
+from . import config, countries, database as db
 from .adapters import ica_token, keys
 from .adapters.axfood_offers import DOMAIN, UA
 
@@ -158,6 +158,11 @@ def normalize_info(info):
     info["nutrition"] = _normalize_nutrition(info.get("nutrition"))
     info["allergens"] = extract_allergens(info.get("ingredients"))
     info["labels"] = _normalize_labels(info.get("labels"))
+    # Ursprung: normalisera till svenskt CLDR-namn ("Sweden"->"Sverige") + ISO-koder (-> flaggor i
+    # appen). Hanterar fleruländer ("Sverige, Norge"); okända delar (fiskeområden) lämnas utan kod.
+    norm_origin, codes = countries.split_origins(info.get("origin"))
+    info["origin"] = norm_origin
+    info["origin_codes"] = codes
     return info
 
 
