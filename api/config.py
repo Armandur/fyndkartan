@@ -48,6 +48,10 @@ CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * 1")
 CATALOG_EAN_WARM_CAP = int(os.getenv("CATALOG_EAN_WARM_CAP", "1000"))
 # Paus (s) mellan batchar (200 koder) i Axfood-katalog-EAN-resolvningen - skonsamt mot API:t.
 CATALOG_EAN_PACE = float(os.getenv("CATALOG_EAN_PACE", "0.5"))
+# Circuit-breaker: när en batch är mestadels WAF-blockad (403) pausas kedjan COOLDOWN s och försöks
+# om; efter MAX_BLOCKS misslyckade cooldowns hoppas resten av kedjan (återupptas vid nästa körning).
+CATALOG_EAN_COOLDOWN = float(os.getenv("CATALOG_EAN_COOLDOWN", "120"))
+CATALOG_EAN_MAX_BLOCKS = int(os.getenv("CATALOG_EAN_MAX_BLOCKS", "3"))
 CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkter per sida (take)
 CATALOG_CRAWL_PACE = float(os.getenv("CATALOG_CRAWL_PACE", "0.3"))   # paus mellan sidor (s)
 CATALOG_CRAWL_RETRIES = int(os.getenv("CATALOG_CRAWL_RETRIES", "3"))

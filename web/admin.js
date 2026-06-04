@@ -1197,14 +1197,18 @@
       const prog = document.getElementById("eanWarmProgress"), status = document.getElementById("eanWarmStatus");
       if (test) test.disabled = w.running || crawlRunning;
       if (all) all.disabled = w.running || crawlRunning;
-      if (status) status.innerHTML = w.running ? '<span class="st-running">● resolvar…</span>' : "";
+      if (status) status.innerHTML = w.running
+        ? (w.cooldown ? '<span class="st-running">● pausad (WAF-block, väntar…)</span>' : '<span class="st-running">● resolvar…</span>')
+        : "";
       if (!prog) return;
+      const blk = w.blocked ? ` &middot; <span class="text-danger">${(w.blocked).toLocaleString("sv-SE")} blockerade</span>` : "";
       if (w.running) {
         const pct = w.total ? Math.round((w.done / w.total) * 100) : 0;
-        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
-          <div class="small text-muted mt-1">${(w.done || 0).toLocaleString("sv-SE")}/${(w.total || 0).toLocaleString("sv-SE")} koder${w.current_chain ? ` &middot; ${chip(w.current_chain)}` : ""} &middot; ${w.resolved || 0} med EAN, ${w.empty || 0} utan</div>`;
+        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar ${w.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
+          <div class="small text-muted mt-1">${(w.done || 0).toLocaleString("sv-SE")}/${(w.total || 0).toLocaleString("sv-SE")} koder${w.current_chain ? ` &middot; ${chip(w.current_chain)}` : ""} &middot; ${w.resolved || 0} med EAN, ${w.empty || 0} utan${blk}${w.cooldown ? " &middot; <em>cooldown</em>" : ""}</div>`;
       } else if (w.finished_at) {
-        prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(w.finished_at))}: ${(w.resolved || 0).toLocaleString("sv-SE")} med EAN, ${w.empty || 0} utan &middot; <strong>${(w.updated || 0).toLocaleString("sv-SE")}</strong> katalograder sammanslagna cross-chain${w.error ? ` &middot; <span class="text-danger">fel: ${esc(w.error)}</span>` : ""}</div>`;
+        const skipped = (w.skipped_chains || []).length ? ` &middot; <span class="text-danger">hoppade: ${w.skipped_chains.map(esc).join(", ")}</span>` : "";
+        prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(w.finished_at))}: ${(w.resolved || 0).toLocaleString("sv-SE")} med EAN, ${w.empty || 0} utan${blk} &middot; <strong>${(w.updated || 0).toLocaleString("sv-SE")}</strong> katalograder sammanslagna cross-chain${skipped}${w.error ? ` &middot; <span class="text-danger">fel: ${esc(w.error)}</span>` : ""}</div>`;
       } else {
         prog.innerHTML = "";
       }

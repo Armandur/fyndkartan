@@ -141,7 +141,8 @@ async def warm_axfood_eans():
 
 # Progress för Axfood-katalog-EAN-warmingen (visas i konsolens Sortiment-flik).
 CATALOG_EAN_STATE = {"running": False, "total": 0, "done": 0, "resolved": 0, "empty": 0,
-                     "updated": 0, "current_chain": None, "started_at": None, "finished_at": None,
+                     "blocked": 0, "updated": 0, "current_chain": None, "cooldown": False,
+                     "skipped_chains": [], "started_at": None, "finished_at": None,
                      "error": None, "recent": []}
 _EAN_FEED_MAX = 60
 
@@ -175,32 +176,51 @@ async def warm_axfood_catalog_eans(cap=None):
         if miss:
             to_fetch[chain] = miss
     CATALOG_EAN_STATE.update(running=True, total=sum(len(v) for v in to_fetch.values()), done=0,
-                             resolved=0, empty=0, updated=0, current_chain=None,
-                             started_at=_now(), finished_at=None, error=None, recent=[])
+                             resolved=0, empty=0, blocked=0, updated=0, current_chain=None,
+                             cooldown=False, skipped_chains=[], started_at=_now(), finished_at=None,
+                             error=None, recent=[])
     try:
         async with apilog.make_client(follow_redirects=True) as client:
             for chain, codes in to_fetch.items():
                 CATALOG_EAN_STATE["current_chain"] = chain
-                for i in range(0, len(codes), 200):
+                i, block_streak = 0, 0
+                while i < len(codes):
                     batch = codes[i:i + 200]
                     meta = await axfood_offers.fetch_p_meta(client, chain, batch)
-                    save_ean_meta(meta)
+                    nblock = sum(1 for m in meta.values() if m.get("blocked"))
+                    if nblock > len(batch) // 2:  # WAF aktiv -> circuit-breaker (cooldown + om-försök)
+                        block_streak += 1
+                        if block_streak > config.CATALOG_EAN_MAX_BLOCKS:
+                            log.warning("Axfood-EAN: %s fortsatt blockerad -> hoppar resten (%d koder)",
+                                        chain, len(codes) - i)
+                            CATALOG_EAN_STATE["skipped_chains"].append(chain)
+                            break
+                        CATALOG_EAN_STATE["cooldown"] = True
+                        await asyncio.sleep(config.CATALOG_EAN_COOLDOWN)
+                        CATALOG_EAN_STATE["cooldown"] = False
+                        continue  # samma batch igen (i oförändrat)
+                    block_streak = 0
+                    save_ean_meta({c: m for c, m in meta.items() if not m.get("blocked")})  # cacha ej blockerade
                     _ean_feed(chain, meta)  # mata in resolvade i feeden
                     CATALOG_EAN_STATE["done"] += len(batch)
                     CATALOG_EAN_STATE["resolved"] += sum(1 for m in meta.values() if m.get("ean"))
-                    CATALOG_EAN_STATE["empty"] += sum(1 for m in meta.values() if not m.get("ean"))
-                    if config.CATALOG_EAN_PACE and i + 200 < len(codes):
+                    CATALOG_EAN_STATE["empty"] += sum(1 for m in meta.values() if not m.get("ean") and not m.get("blocked"))
+                    CATALOG_EAN_STATE["blocked"] += nblock
+                    i += 200
+                    if config.CATALOG_EAN_PACE and i < len(codes):
                         await asyncio.sleep(config.CATALOG_EAN_PACE)  # skonsam takt mellan batchar
         CATALOG_EAN_STATE["updated"] = backfill_catalog_eans()
-        log.info("Axfood-katalog-EAN klar: %d resolved, %d empty, %d rader backfilllade",
-                 CATALOG_EAN_STATE["resolved"], CATALOG_EAN_STATE["empty"], CATALOG_EAN_STATE["updated"])
+        log.info("Axfood-katalog-EAN klar: %d resolved, %d empty, %d blockerade, %d backfilllade%s",
+                 CATALOG_EAN_STATE["resolved"], CATALOG_EAN_STATE["empty"], CATALOG_EAN_STATE["blocked"],
+                 CATALOG_EAN_STATE["updated"],
+                 f" (hoppade: {','.join(CATALOG_EAN_STATE['skipped_chains'])})" if CATALOG_EAN_STATE["skipped_chains"] else "")
         return CATALOG_EAN_STATE["updated"]
     except Exception as e:  # noqa: BLE001
         CATALOG_EAN_STATE["error"] = str(e)
         log.exception("Axfood-katalog-EAN-warming misslyckades")
         return 0
     finally:
-        CATALOG_EAN_STATE.update(running=False, current_chain=None, finished_at=_now())
+        CATALOG_EAN_STATE.update(running=False, current_chain=None, cooldown=False, finished_at=_now())
 
 
 async def warm_axfood_eans_cached():

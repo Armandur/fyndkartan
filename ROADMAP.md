@@ -266,6 +266,20 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       (IntersectionObserver på `#browseMore` i `#browseView`, rootMargin 400px) - behåller
       scrollpositionen i stället för den gamla "Visa fler"-knappen som laddade om allt. Staggad
       fade-in på appendade kort + bild-fade-in (onload) i rutnätet.
+    - [ ] **Visa "saknar EAN"-antal i konsolens översikt.** I lämpligt kort (Sortimentprodukter eller
+      Per kedja-tabellen) visa hur många katalogprodukter som saknar EAN per kedja (`catalog_products`
+      `ean IS NULL`, främst Willys/Hemköp) - så man ser hur mycket EAN-resolvningen har kvar och
+      cross-chain-merge-täckningen. Datan finns redan (`catalog_axfood_codes_missing_ean`).
+    - [ ] **Bugg: "Laddar fler…" visas när allt redan laddats.** I bläddra-vyns progress-rad kan
+      "Laddar fler… 4 av 4 produkter" dyka upp i en liten kategori där alla redan laddats (sentinel/
+      IntersectionObserver triggar `loadMoreBrowse` trots `browseHasMore=false`, eller en race i
+      `browseLoadingMore`-flaggan). Ska visa "Alla N produkter visade", aldrig "Laddar fler" när
+      inget mer finns.
+    - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** Man ska kunna lista
+      alla produkter från en viss tillverkare/märke (`brand`/`manufacturer`-fältet finns redan i
+      katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en
+      tillverkar-katalog/aggregat), kanske inte i nuvarande kart-app men i en kommande konsument-/
+      analys-app. Kräver normalisering av tillverkarnamn (samma märke stavas olika per kedja).
     - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
       markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
       delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan

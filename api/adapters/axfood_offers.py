@@ -41,6 +41,7 @@ async def fetch_p_meta(client, chain, codes):
     headers = {"Accept": "application/json", "User-Agent": UA}
     sem = asyncio.Semaphore(_EAN_CONCURRENCY)
     empty = {"ean": "", "category": None, "origin": None}
+    blocked = {"ean": "", "category": None, "origin": None, "blocked": True}
 
     async def one(code):
         async with sem:
@@ -54,19 +55,22 @@ async def fetch_p_meta(client, chain, codes):
                             "category": d.get("googleAnalyticsCategory") or None,
                             "origin": _country_en_to_sv(d.get("tradeItemCountryOfOrigin")),
                         }
-                    if r.status_code in (429,) or r.status_code >= 500:
-                        if attempt < _EAN_RETRIES:
-                            ra = r.headers.get("Retry-After")
-                            wait = float(ra) if (ra or "").isdigit() else _EAN_BACKOFF * (2 ** attempt)
-                            await asyncio.sleep(min(wait, 30))
-                            continue
-                    return code, empty  # 404 e.d., eller retries slut
+                    if r.status_code == 404:
+                        return code, empty  # genuint ej funnen, ingen retry/block
+                    # 403 (WAF-block, HTML) / 429 / 5xx -> throttle: backa av och försök om
+                    if attempt < _EAN_RETRIES:
+                        ra = r.headers.get("Retry-After")
+                        wait = float(ra) if (ra or "").isdigit() else _EAN_BACKOFF * (2 ** attempt)
+                        await asyncio.sleep(min(wait, 30))
+                        continue
+                    return code, blocked  # retries slut -> markera blockerad (circuit-breaker räknar)
                 except Exception as e:  # noqa: BLE001
                     if attempt < _EAN_RETRIES:
                         await asyncio.sleep(_EAN_BACKOFF * (2 ** attempt))
                         continue
                     log.warning("Axfood meta %s misslyckades: %s", code, e)
-        return code, empty
+                    return code, blocked
+        return code, blocked
 
     return dict(await asyncio.gather(*(one(c) for c in codes)))
 
