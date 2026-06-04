@@ -49,6 +49,7 @@ class CatalogPrice(BaseModel):
     comparison_value: float | None = Field(None, description="Jämförpris-värde eller null")
     comparison_unit: str | None = Field(None, description="Jämförpris-enhet (kg/l/st...) eller null")
     comparison_derived: bool | None = Field(None, description="True = beräknat jämförpris (pris/storlek), ungefärligt")
+    store: str | None = Field(None, description="Butik (ledger/account) hyllpriset är scopat till (Coop/ICA är butiksspecifika); null = nationellt (Axfood/CG)")
     offer_price: float | None = Field(None, description="Lägsta aktuella erbjudandepris i kedjan (butikslokalt), eller null")
     offer_valid_to: str | None = Field(None, description="Erbjudandet gäller t.o.m. (ISO-datum)")
     offer_member: bool | None = Field(None, description="Om erbjudandepriset är medlems-/klubbpris")

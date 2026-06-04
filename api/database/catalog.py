@@ -15,7 +15,7 @@ _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "package_unit", "category_raw")
 
 _BROWSE_SQL = ("SELECT chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
-               "comparison_unit, package_size, package_value, package_unit, category_raw "
+               "comparison_unit, package_size, package_value, package_unit, category_raw, store "
                "FROM catalog_products")
 _CATALOG_VER = 0                            # bumpas vid varje skrivning till catalog_products (crawl)
 _BROWSE_IDX = {"ver": -1, "groups": None}   # cachad EAN-/namn-gruppering (map-oberoende)
@@ -357,7 +357,8 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
             continue
         rep = next((m for m in g if m.get("name")), g[0])
         prices = [{"chain": m["chain"], "price": m["price"], "comparison_value": m["comparison_value"],
-                   "comparison_unit": m["comparison_unit"], "comparison_derived": False}
+                   "comparison_unit": m["comparison_unit"], "comparison_derived": False,
+                   "store": m.get("store")}  # butiksscopat hyllpris (Coop/ICA); NULL = nationellt
                   for m in g if m["price"] is not None]
         pv = [p["price"] for p in prices]
         out.append({

@@ -234,8 +234,9 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     (se Kända datakälle-fakta). Vi crawlar idag en FAST butik per kedja (Coop 251300, ICA 1003647) -
     katalogradens hyllpris är den butikens, inte nationellt. Halvbyggt: `catalog_products.store`
     taggar raden med ledger:t (NULL = nationellt, Axfood/CG); Coop/ICA backfillade. **Kvar:**
-    (1) exponera `store` i katalog-API:t + en "(butik X)/≈"-markör i UI:t så Coop/ICA-hyllpris inte
-    läses som nationellt; (2) ev. crawla flera representativa butiker per kedja (per region) för en
+    (1) [x] BYGGT - `store` exponeras i `catalog_browse` (CatalogPrice.store) + en "*"-markör (tooltip)
+    på Coop/ICA-hyllpris i katalogkortet så det inte läses som nationellt; (2) ev. crawla flera
+    representativa butiker per kedja (per region) för en
     rättvisare cross-chain-jämförelse; (3) store-medveten produktinfo/bild för Coop (perso-fetch
     scopas till 251300 -> produkter som bara finns i andra butiker saknas info/bild). Stort jobb -
     gör (1) först (billig honesty-markör), (2)/(3) vid behov.

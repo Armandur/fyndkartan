@@ -977,7 +977,9 @@ function catalogCard(p) {
   const prices = (p.prices || []).map((pr) => {
     const m = state.chains[pr.chain] || {};
     const hasOffer = pr.offer_price != null;
-    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
+    // Coop/ICA-hyllpris är butiksspecifikt (varierar per butik) -> markera så det inte läses som nationellt.
+    const storeMark = pr.store ? `<span class="o-sc-store" title="Butiksspecifikt hyllpris - Coop/ICA varierar mellan butiker, detta är butik ${esc(pr.store)} (ej nationellt)">*</span>` : "";
+    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>${storeMark}` : `${kr(pr.price)} kr${storeMark}`) : "-";
     // Rea-cellen klickbar -> aktuellt erbjudande. Flerköp visar det beräknade STYCKPRISET
     // (jämförbart med det strukna hyllpriset) + liten deal-text; vanlig rea visar "rea X kr".
     const qty = pr.offer_multibuy || 1;
