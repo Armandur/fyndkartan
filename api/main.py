@@ -44,6 +44,20 @@ log = logging.getLogger("matbutiker")
 WEB_DIR = config.BASE_DIR / "web"
 
 
+def _next_cron(expr):
+    """Nästa körningstid för ett cron-uttryck (i SYNC_TZ) som 'YYYY-MM-DD HH:MM', None om tomt/ogiltigt."""
+    try:
+        from croniter import croniter
+        from zoneinfo import ZoneInfo
+
+        if expr and expr.strip():
+            now = datetime.now(ZoneInfo(config.SYNC_TZ))
+            return croniter(expr, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def ensure_admin():
     """Skapa konsol-admin-kontot (admin_users, skilt från app-konton) vid uppstart.
     Lösenord från ADMIN_PASSWORD, annars genereras ett som loggas en gång."""
@@ -91,6 +105,9 @@ async def lifespan(app: FastAPI):
     # den första fyllningen triggas manuellt från konsolen (skonar kedjornas API:er).
     offers_scheduler = asyncio.create_task(
         run_scheduler(config.OFFERS_SWEEP_CRON, config.SYNC_TZ, sweep_offers, "erbjudande-sweep"))
+    # Fulla sortiment-crawlen (tung) har egen gles cadence (default veckovis). Tomt cron = av.
+    crawl_scheduler = asyncio.create_task(
+        run_scheduler(config.CATALOG_CRAWL_CRON, config.SYNC_TZ, catalog_crawl.crawl_all, "sortiment-crawl"))
     yield
     scheduler.cancel()
     offers_scheduler.cancel()
@@ -432,19 +449,6 @@ async def admin_overview(_=Depends(require_admin)):
     ).fetchone()["c"]
     conn.close()
     ean_stats = database.ean_stats()
-
-    def _next_cron(expr):
-        try:
-            from croniter import croniter
-            from zoneinfo import ZoneInfo
-
-            if expr and expr.strip():
-                now = datetime.now(ZoneInfo(config.SYNC_TZ))
-                return croniter(expr, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
-        except Exception:  # noqa: BLE001
-            pass
-        return None
-
     next_run = _next_cron(config.SYNC_CRON)
 
     def _file_size(p):
@@ -1205,4 +1209,5 @@ async def trigger_catalog_crawl(limit_categories: int | None = None, chains: str
 
 @app.get("/v1/admin/catalog/crawl/status")
 async def catalog_crawl_status(_=Depends(require_admin)):
-    return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats()}
+    return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats(),
+            "cron": config.CATALOG_CRAWL_CRON, "next_run": _next_cron(config.CATALOG_CRAWL_CRON)}

@@ -1074,7 +1074,8 @@
           <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto">Testa alla (2 steg/kedja)</button>
           <button id="crawlNow" class="btn btn-sm btn-dark ms-2">Crawla alla kedjor</button>
         </div>
-        <div class="text-muted small mb-3">Walk:ar kedjornas sortiment och persistar hela katalogen med hyllpris (ej bara erbjudanden) - prisändringar fångas över tid. Rate-limitat; en hel kedja tar några minuter. Knapparna uppe till höger kör <strong>alla</strong> implementerade kedjor; varje kedja har egna <em>Testa</em>/<em>Crawla</em>-knappar. Implementerat: City Gross, ICA (Coop + Willys/Hemköp kommer).</div>
+        <div class="text-muted small mb-1">Walk:ar kedjornas sortiment och persistar hela katalogen med hyllpris (ej bara erbjudanden) - prisändringar fångas över tid. Rate-limitat; en hel kedja tar några minuter. Knapparna uppe till höger kör <strong>alla</strong> implementerade kedjor; varje kedja har egna <em>Testa</em>/<em>Crawla</em>-knappar. Implementerat: City Gross, ICA, Coop, Willys, Hemköp.</div>
+        <div id="catalogSchedule" class="text-muted small mb-3"></div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5"><div class="card p-3">
@@ -1109,8 +1110,12 @@
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'
-        : `senast: ${esc(d.finished_at || "-")}`;
+        : "";  // "senast" visas per kedja nedan -> ingen redundant topp-rad
       document.getElementById("catalogLive").innerHTML = d.running ? '<span class="st-running small">● live</span>' : "";
+      const sched = document.getElementById("catalogSchedule");
+      if (sched) sched.innerHTML = (d.cron && d.cron.trim())
+        ? `Schemalagd crawl: <strong>${esc(d.next_run || "-")}</strong> <span class="mono">${esc(d.cron)}</span>${d.finished_at ? ` &middot; senast klar ${esc((d.finished_at || "").slice(0, 16).replace("T", " "))}` : ""}`
+        : `Manuell (ingen schemalagd crawl)${d.finished_at ? ` &middot; senast klar ${esc((d.finished_at || "").slice(0, 16).replace("T", " "))}` : ""}`;
       document.getElementById("crawlNow").disabled = d.running;
       document.getElementById("crawlTest").disabled = d.running;
       document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
