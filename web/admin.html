@@ -13,6 +13,13 @@
     code { color: #0b6b3a; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
     .stat { font-size: 1.6rem; font-weight: 800; }
+    /* Stat-kort som CSS-grid: grid-auto-rows:1fr gör ALLA kort exakt lika höga (hela rutnätet,
+       inte bara per rad), höjden anpassas dynamiskt till det högsta kortet. Ren CSS, ingen JS.
+       Bootstrap-kolumnerna neutraliseras (grid sköter bredd/gutter). */
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; gap: 1rem; }
+    .stats-row > [class*="col"] { width: auto; max-width: none; flex: none; padding: 0; }
+    .stats-row > [class*="col"] > .card { height: 100%; }
+    @media (max-width: 767.98px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
     table { font-size: .85rem; }
     .st-ok { color: #137a4d; } .st-error { color: #c0392b; } .st-running { color: #b8860b; }
     .badge-chain { color: #fff; font-weight: 700; }

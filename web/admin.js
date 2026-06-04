@@ -25,7 +25,7 @@
       const sw = d.offers_sweep || {};  // bara nästa-körning-kortet kvar i översikten; resten i Erbjudanden-fliken
       document.getElementById("overview").innerHTML = `
         <h5 class="mb-3">Översikt</h5>
-        <div class="row g-3 mb-3">
+        <div class="row g-3 mb-3 stats-row">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Butiker</div><div class="stat">${storeTot}</div><div class="small text-muted">${storePer || "-"}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
           ${(() => {
@@ -110,7 +110,7 @@
           <div class="form-check form-check-inline ms-auto mb-0"><input class="form-check-input" type="checkbox" id="sweepForce"><label class="form-check-label small" for="sweepForce">Tvinga om allt</label></div>
           <button id="sweepNow" class="btn btn-sm btn-dark" ${sw.running ? "disabled" : ""}>Hämta alla erbjudanden</button>
         </div>
-        <div class="row g-3 mb-3">
+        <div class="row g-3 mb-3 stats-row">
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Erbjudanden cachade</div><div class="stat">${d.offers.rows}</div><div class="small text-muted">${d.offers.stores_cached} butiker</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa erbjudande-sweep</div><div class="fw-bold mt-1">${esc(sw.next_run || "-")}</div><div class="small mono text-muted">${esc(sw.cron || "")}</div></div></div>
         </div>
