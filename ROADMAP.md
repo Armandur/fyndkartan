@@ -256,6 +256,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       ökar `browseState.limit` och `loadBrowse()` hämtar om HELA listan och re-renderar `browseGrid`
       från noll - man tappar scrollpositionen och hamnar längst upp. Ska istället hämta nästa sida
       (offset/limit) och appenda korten till befintligt rutnät (behåll scrollposition).
+    - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
+      markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
+      delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan
+      ta ett favorit-/butiksfilter (katalogen är dock nationell/per-kedja, inte per butik - så
+      filtret blir per KEDJA som favoriterna täcker, ev. kombinerat med offers-täckning per butik).
+    - [ ] **"Visa på karta" ska visa erbjudandepriset direkt för rea-produkter.** När man klickar
+      "Visa på karta" för en produkt som har erbjudande borde kartans butiks-popup/markör visa
+      erbjudandepriset direkt (inte bara filtrera fram butikerna). Idag filtreras kartan på produkten
+      men priset syns först när man öppnar butikens erbjudanden.
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
