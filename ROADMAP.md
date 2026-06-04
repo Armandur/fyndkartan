@@ -252,10 +252,11 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       störst besparing, lägst pris, A-Ö, samt deal-typ. Idag har bläddra-vyn bara kategori-/kedje-/
       "bara erbjudanden"-filter och en fast sortering. Kräver att `catalog_browse`/`/catalog/browse`
       exponerar de fält som behövs (savings/jämförpris) och sorterings-/filterkontroller i `web/`.
-    - [ ] **"Visa fler" ska ladda fler i den nuvarande listan (append), inte ladda om sidan.** Idag
-      ökar `browseState.limit` och `loadBrowse()` hämtar om HELA listan och re-renderar `browseGrid`
-      från noll - man tappar scrollpositionen och hamnar längst upp. Ska istället hämta nästa sida
-      (offset/limit) och appenda korten till befintligt rutnät (behåll scrollposition).
+    - [x] **Infinite scroll (append, inte ladda om).** Bläddra-vyn appendar nästa sida via
+      offset-paginering (`catalog_browse` offset/limit) när man skrollar nära botten
+      (IntersectionObserver på `#browseMore` i `#browseView`, rootMargin 400px) - behåller
+      scrollpositionen i stället för den gamla "Visa fler"-knappen som laddade om allt. Staggad
+      fade-in på appendade kort + bild-fade-in (onload) i rutnätet.
     - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
       markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
       delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan
