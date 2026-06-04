@@ -27,6 +27,11 @@ def country_sv(name):
     return _SV.get(code) if code else None
 
 
+def sv_name(code):
+    """Kanoniskt svenskt landnamn för en ISO-kod, annars koden själv."""
+    return _SV.get(code, code) if code else None
+
+
 def flag_emoji(code):
     """Flagg-emoji ur en alfa-2-kod (regional indicator-par). EU -> EU-flaggan."""
     if not code or len(code) != 2 or not code.isalpha():

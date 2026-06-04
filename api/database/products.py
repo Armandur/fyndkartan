@@ -2,6 +2,7 @@ import json
 
 from ._conn import _now, get_conn
 from ..categories import category_from_detail
+from .. import countries
 
 
 def get_product_info(ean):
@@ -67,6 +68,30 @@ def get_product_categories(eans):
         canon = category_from_detail(r["src"], r["raw"]) if r["raw"] else None
         if canon:
             out[r["ean"]] = canon
+    return out
+
+
+def get_product_origins(eans):
+    """{ean: (origin-namn-lista, ISO-koder)} ur produktdetalj-cachen (Axfood/Coop/ICA-detalj).
+    Rikare ursprung än offers brand-parsning (som bara fångar ICA/Coop). Bara EAN där minst
+    ett land kunde resolvas; råname normaliseras till svenska via countries.split_origins."""
+    eans = [str(e) for e in eans if e]
+    if not eans:
+        return {}
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT ean, json_extract(data,'$.origin') AS origin FROM product_info "
+        f"WHERE ean IN ({','.join('?' * len(eans))})",
+        eans,
+    ).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        if not r["origin"]:
+            continue
+        _, codes = countries.split_origins(r["origin"])
+        if codes:
+            out[r["ean"]] = ([countries.sv_name(c) for c in codes], codes)
     return out
 
 

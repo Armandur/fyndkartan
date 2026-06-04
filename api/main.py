@@ -946,6 +946,15 @@ async def _compare_rows(client, rows_with_dist, min_chains):
             e["distance_km"] = round(d, 2) if d is not None else None
             entries.append(e)
     await _resolve_axfood_eans(client, entries)
+    # Berika ursprung ur produktdetalj-cachen för offers som saknar det (brand-parsning fångar
+    # bara ICA/Coop; nu har EAN resolvats så även Axfood/CG kan få ursprung + flagga).
+    po = database.get_product_origins(
+        [matching.normalize_ean(e["eans"][0]) for e in entries if e.get("eans")]
+    )
+    for e in entries:
+        ne = matching.normalize_ean(e["eans"][0]) if e.get("eans") else None
+        if ne and not e.get("origin_codes") and po.get(ne):
+            e["origin"], e["origin_codes"] = po[ne]
     manual = {m["ean"]: m["group_id"] for m in database.load_match_members()}
     return matching.build_comparisons(entries, min_chains=min_chains, manual_groups=manual)
 

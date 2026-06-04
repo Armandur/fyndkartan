@@ -3,11 +3,11 @@ import re
 
 from ._conn import _now, get_conn
 from .ean import get_axfood_categories, get_axfood_origins, get_cached_eans
-from .products import get_product_categories
+from .products import get_product_categories, get_product_origins
 from ..categories import category_for, category_from_detail, category_from_name, raw_key
 from ..config import AXFOOD_CHAINS, ORIGIN_COUNTRIES
 from .. import countries
-from ..matching import _norm_unit
+from ..matching import _norm_unit, normalize_ean
 
 
 _OFFER_COLS = (
@@ -16,6 +16,17 @@ _OFFER_COLS = (
     "eans,image,member_price,savings,fetched_at"
 )
 _OFFER_PH = ",".join(f":{c}" for c in _OFFER_COLS.split(","))
+
+
+def _norm_eans(eans):
+    """Normalisera en EAN-lista till kanoniska GTIN (dedup, ordningsbevarande). Ogiltiga
+    (2-prefix/viktvaror, fel längd) -> None förkastas, så offers.eans bara bär riktiga GTIN."""
+    out = []
+    for e in eans or []:
+        n = normalize_ean(e)
+        if n and n not in out:
+            out.append(n)
+    return out
 
 
 def archive_offers(chain, store_id, offers):
@@ -48,8 +59,8 @@ def archive_offers(chain, store_id, offers):
             cur = (o.get("price"), o.get("comparison_value"), o.get("savings"), o.get("valid_to"))
             if latest.get(oid) == cur:
                 continue
-            eans = o.get("eans") or []
-            ean = eans[0] if eans else (code_eans.get(oid) or None)
+            eans = _norm_eans(o.get("eans"))
+            ean = eans[0] if eans else (normalize_ean(code_eans[oid]) if code_eans.get(oid) else None)
             rows.append((chain, str(store_id), oid, ean, o.get("name"),
                          o.get("price"), o.get("comparison_value"), o.get("comparison_unit"),
                          o.get("savings"), o.get("member_price"), o.get("valid_to"), now))
@@ -219,13 +230,16 @@ def offers_for_eans(eans):
 
 
 def replace_store_offers(chain, store_id, offers):
-    """Ersätt en butiks erbjudanden transaktionellt. `eans` serialiseras till JSON.
+    """Ersätt en butiks erbjudanden transaktionellt. `eans` normaliseras + serialiseras till JSON.
     Arkiverar prisförändringar (prishistorik) innan replace."""
     archive_offers(chain, store_id, offers)
     rows = []
+    norm_by_offer = {}
     for o in offers:
+        ne = _norm_eans(o.get("eans"))  # kanoniska GTIN; 2-prefix/ogiltiga (viktvaror) slängs
+        norm_by_offer[str(o.get("offer_id"))] = ne
         r = dict(o)
-        r["eans"] = json.dumps(o.get("eans") or [], ensure_ascii=False)
+        r["eans"] = json.dumps(ne, ensure_ascii=False)
         rows.append(r)
     # offer_eans-index: inline-EAN + Axfood-kod resolvat ur ean_cache (NU; ev. ej-warmade koder
     # fylls vid nästa replace när ean_cache hunnit fyllas - självläkande över sweepar).
@@ -234,12 +248,11 @@ def replace_store_offers(chain, store_id, offers):
     oe_rows = []
     for o in offers:
         oid = str(o.get("offer_id"))
-        eans = o.get("eans") or []
+        eans = norm_by_offer[oid]
         if not eans and code_eans.get(oid):
-            eans = [code_eans[oid]]
+            eans = _norm_eans([code_eans[oid]])
         for e in eans:
-            if e:
-                oe_rows.append((chain, str(store_id), oid, e))
+            oe_rows.append((chain, str(store_id), oid, e))
     conn = get_conn()
     try:
         conn.execute("DELETE FROM offers WHERE chain=? AND store_id=?", (chain, str(store_id)))
@@ -469,7 +482,9 @@ def list_products(q=None, category=None, chain=None, limit=40):
     axc = get_axfood_categories(
         [r["offer_id"] for r in reps.values() if r["chain"] in AXFOOD_CHAINS and not r.get("category_raw")]
     )
-    pc = get_product_categories([g["ean"] for g in groups.values() if g["ean"]])
+    grouped_eans = [g["ean"] for g in groups.values() if g["ean"]]
+    pc = get_product_categories(grouped_eans)
+    po = get_product_origins(grouped_eans)  # rikare ursprung per EAN (fallback när brand saknar det)
     out = []
     for key, g in groups.items():
         rep = g["offs"][0]
@@ -483,6 +498,9 @@ def list_products(q=None, category=None, chain=None, limit=40):
             cat = category_from_name(rep.get("name")) or "ovrigt"
         brand, origin = _split_brand_origin(ch, rep.get("brand"))
         origin = norm_origin(origin)
+        origin_codes = countries.codes_for(origin)
+        if not origin_codes and g["ean"] and po.get(g["ean"]):  # fallback: ursprung ur produktdetalj
+            origin, origin_codes = po[g["ean"]]
         _, pval, punit, _ = _clean_package(rep.get("package"))
         psize = normalized_package(rep.get("package"))
         dt, mb = _deal_type(rep.get("price_text"))
@@ -492,7 +510,7 @@ def list_products(q=None, category=None, chain=None, limit=40):
             "name": rep.get("name"),
             "brand": brand,
             "origin": origin,
-            "origin_codes": countries.codes_for(origin),
+            "origin_codes": origin_codes,
             "image": rep.get("image"),
             "category": cat,
             "package_size": psize,
