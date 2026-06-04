@@ -980,7 +980,7 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 const browseState = { q: "", category: "", chain: "", onlyOffers: false };
 let browseTimer = null, browseToken = 0, browseProducts = [];
 const BROWSE_PAGE = 60;  // sidstorlek för infinite scroll (offset-paginering)
-let browseHasMore = false, browseLoadingMore = false, browseObserver = null;
+let browseHasMore = false, browseLoadingMore = false, browseObserver = null, browseTotalCount = null;
 
 function showBrowseUI() {
   document.body.classList.add("browse-mode");
@@ -1081,29 +1081,25 @@ function browseCardsHtml(products) {
 }
 
 function updateBrowseTitle() {
+  // onlyOffers är ett SERVERFILTER -> browseProducts innehåller redan bara erbjudande-produkter.
   const title = document.getElementById("browseTitle");
-  let products = browseProducts;
-  if (browseState.onlyOffers) products = products.filter((p) => p.on_offer);
   const head = browseState.q ? `Sök: "${browseState.q}"` : (catLabels[browseState.category] || browseState.category);
   title.textContent = head
-    ? `${head} (${products.length}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
+    ? `${head} (${browseProducts.length}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
 }
 
 function renderBrowseGrid() {  // full omrendering (kategori-/filterbyte) - infinite scroll appendar separat
   const grid = document.getElementById("browseGrid");
-  let products = browseProducts;
-  if (browseState.onlyOffers) products = products.filter((p) => p.on_offer);
   updateBrowseTitle();
-  grid.innerHTML = products.length
-    ? browseCardsHtml(products)
-    : `<div class="text-muted p-3">${browseState.onlyOffers && browseProducts.length ? "Inga produkter med erbjudande i urvalet." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
+  grid.innerHTML = browseProducts.length
+    ? browseCardsHtml(browseProducts)
+    : `<div class="text-muted p-3">${browseState.onlyOffers ? "Inga produkter med erbjudande i den här kategorin." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
   renderBrowseProgress();
 }
 
-// Totala antalet i kategorin (ur summary-cachen, kedje-scopat) - bara i kategori-läge; q-sök saknar total.
+// Totalt antal matchande produkter - kommer från browse-svaret (`total`), respekterar q/kedja/only_offers.
 function browseTotal() {
-  if (browseState.q || !browseState.category || !browseSummary) return null;
-  return (browseSummary.categories || {})[browseState.category] ?? null;
+  return browseTotalCount;
 }
 
 function renderBrowseProgress() {
@@ -1119,8 +1115,7 @@ function renderBrowseProgress() {
 }
 
 function appendBrowseCards(batch) {
-  let items = browseState.onlyOffers ? batch.filter((p) => p.on_offer) : batch;
-  if (items.length) document.getElementById("browseGrid").insertAdjacentHTML("beforeend", browseCardsHtml(items));
+  if (batch.length) document.getElementById("browseGrid").insertAdjacentHTML("beforeend", browseCardsHtml(batch));
   updateBrowseTitle();
   renderBrowseProgress();
 }
@@ -1143,6 +1138,7 @@ async function loadBrowse() {
     const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(0)}`)).json();
     if (token !== browseToken) return;  // en nyare laddning tog över (snabb växling)
     browseProducts = d.products || [];
+    browseTotalCount = d.total ?? null;
     browseHasMore = browseProducts.length === BROWSE_PAGE;
     renderBrowseGrid();
     setupBrowseObserver();
@@ -1158,6 +1154,7 @@ function browseQS(offset) {
   if (browseState.q) p.set("q", browseState.q);
   if (browseState.category) p.set("category", browseState.category);
   if (browseState.chain) p.set("chain", browseState.chain);
+  if (browseState.onlyOffers) p.set("only_offers", "1");  // server-filter (inte klient)
   return p;
 }
 
@@ -1172,6 +1169,7 @@ async function loadMoreBrowse() {
     if (token !== browseToken) return;  // kategori bytt under hämtningen
     const batch = d.products || [];
     browseProducts = browseProducts.concat(batch);
+    browseTotalCount = d.total ?? browseTotalCount;
     browseHasMore = batch.length === BROWSE_PAGE;
     appendBrowseCards(batch);  // anropar renderBrowseProgress
   } catch (e) {
@@ -1205,7 +1203,7 @@ document.getElementById("browseChain").addEventListener("change", (e) => {
 });
 document.getElementById("browseOffers").addEventListener("change", (e) => {
   browseState.onlyOffers = e.target.checked;
-  renderBrowseGrid();  // re-filtrera den redan hämtade sidan, ingen ny fetch
+  loadBrowse();  // server-filter -> hämta om sidan (lätt toggle, korrekta totaler)
 });
 document.getElementById("browseCats").addEventListener("click", (e) => {
   const c = e.target.closest(".browse-cat");

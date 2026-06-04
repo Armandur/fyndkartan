@@ -4,7 +4,7 @@ import json
 
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
-from .offers import norm_origin, normalized_package
+from .offers import norm_origin, normalized_package, on_offer_eans
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit
 
@@ -182,15 +182,16 @@ def _cat_pick(members, field):
     return next((m[field] for m in members if m.get(field)), None)
 
 
-def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0):
+def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
-    frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`.
-    `offset`/`limit` paginerar den sorterade listan (infinite scroll)."""
+    frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`,
+    `only_offers` (bara produkter med aktuellt erbjudande). `offset`/`limit` paginerar.
+    Returnerar `(sida, total)` där total = antal matchande produkter före paginering."""
     ql = (q or "").strip()
     if q is not None and len(ql) < 2:
-        return []
+        return [], 0
     if ql or chain:
         # Filtrerad delmängd: q SQL-snabbt (LIKE narrowar), chain ~en kedja -> läs direkt, ej cache.
         conn = get_conn()
@@ -227,11 +228,14 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0):
             "price_min": min(pv) if pv else None, "price_max": max(pv) if pv else None,
             "_ax": [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")],
         })
+    if only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
+        oset = on_offer_eans()
+        out = [p for p in out if p["ean"] in oset]
     out.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
                             (p["name"] or "").lower()))
     page = out[offset:offset + limit]
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
-    return page
+    return page, len(out)
 
 
 def _parse_origin(s):

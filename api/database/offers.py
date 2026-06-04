@@ -151,6 +151,20 @@ def stores_with_offer(ean):
     return list(best.values())
 
 
+def on_offer_eans():
+    """Mängd EAN som har minst ett aktuellt erbjudande (DISTINCT ur normaliserade `offer_eans`,
+    JOIN offers). Samma 'on offer'-definition som `offers_for_eans`/`_enrich_with_offers` (inkl.
+    Axfood redan resolvat) -> låter katalog-bläddringen filtrera 'bara erbjudanden' server-sida
+    utan IN-vargräns."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT oe.ean FROM offer_eans oe "
+        "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id"
+    ).fetchall()
+    conn.close()
+    return {r["ean"] for r in rows}
+
+
 def offers_for_eans(eans):
     """Bästa (lägsta) aktuella erbjudandepris per (EAN, kedja) ur offers-cachen, för en lista EAN.
     {ean: {chain: {price, comparison_value, comparison_unit, valid_to, member_price}}}. Slår upp i

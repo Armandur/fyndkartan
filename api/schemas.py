@@ -75,7 +75,8 @@ class CatalogProduct(BaseModel):
 
 class CatalogSearchResponse(BaseModel):
     query: str = Field(..., description="Söktexten")
-    count: int = Field(..., description="Antal träffar")
+    count: int = Field(..., description="Antal träffar på sidan")
+    total: int | None = Field(None, description="Totalt antal matchande produkter (bläddra-vyn, för paginering/progress)")
     products: list[CatalogProduct] = Field(..., description="Produkter (hela sortimentet, hyllpris)")
 
 
