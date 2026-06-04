@@ -167,6 +167,24 @@ def on_offer_eans():
     return {r["ean"] for r in rows}
 
 
+def eans_on_offer_at_stores(pairs):
+    """Mängd EAN som har ett aktuellt erbjudande hos NÅGON av butikerna (lista (chain, store_id)).
+    Exakt per (kedja, butik) - inte cross-produkt. För 'på rea hos mina favoriter'-filtret."""
+    pairs = [(c, str(s)) for c, s in pairs if c and s is not None]
+    if not pairs:
+        return set()
+    out = set()
+    conn = get_conn()
+    for i in range(0, len(pairs), 400):  # chunka (2 params per par -> < ~999)
+        chunk = pairs[i:i + 400]
+        where = " OR ".join("(chain=? AND store_id=?)" for _ in chunk)
+        params = [x for pr in chunk for x in pr]
+        for r in conn.execute(f"SELECT DISTINCT ean FROM offer_eans WHERE {where}", params):
+            out.add(r["ean"])
+    conn.close()
+    return out
+
+
 def offers_for_eans(eans):
     """Bästa (lägsta) aktuella erbjudandepris per (EAN, kedja) ur offers-cachen, för en lista EAN.
     {ean: {chain: {price, comparison_value, comparison_unit, valid_to, member_price}}}. Slår upp i

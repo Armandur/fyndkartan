@@ -295,11 +295,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       **Två nivåer: vegan ⊂ vegetariskt** (allt veganskt är vegetariskt) - antingen två kanoniska
       kategorier/taggar eller ett diet-fält med nivåerna `vegan`/`vegetarian`, så att vegetariskt-
       filtret även inkluderar de veganska.
-    - [ ] **Filtrera bläddra-vyn på favoritbutiker.** Man ska kunna begränsa sortimentet till sina
-      markerade favoritbutiker (samma favoriter som kartvyn använder) - dvs visa katalogen som en
-      delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan
-      ta ett favorit-/butiksfilter (katalogen är dock nationell/per-kedja, inte per butik - så
-      filtret blir per KEDJA som favoriterna täcker, ev. kombinerat med offers-täckning per butik).
+    - [x] **Filtrera bläddra-vyn på "rea hos favoriter" BYGGT.** Toggle "★ Rea hos favoriter"
+      (login-only) -> visar bara produkter som har ett ERBJUDANDE hos användarens specifika
+      favoritbutiker (per-butik-exakt via `eans_on_offer_at_stores`, chunkat). Favoriterna hämtas
+      server-side ur inloggad användares `list_favorites` (ej från klient). Vald tolkning: "på rea
+      hos favoriterna" (katalogen är nationell -> per-butik-sortiment finns ej; per-kedje-varianten
+      valdes bort).
     - [x] **Aktuellt erbjudande i produktmodalen + erbjudandepris på kartan BYGGT.** En kedjas
       **rea-rad i katalogkortet är klickbar** -> öppnar produktmodalen med en "Aktuellt erbjudande"-
       sektion som visar erbjudandets EGNA namn/pristext/förpackning/deal-typ per kedja

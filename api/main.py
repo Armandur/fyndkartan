@@ -1113,7 +1113,8 @@ async def products_catalog_browse(
     only_offers: bool = False,
     sort: str | None = Query(None, description="price|spread|name|savings (annars default-ordning)"),
     deal: str | None = Query(None, description="multibuy|by_weight|flat - filtrera på erbjudande-typ"),
-    _auth=Depends(require_consumer),
+    favorites: bool = Query(False, description="bara produkter på rea hos inloggad användares favoritbutiker"),
+    user=Depends(require_consumer),
 ):
     """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
     sortimentet med hyllpris, EAN-grupperat cross-chain, + aktuella erbjudanden överlagrade.
@@ -1121,9 +1122,13 @@ async def products_catalog_browse(
     `offset` paginerar; `only_offers` filtrerar; `sort` ordnar (inkl. `savings` = störst besparing);
     `deal` filtrerar på erbjudande-typ (begränsar till rea-produkter). Server-side före paginering.
     `total` = antal matchande produkter (för progress/paginering)."""
+    fav_stores = None
+    if favorites and user:  # inloggad användares favoritbutiker (server-side, ej från klient)
+        fav_stores = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
     products, total = database.catalog_browse(q=q, category=category, chain=chain,
                                                limit=max(1, min(limit, 100)), offset=max(0, offset),
-                                               only_offers=only_offers, sort=sort, deal=deal)
+                                               only_offers=only_offers, sort=sort, deal=deal,
+                                               fav_stores=fav_stores)
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "total": total, "products": products}
 

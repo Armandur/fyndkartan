@@ -4,7 +4,7 @@ import json
 
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
-from .offers import norm_origin, normalized_package, offers_for_eans, on_offer_eans
+from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, offers_for_eans, on_offer_eans
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit, normalize_ean
 
@@ -256,7 +256,7 @@ _BROWSE_SORTS = {
 
 
 def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False,
-                   sort=None, deal=None):
+                   sort=None, deal=None, fav_stores=None):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
@@ -303,7 +303,10 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
             "price_min": min(pv) if pv else None, "price_max": max(pv) if pv else None,
             "_ax": [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")],
         })
-    if only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
+    if fav_stores:  # bara produkter med erbjudande hos användarens favoritbutiker (per-butik-exakt)
+        feans = eans_on_offer_at_stores(fav_stores)
+        out = [p for p in out if p["ean"] in feans]
+    elif only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
         oset = on_offer_eans()
         out = [p for p in out if p["ean"] in oset]
     # Besparings-sort / deal-typ-filter är OFFERS-koncept -> kräver offer-enrichment av HELA mängden
