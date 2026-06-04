@@ -182,12 +182,20 @@ def _cat_pick(members, field):
     return next((m[field] for m in members if m.get(field)), None)
 
 
-def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False):
+_BROWSE_SORTS = {
+    "price": lambda p: (p["price_min"] is None, p["price_min"] or 0, (p["name"] or "").lower()),
+    "spread": lambda p: (-((p["price_max"] or 0) - (p["price_min"] or 0)), (p["name"] or "").lower()),
+    "name": lambda p: (p["name"] or "").lower(),
+}
+
+
+def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False, sort=None):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
     frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`,
-    `only_offers` (bara produkter med aktuellt erbjudande). `offset`/`limit` paginerar.
+    `only_offers` (bara produkter med aktuellt erbjudande). `sort`: price|spread|name (annars default:
+    flest kedjor, billigast, namn). `offset`/`limit` paginerar (sort sker FÖRE paginering, server-side).
     Returnerar `(sida, total)` där total = antal matchande produkter före paginering."""
     ql = (q or "").strip()
     if q is not None and len(ql) < 2:
@@ -231,8 +239,8 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
     if only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
         oset = on_offer_eans()
         out = [p for p in out if p["ean"] in oset]
-    out.sort(key=lambda p: (-len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9,
-                            (p["name"] or "").lower()))
+    out.sort(key=_BROWSE_SORTS.get(sort) or (lambda p: (
+        -len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9, (p["name"] or "").lower())))
     page = out[offset:offset + limit]
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
     return page, len(out)
