@@ -509,6 +509,10 @@ document.getElementById("offersList").addEventListener("click", (e) => {
   const b = e.target.closest(".o-info");
   if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
 });
+document.getElementById("compareList").addEventListener("click", (e) => {
+  const b = e.target.closest(".o-info");
+  if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
+});
 
 function sortOffers(list, mode) {
   const arr = [...list];
@@ -639,6 +643,9 @@ function compareCard(p) {
       <div class="cmp-sub">${esc(o.price_text || "")} &middot; ${esc(o.store_name || "")}${o.distance_km != null ? " " + o.distance_km + "km" : ""}</div>
     </div>`;
   }).join("");
+  const actions = p.ean
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button></div>`
+    : "";
   return `<div class="offer-card cmp-card">
     <div class="cmp-top">
       ${img}
@@ -646,6 +653,7 @@ function compareCard(p) {
       <span class="cmp-spread" title="prisskillnad">spara ${spreadLabel}</span>
     </div>
     <div class="cmp-rows">${rows}</div>
+    ${actions}
   </div>`;
 }
 
@@ -844,7 +852,7 @@ function catalogCard(p) {
     const hasOffer = pr.offer_price != null;
     const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
     const rea = hasOffer ? `rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}` : "";
-    const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc(pr.offer_valid_to)}` : "";
+    const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc((pr.offer_valid_to || "").slice(5))}` : "";
     const cmp = pr.comparison_value != null ? `${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")}` : "";
     return `<span class="o-sc-chain"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span></span>`
       + `<span class="o-sc-shelf">${shelf}</span>`

@@ -396,7 +396,9 @@ def get_store_offers(chain, store_id):
     # Axfood-offers har ean via ean_cache (offer_id).
     code_eans = get_cached_eans([o["offer_id"] for o in out if not o["eans"]])
     for o in out:
-        o["_ean"] = o["eans"][0] if o["eans"] else code_eans.get(o["offer_id"])
+        if not o["eans"] and code_eans.get(o["offer_id"]):
+            o["eans"] = [code_eans[o["offer_id"]]]  # Axfood: surfa resolvad EAN -> bild + "Visa info"
+        o["_ean"] = o["eans"][0] if o["eans"] else None
     pc = get_product_categories([o["_ean"] for o in out if o.get("_ean")])
     for o in out:
         if o.get("_ean") and pc.get(o["_ean"]):
