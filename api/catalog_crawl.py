@@ -322,6 +322,25 @@ def _coop_row(it):
     return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw}
 
 
+def _piggyback_coop_info(items):
+    """Spara product_info (partial) ur Coop-items vi ändå hämtade i crawlen - gratis ingredienser/
+    näring. Skip-if-fresh (batchat); on-demand-öppning uppgraderar till full korsskällig merge."""
+    cand = {}
+    for it in items:
+        ean = matching.normalize_ean(it.get("ean"))
+        if not ean:
+            continue
+        part = details._parse_coop_item(it)
+        if part.get("ingredients") or part.get("description"):
+            cand[ean] = part
+    if not cand:
+        return
+    fresh = database.product_info_fresh_set(cand.keys())
+    for ean, part in cand.items():
+        if ean not in fresh:
+            database.save_product_info(ean, details._merge([part]), partial=True)
+
+
 async def _coop_browse(client, code, st, seen, max_pages):
     skip, page, size = 0, 0, config.CATALOG_CRAWL_PAGE
     while True:
@@ -345,6 +364,7 @@ async def _coop_browse(client, code, st, seen, max_pages):
             st["new"] += new; st["known"] += known; st["changed"] += changed
             st["products"] += len(rows)
             _feed("coop", rows)
+        _piggyback_coop_info(items)  # gratis product_info (partial) ur samma Coop-svar
         skip += len(items)
         page += 1
         await asyncio.sleep(config.CATALOG_CRAWL_PACE)

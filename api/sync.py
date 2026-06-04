@@ -22,6 +22,7 @@ from .database import (
     replace_chain,
     save_ean_meta,
     save_product_info,
+    product_info_fresh_set,
 )
 from .geo import grid
 
@@ -88,6 +89,20 @@ async def run_sync():
 WARM_SAMPLE = 15
 
 
+def _piggyback_axfood_info(meta):
+    """Spara product_info (partial) ur /p/{code}-svaren vi ändå hämtade i EAN-warmingen - gratis
+    näring/ingredienser för Willys/Hemköp. Skip-if-fresh (batchat); on-demand-öppning uppgraderar
+    sedan till full korsskällig merge."""
+    cand = {e: m["info"] for m in meta.values()
+            if m.get("info") and (e := normalize_ean(m.get("ean")))}
+    if not cand:
+        return
+    fresh = product_info_fresh_set(cand.keys())
+    for ean, info in cand.items():
+        if ean not in fresh:
+            save_product_info(ean, details._merge([info]), partial=True)
+
+
 async def _resolve_axfood_codes(client, chain, codes):
     """Resolva code->{EAN, kategori, ursprung} för de koder som saknar kategori (`/p/{code}`),
     batchat, och spara i ean_cache. Returnerar antal nya kategori-uppslag."""
@@ -96,6 +111,7 @@ async def _resolve_axfood_codes(client, chain, codes):
     for i in range(0, len(missing), 200):
         meta = await axfood_offers.fetch_p_meta(client, chain, missing[i : i + 200])
         save_ean_meta(meta)
+        _piggyback_axfood_info(meta)
         resolved += sum(1 for m in meta.values() if m.get("category"))
     log.info("EAN/kategori-förvärmning %s: %d koder, %d nya uppslag", chain, len(codes), len(missing))
     return resolved
@@ -204,7 +220,9 @@ async def warm_axfood_catalog_eans(cap=None, chain=None):
                         CATALOG_EAN_STATE["cooldown"] = False
                         continue  # samma batch igen (i oförändrat)
                     block_streak = 0
-                    save_ean_meta({c: m for c, m in meta.items() if not m.get("blocked")})  # cacha ej blockerade
+                    ok = {c: m for c, m in meta.items() if not m.get("blocked")}
+                    save_ean_meta(ok)  # cacha ej blockerade
+                    _piggyback_axfood_info(ok)  # gratis product_info (partial) ur samma /p/{code}-svar
                     _ean_feed(chain, meta)  # mata in resolvade i feeden
                     CATALOG_EAN_STATE["done"] += len(batch)
                     CATALOG_EAN_STATE["resolved"] += sum(1 for m in meta.values() if m.get("ean"))

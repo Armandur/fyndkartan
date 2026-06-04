@@ -1184,7 +1184,9 @@ async def product_info(ean: str, prefer_chain: str | None = None, _auth=Depends(
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
     present, cached, fetched_at = database.product_info_cached(e)
-    if present:  # cache-träff (cached=None = negativ cache: hämtat, inget fanns)
+    # Partial = EN-källa-piggyback (Coop/Axfood ur crawl/warm) -> uppgradera till full korsskällig
+    # merge nu när någon faktiskt vill se detaljerna (annars servera cache-träffen direkt).
+    if present and not (cached and cached.get("partial")):
         return {"ean": e, "found": cached is not None,
                 "info": details.normalize_info(cached), "fetched_at": fetched_at}
     errored = False

@@ -179,6 +179,13 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (ingredienser/näring/ursprung kan ändras), negativ (`null`-rad, "inget fanns" -> `found:false`
   direkt utan re-hämtning) 14 dygn (så säsongsvaror kan dyka upp igen). Vid hämtningsfel cachas
   inget (kan vara transient). Kategori påverkas ej (deriveras vid läsning ur `category_map`).
+  **Piggyback-fångst (partial-rader):** crawlen (Coop `_parse_coop_item`) och EAN-warmingen (Axfood
+  `/p/{code}` via `parse_axfood_detail`) hämtar redan full produktinfo som tidigare kastades -
+  den sparas nu som EN-källa `product_info` markerad `partial:true` (`save_product_info(..., partial=True)`,
+  skip-if-fresh via `product_info_fresh_set`, batchat). Fyller katalogens ~32k tomma EAN gratis (inga
+  extra anrop). On-demand-endpointen behandlar en `partial`-rad som cache-miss -> kör full `fetch_for_ean`
+  (Axfood+Coop+ICA-merge) först när någon öppnar produktmodalen. `partial` strippas i `normalize_info`
+  (intern, ej i API:t). Bredd ur crawl/warm, djup on-demand.
 - **Produktbild per EAN (`images.py` + `GET /v1/products/{ean}/image`):** hittar bild-URL
   ur cachade offers, annars ICA-detaljens `og:image` ur `product_info` (täcker ICA:s egna
   märken utan offer-bild), annars ICA:s EAN-CDN. **Resizar via Cloudinary-transform** (källorna

@@ -155,6 +155,7 @@ def normalize_info(info):
     if not info:
         return info
     info = dict(info)
+    info.pop("partial", None)  # intern piggyback-flagga, exponeras inte i API:t
     info["nutrition"] = _normalize_nutrition(info.get("nutrition"))
     info["allergens"] = extract_allergens(info.get("ingredients"))
     info["labels"] = _normalize_labels(info.get("labels"))
@@ -184,28 +185,8 @@ async def _fetch_axfood(client, chain, ean):
     )
     if r.status_code != 200:
         return None
-    d = r.json()
-    nutrition = [
-        {"label": n.get("typeCode"), "value": n.get("value"), "unit": n.get("unitCode")}
-        for n in (d.get("nutritionsFactList") or []) if n.get("value")
-    ]
-    basis = (d.get("nutrientHeaders") or [{}])[0]
-    s = lambda k: (d.get(k) or "").strip() or None
-    return {
-        "description": s("description"),
-        "ingredients": s("ingredients"),
-        "origin": s("tradeItemCountryOfOrigin"),
-        "province": s("provinceStatement"),
-        "storage": s("consumerStorageInstructions"),
-        "nutrition": nutrition,
-        "nutrition_basis": {
-            "value": basis.get("nutrientBasisQuantity"),
-            "unit": basis.get("nutrientBasisQuantityMeasurementUnitCode"),
-        } if nutrition else None,
-        "labels": d.get("labels") or [],
-        "source": chain,
-        "category_raw": (d.get("googleAnalyticsCategory") or "").strip() or None,
-    }
+    from .adapters.axfood_offers import parse_axfood_detail
+    return parse_axfood_detail(r.json(), chain)
 
 
 async def _resolve_coop_key(client, force=False):

@@ -95,9 +95,13 @@ def get_product_origins(eans):
     return out
 
 
-def save_product_info(ean, data):
+def save_product_info(ean, data, partial=False):
+    """Cacha produktinfo. partial=True markerar en EN-källa-piggyback (Coop/Axfood ur crawl/warm)
+    som on-demand-endpointen senare uppgraderar till full korsskällig merge (fetch_for_ean)."""
     from datetime import datetime, timezone
 
+    if partial and data is not None:
+        data = {**data, "partial": True}
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
     conn.execute(
@@ -107,6 +111,26 @@ def save_product_info(ean, data):
     conn.commit()
     conn.close()
     return now
+
+
+def product_info_fresh_set(eans):
+    """Mängd EAN som har en EJ utgången product_info-rad (full/partial/negativ). För piggyback-
+    skrivningarnas skip-if-fresh - utgångna återfylls av nästa crawl/warm."""
+    eans = [str(e) for e in eans if e]
+    if not eans:
+        return set()
+    conn = get_conn()
+    rows = conn.execute(
+        f"SELECT ean, data, fetched_at FROM product_info WHERE ean IN ({','.join('?' * len(eans))})",
+        eans,
+    ).fetchall()
+    conn.close()
+    out = set()
+    for r in rows:
+        ttl = _NEG_TTL_DAYS if json.loads(r["data"]) is None else _POS_TTL_DAYS
+        if not _info_expired(r["fetched_at"], ttl):
+            out.add(r["ean"])
+    return out
 
 
 def get_ica_cid(ean):

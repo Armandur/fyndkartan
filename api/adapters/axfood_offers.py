@@ -29,6 +29,32 @@ _EAN_RETRIES = 3       # försök vid 429/5xx/timeout innan koden ges upp (-> to
 _EAN_BACKOFF = 1.0     # bas-sekunder, exponentiell (1, 2, 4...); Retry-After respekteras vid 429
 
 
+def parse_axfood_detail(d, chain):
+    """/p/{code}-svaret (d) -> EN-källa-produktinfo (samma form som details-källorna; `source`
+    sätts så _merge bygger sources). Ren parser så både details och EAN-warmingen kan dela den."""
+    nutrition = [
+        {"label": n.get("typeCode"), "value": n.get("value"), "unit": n.get("unitCode")}
+        for n in (d.get("nutritionsFactList") or []) if n.get("value")
+    ]
+    basis = (d.get("nutrientHeaders") or [{}])[0]
+    s = lambda k: (d.get(k) or "").strip() or None
+    return {
+        "description": s("description"),
+        "ingredients": s("ingredients"),
+        "origin": s("tradeItemCountryOfOrigin"),
+        "province": s("provinceStatement"),
+        "storage": s("consumerStorageInstructions"),
+        "nutrition": nutrition,
+        "nutrition_basis": {
+            "value": basis.get("nutrientBasisQuantity"),
+            "unit": basis.get("nutrientBasisQuantityMeasurementUnitCode"),
+        } if nutrition else None,
+        "labels": d.get("labels") or [],
+        "source": chain,
+        "category_raw": (d.get("googleAnalyticsCategory") or "").strip() or None,
+    }
+
+
 async def fetch_p_meta(client, chain, codes):
     """{code: {"ean":..., "category":..., "origin":...}} via produktdetaljen
     (`/axfood/rest/p/{code}`). category = googleAnalyticsCategory (pipe-path); origin =
@@ -54,6 +80,7 @@ async def fetch_p_meta(client, chain, codes):
                             "ean": d.get("ean") or "",
                             "category": d.get("googleAnalyticsCategory") or None,
                             "origin": _country_en_to_sv(d.get("tradeItemCountryOfOrigin")),
+                            "info": parse_axfood_detail(d, chain),  # full produktinfo för piggyback
                         }
                     if r.status_code == 404:
                         return code, empty  # genuint ej funnen, ingen retry/block
