@@ -2,7 +2,7 @@ import json
 
 from ._conn import _now, get_conn
 from ..categories import category_from_detail
-from .. import countries
+from .. import countries, diet
 
 
 def get_product_info(ean):
@@ -68,6 +68,24 @@ def get_product_categories(eans):
         canon = category_from_detail(r["src"], r["raw"]) if r["raw"] else None
         if canon:
             out[r["ean"]] = canon
+    return out
+
+
+def get_product_diets():
+    """{ean: diet} (vegan/vegetarian/none) härledd ur cachade ingredienser för bläddra-filtret.
+    Derive-at-read (alltid aktuell vokabulär); bara EAN med ingredienslista. Hela mängden (~11k) -
+    catalog_browse anropar bara när diet-filtret är aktivt."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT ean, json_extract(data,'$.ingredients') AS ing FROM product_info "
+        "WHERE json_extract(data,'$.ingredients') IS NOT NULL"
+    ).fetchall()
+    conn.close()
+    out = {}
+    for r in rows:
+        d = diet.classify_diet(r["ing"])
+        if d:
+            out[r["ean"]] = d
     return out
 
 

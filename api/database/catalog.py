@@ -5,7 +5,7 @@ import json
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
 from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, offers_for_eans, on_offer_eans
-from .products import get_product_origins
+from .products import get_product_origins, get_product_diets
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit, normalize_ean
 from .. import countries
@@ -349,7 +349,7 @@ _BROWSE_SORTS = {
 
 
 def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False,
-                   sort=None, deal=None, fav_stores=None):
+                   sort=None, deal=None, fav_stores=None, diet=None):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
@@ -403,6 +403,10 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
     elif only_offers:  # behåll bara produkter med aktuellt erbjudande (global on-offer-mängd)
         oset = on_offer_eans()
         out = [p for p in out if p["ean"] in oset]
+    if diet in ("vegan", "vegetarian"):  # härledd kost ur ingredienser; vegan ⊂ vegetarian
+        dmap = get_product_diets()
+        ok = {"vegan"} if diet == "vegan" else {"vegan", "vegetarian"}
+        out = [p for p in out if dmap.get(p["ean"]) in ok]  # okänt (ingen ingrediens) faller bort
     # Besparings-sort / deal-typ-filter är OFFERS-koncept -> kräver offer-enrichment av HELA mängden
     # före paginering. Restrikterar då till produkter med aktuellt erbjudande och beräknar besparing
     # (max hyllpris-rea över kedjorna) + deal-typer per produkt.

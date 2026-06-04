@@ -51,6 +51,7 @@ api/                 # Python-paketet (importeras som `api`)
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)
   categories.py      # kategori-normalisering: råkategori -> kanonisk (category_map, derive-at-read)
   countries.py       # landnamn <-> ISO-kod (babel): split_origins() (sv-normaliserat ursprung + flerland-koder), flag_emoji()
+  diet.py            # kost-klassificering ur ingredienser: classify_diet() -> vegan/vegetarian/none (fristående, delas av details + bläddra-filtret)
   auth.py            # bcrypt + current_user/public_user (app) + current_admin/public_admin (konsol)
   sync.py            # run_sync() + warm_axfood_eans()/warm_coop_categories()/warm_ica_categories() (kategori-förvärmning; ICA capad+inkrementell). STATE per kedja
   adapters/

@@ -338,12 +338,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         `\b`-ordstart så "kokosmjölk" ej träffar "mjölk", PLANT_OK-allowlist för "äggplanta" mfl).
         Exponerat i `ProductInfoData.diet`; produktmodalen (konsument + konsol) visar "🌱 Vegansk"/
         "🥬 Vegetarisk (härledd)"-badge. Kalibrerat på ~11k ingredienslistor (52% vegan/33% veg/15% none).
-      - [ ] **Kvar: TVÄRGÅENDE filter i bläddra-vyn** (vegan ⊂ vegetariskt). Kräver att `diet`-flaggan
-        finns per katalog-EAN för server-side-filtrering före paginering - `diet` deriveras idag bara
-        read-time ur `product_info` (lazy, ~11k av 35k). Behöver warmas/lagras (t.ex. `diet` i
-        `product_info` vid save + `get_product_diets(eans)` likt kategori/origin) ELLER en diet-warm.
-        (3) bara LIVSMEDEL (icke-livsmedel med ingredienslista kan bli falskt vegan) - exkludera via
-        kanonisk kategori. Osäkra fall markeras "härledd" (gjort i badgen).
+      - [x] **TVÄRGÅENDE filter i bläddra-vyn BYGGT.** `details/diet.classify_diet` flyttad till
+        fristående `api/diet.py`. `database.get_product_diets()` (derive-at-read ur cachade ingredienser,
+        ~11k EAN) + `diet`-param i `catalog_browse` (filtrerar HELA mängden före paginering; vegan ⊂
+        vegetarian; produkter utan ingredienslista faller bort) + `diet` på `/v1/products/catalog/browse`
+        + dropdown "🥬 Vegetariskt / 🌱 Veganskt" i bläddra-vyn. Verifierat (choklad: 200 alla -> 31 vegan).
+      - [ ] **Kvar/finputs:** (a) kategori-räknarna (`catalog_summary`) speglar inte diet-filtret än
+        (som only_offers/favoriter gör); (b) bara LIVSMEDEL - icke-livsmedel med ingredienslista kan
+        bli falskt vegan, exkludera via kanonisk kategori; (c) täckning växer med product_info-warmingen
+        (idag ~11k av 35k katalog-EAN har ingredienser).
     - [x] **Filtrera bläddra-vyn på "rea hos favoriter" BYGGT.** Toggle "★ Rea hos favoriter"
       (login-only) -> visar bara produkter som har ett ERBJUDANDE hos användarens specifika
       favoritbutiker (per-butik-exakt via `eans_on_offer_at_stores`, chunkat). Favoriterna hämtas

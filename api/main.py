@@ -1158,6 +1158,7 @@ async def products_catalog_browse(
     sort: str | None = Query(None, description="price|spread|name|savings (annars default-ordning)"),
     deal: str | None = Query(None, description="multibuy|by_weight|flat - filtrera på erbjudande-typ"),
     favorites: bool = Query(False, description="bara produkter på rea hos inloggad användares favoritbutiker"),
+    diet: str | None = Query(None, description="vegan|vegetarian - härledd kost (vegan ⊂ vegetarian); okänt faller bort"),
     user=Depends(require_consumer),
 ):
     """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
@@ -1172,7 +1173,7 @@ async def products_catalog_browse(
     products, total = database.catalog_browse(q=q, category=category, chain=chain,
                                                limit=max(1, min(limit, 100)), offset=max(0, offset),
                                                only_offers=only_offers, sort=sort, deal=deal,
-                                               fav_stores=fav_stores)
+                                               fav_stores=fav_stores, diet=diet)
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "total": total, "products": products}
 

@@ -80,37 +80,8 @@ def extract_allergens(ingredients):
     return [name for name, terms in _ALLERGENS.items() if any(_allergen_hit(term, t) for term in terms)]
 
 
-# Kost-klassificering (HÄRLEDD ur ingredienser): kött/fisk -> varken; mejeri/ägg/honung/gelatin
-# -> vegetarisk; annars vegansk. \b = ordstart så "kokosmjölk"/"havremjölk" (växt) inte träffar
-# "mjölk". PLANT_OK nollar växt-kompositer som börjar med en djur-delsträng (äggplanta osv).
-_DIET_MEAT = re.compile(
-    r"\b(nötkött|fläsk|griskött|kyckling|kalkon|anka|bacon|skinka|prosciutto|korv|salami|chorizo|"
-    r"lamm|vilt|älgkött|renkött|köttfärs|fläskfärs|blandfärs|kött|charkuteri|fisk|lax|sill|makrill|"
-    r"tonfisk|torsk|sej|räk|krabba|hummer|mussl|ostron|ansjovis|sardin|skaldjur|kräft|blodpudding|"
-    r"leverpastej|fiskolja|fiskbuljong|hönsbuljong|köttbuljong|hönskött)", re.I)
-_DIET_ANIMAL = re.compile(
-    r"\b(mjölk|grädde|gräddfil|filmjölk|smör|ost|yoghurt|kvarg|kesella|vassle|mjölkprotein|"
-    r"mjölkpulver|kasein|laktos|ägg|äggula|äggvita|honung|gelatin|bivax|lanolin|löpe|smörfett|"
-    r"vasslepulver|skummjölk)", re.I)
-_DIET_PLANT_OK = ("kokosmjölk", "havremjölk", "sojamjölk", "mandelmjölk", "risdryck", "havredryck",
-                  "sojadryck", "äggplanta", "jordnötssmör", "mandelsmör", "kakaosmör", "sheasmör",
-                  "jordnötter", "frukost")
-
-
-def classify_diet(ingredients):
-    """Härled kost ur ingredienser: 'none' (kött/fisk) | 'vegetarian' (mejeri/ägg/honung/gelatin) |
-    'vegan' | None (ingen ingredienslista). Heuristik (markeras 'härledd' i UI:t); icke-livsmedel kan
-    bli falskt 'vegan'."""
-    if not ingredients:
-        return None
-    s = ingredients.lower()
-    for ok in _DIET_PLANT_OK:
-        s = s.replace(ok, " ")
-    if _DIET_MEAT.search(s):
-        return "none"
-    if _DIET_ANIMAL.search(s):
-        return "vegetarian"
-    return "vegan"
+# Kost-klassificering ur ingredienser -> fristående api/diet.py (delas med bläddra-filtret).
+from .diet import classify_diet  # noqa: E402
 
 
 # Näringsdeklaration: kanonisk etikett-form + standardordning + enhetsförkortningar.
