@@ -259,34 +259,53 @@ async def sync_and_warm():
         log.exception("ICA-kategoriförvärmning misslyckades")
 
 
-async def run_scheduler(cron_expr, tz_name="Europe/Stockholm", job=None, label="synk"):
-    """Kör ett jobb enligt ett cron-uttryck (tomt/'off' = av). `job` är en async-callable
-    (default `sync_and_warm`); `label` används i loggarna. Används för både butikssynken och
-    erbjudande-sweepen.
+SCHEDULER_CHECK = 30.0  # s: hur ofta cron/tz omläses (konsol-ändringar slår igenom inom detta)
 
-    Cron ger både intervall ('0 */6 * * *') och bestämd tid ('0 4 * * *').
-    Resilient: ett jobbfel dödar inte loopen. Uppstartskörning hanteras separat."""
+
+async def run_scheduler(cron_source, tz_source="Europe/Stockholm", job=None, label="synk"):
+    """Kör `job` enligt ett cron-uttryck. `cron_source`/`tz_source` är en sträng ELLER en 0-arg
+    callable som resolvas VARJE varv -> konsol-ändringar slår igenom utan omstart (inom
+    SCHEDULER_CHECK). Tomt/'off'/ogiltigt cron = pausad (loopen lever, plockar upp giltig cron
+    senare). Resilient: ett jobbfel dödar inte loopen.
+
+    Långa väntor sker i bitar (CHECK) så omläsning märks; den SISTA väntan sover exakt fram till
+    körningen och kör sedan UTAN omräkning (annars skulle get_next() efter uppvaknandet hoppa till
+    nästa tillfälle och missa körningen)."""
     job = job or sync_and_warm
-    expr = (cron_expr or "").strip()
-    if not expr or expr.lower() in ("off", "disabled", "none"):
-        log.info("Schemalagd %s avstängd (tomt cron-uttryck)", label)
-        return
-    if not croniter.is_valid(expr):
-        log.error("Ogiltigt cron-uttryck '%s' - schemalagd %s avstängd", expr, label)
-        return
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:  # noqa: BLE001
-        log.warning("Okänd tidszon '%s', faller tillbaka på Europe/Stockholm", tz_name)
-        tz = ZoneInfo("Europe/Stockholm")
 
-    log.info("Schemalagd %s aktiv: cron '%s' (%s)", label, expr, tz_name)
+    def _cron():
+        return ((cron_source() if callable(cron_source) else cron_source) or "").strip()
+
+    def _tz():
+        name = (tz_source() if callable(tz_source) else tz_source) or "Europe/Stockholm"
+        try:
+            return ZoneInfo(name), name
+        except Exception:  # noqa: BLE001
+            return ZoneInfo("Europe/Stockholm"), "Europe/Stockholm"
+
+    log.info("Schemaläggare '%s' startad", label)
+    last_sig = None
     while True:
+        expr = _cron()
+        if not expr or expr.lower() in ("off", "disabled", "none") or not croniter.is_valid(expr):
+            if last_sig != "paused":
+                log.info("Schemalagd %s pausad (cron '%s')", label, expr)
+                last_sig = "paused"
+            await asyncio.sleep(SCHEDULER_CHECK)
+            continue
+        tz, tz_name = _tz()
         now = datetime.now(tz)
         nxt = croniter(expr, now).get_next(datetime)
-        delay = max(1.0, (nxt - now).total_seconds())
-        log.info("Nästa schemalagda %s: %s (om %.0f min)", label, nxt.strftime("%Y-%m-%d %H:%M"), delay / 60)
-        await asyncio.sleep(delay)
+        delay = (nxt - now).total_seconds()
+        sig = (expr, tz_name, nxt.isoformat())
+        if sig != last_sig:
+            log.info("Schemalagd %s: nästa %s (%s, cron '%s')", label,
+                     nxt.strftime("%Y-%m-%d %H:%M"), tz_name, expr)
+            last_sig = sig
+        if delay > SCHEDULER_CHECK:
+            await asyncio.sleep(SCHEDULER_CHECK)  # vänta i bitar, läs om cron/tz nästa varv
+            continue
+        await asyncio.sleep(max(1.0, delay))  # exakt fram till körningen - INGEN omräkning efter detta
         try:
             log.info("Schemalagd %s startar", label)
             await job()

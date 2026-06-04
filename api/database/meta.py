@@ -207,6 +207,33 @@ def get_or_create_setting(key, default_factory):
     return row["value"]
 
 
+def get_setting(key):
+    """Settings-värdet för `key`, eller None om det inte finns (skild från tomt sträng-värde)."""
+    conn = get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_setting(key, value):
+    """Persistera ett settings-värde (override)."""
+    conn = get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO settings (key, value) VALUES (?,?) "
+                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+    conn.commit()
+    conn.close()
+
+
+def delete_setting(key):
+    """Ta bort ett settings-värde (override) -> faller tillbaka på env/default."""
+    conn = get_conn()
+    conn.execute("DELETE FROM settings WHERE key=?", (key,))
+    conn.commit()
+    conn.close()
+
+
 def create_user(email, password_hash):
     from datetime import datetime, timezone
 

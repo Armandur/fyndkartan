@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, matching, schemas, tags
+from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, matching, schemas, settings, tags
 from .adapters import axfood_offers
 from .database import (
     get_cached_eans,
@@ -45,14 +45,16 @@ WEB_DIR = config.BASE_DIR / "web"
 
 
 def _next_cron(expr):
-    """Nästa körningstid för ett cron-uttryck (i SYNC_TZ) som 'YYYY-MM-DD HH:MM', None om tomt/ogiltigt."""
+    """Nästa körningstid för ett cron-uttryck (i effektiv tidszon) som 'YYYY-MM-DD HH:MM',
+    None om tomt/ogiltigt/avstängt ('off')."""
     try:
         from croniter import croniter
         from zoneinfo import ZoneInfo
 
-        if expr and expr.strip():
-            now = datetime.now(ZoneInfo(config.SYNC_TZ))
-            return croniter(expr, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
+        e = (expr or "").strip()
+        if e and e.lower() not in ("off", "disabled", "none") and croniter.is_valid(e):
+            now = datetime.now(ZoneInfo(settings.get("sync_tz")))
+            return croniter(e, now).get_next(datetime).strftime("%Y-%m-%d %H:%M")
     except Exception:  # noqa: BLE001
         pass
     return None
@@ -99,15 +101,18 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(warm_ica_categories())
         # Katalog-grupperingscachen (~700ms blockerande läsning) -> tråd, blockar inte loopen.
         asyncio.create_task(asyncio.to_thread(database.warm_catalog_cache))
+    # Schemaläggarna får callables (settings.get) -> cron/tz resolvas varje varv, så ändringar i
+    # konsolens Inställningar-flik slår igenom utan omstart. tz delas av alla tre.
+    _tz = lambda: settings.get("sync_tz")  # noqa: E731
     scheduler = asyncio.create_task(
-        run_scheduler(config.SYNC_CRON, config.SYNC_TZ, sync_and_warm, "butikssynk"))
+        run_scheduler(lambda: settings.get("sync_cron"), _tz, sync_and_warm, "butikssynk"))
     # Erbjudande-sweepen har egen (tätare) cadence. Ingen kall sweep vid uppstart -
     # den första fyllningen triggas manuellt från konsolen (skonar kedjornas API:er).
     offers_scheduler = asyncio.create_task(
-        run_scheduler(config.OFFERS_SWEEP_CRON, config.SYNC_TZ, sweep_offers, "erbjudande-sweep"))
+        run_scheduler(lambda: settings.get("offers_sweep_cron"), _tz, sweep_offers, "erbjudande-sweep"))
     # Fulla sortiment-crawlen (tung) har egen gles cadence (default veckovis). Tomt cron = av.
     crawl_scheduler = asyncio.create_task(
-        run_scheduler(config.CATALOG_CRAWL_CRON, config.SYNC_TZ, catalog_crawl.crawl_all, "sortiment-crawl"))
+        run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, catalog_crawl.crawl_all, "sortiment-crawl"))
     yield
     scheduler.cancel()
     offers_scheduler.cancel()
@@ -449,7 +454,7 @@ async def admin_overview(_=Depends(require_admin)):
     ).fetchone()["c"]
     conn.close()
     ean_stats = database.ean_stats()
-    next_run = _next_cron(config.SYNC_CRON)
+    next_run = _next_cron(settings.get("sync_cron"))
 
     def _file_size(p):
         try:
@@ -489,18 +494,73 @@ async def admin_overview(_=Depends(require_admin)):
         "ean_stats": ean_stats,
         "price_history": database.offer_observations_stats(),
         "syncing": STATE["running"],
-        "scheduler": {"cron": config.SYNC_CRON, "tz": config.SYNC_TZ, "next_run": next_run},
-        "catalog_crawl": {"cron": config.CATALOG_CRAWL_CRON,
-                          "next_run": _next_cron(config.CATALOG_CRAWL_CRON)},
+        "scheduler": {"cron": settings.get("sync_cron"), "tz": settings.get("sync_tz"), "next_run": next_run},
+        "catalog_crawl": {"cron": settings.get("catalog_crawl_cron"),
+                          "next_run": _next_cron(settings.get("catalog_crawl_cron"))},
         "offers_sweep": {
             **SWEEP_STATE,
-            "cron": config.OFFERS_SWEEP_CRON,
-            "next_run": _next_cron(config.OFFERS_SWEEP_CRON),
+            "cron": settings.get("offers_sweep_cron"),
+            "next_run": _next_cron(settings.get("offers_sweep_cron")),
             "supported_chains": list(SUPPORTED_OFFER_CHAINS),
             "coverage": database.offers_coverage(),  # nuvarande cachade erbjudanden per kedja
             "store_counts": {c: store_counts.get(c, 0) for c in SUPPORTED_OFFER_CHAINS},
         },
     }
+
+
+def _settings_payload():
+    """Effektiva schemaläggnings-inställningar för konsolen: värde, env/kod-default, om override är
+    satt, samt nästa körning per cron (i effektiv tidszon)."""
+    out = {}
+    for k in settings.KEYS:
+        item = {"value": settings.get(k), "default": settings.default(k),
+                "overridden": settings.is_overridden(k)}
+        if k in settings.CRON_KEYS:
+            item["next_run"] = _next_cron(settings.get(k))
+        out[k] = item
+    return {"settings": out}
+
+
+@app.get("/v1/admin/settings")
+async def get_settings(_=Depends(require_admin)):
+    return _settings_payload()
+
+
+@app.post("/v1/admin/settings")
+async def set_settings(payload: dict = Body(...), _=Depends(require_admin)):
+    """Sätt/återställ en schemaläggnings-inställning. `reset:true` tar bort overriden (env-default).
+    Cron: tomt/'off' = pausad (giltigt), annars valideras mot croniter. Tidszon valideras mot zoneinfo."""
+    key = (payload.get("key") or "").strip()
+    if key not in settings.KEYS:
+        return JSONResponse({"detail": "Okänd inställning."}, status_code=400)
+    if payload.get("reset"):
+        settings.clear_override(key)
+        return _settings_payload()
+    value = (payload.get("value") or "").strip()
+    if key in settings.CRON_KEYS:
+        from croniter import croniter
+        if value and value.lower() not in ("off", "disabled", "none") and not croniter.is_valid(value):
+            return JSONResponse({"detail": "Ogiltigt cron-uttryck."}, status_code=400)
+    else:  # sync_tz
+        from zoneinfo import ZoneInfo
+        try:
+            ZoneInfo(value)
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"detail": "Okänd tidszon."}, status_code=400)
+    settings.set_override(key, value)
+    return _settings_payload()
+
+
+@app.get("/v1/admin/settings/cron-preview")
+async def cron_preview(cron: str = "", _=Depends(require_admin)):
+    """Live-validering/förhandsvisning av ett cron-uttryck (för Inställningar-fliken)."""
+    e = (cron or "").strip()
+    if not e or e.lower() in ("off", "disabled", "none"):
+        return {"valid": True, "disabled": True, "next_run": None}
+    from croniter import croniter
+    if not croniter.is_valid(e):
+        return {"valid": False, "disabled": False, "next_run": None}
+    return {"valid": True, "disabled": False, "next_run": _next_cron(e)}
 
 
 @app.get("/v1/admin/calls")
@@ -1215,4 +1275,5 @@ async def trigger_catalog_crawl(limit_categories: int | None = None, chains: str
 @app.get("/v1/admin/catalog/crawl/status")
 async def catalog_crawl_status(_=Depends(require_admin)):
     return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats(),
-            "cron": config.CATALOG_CRAWL_CRON, "next_run": _next_cron(config.CATALOG_CRAWL_CRON)}
+            "cron": settings.get("catalog_crawl_cron"),
+            "next_run": _next_cron(settings.get("catalog_crawl_cron"))}
