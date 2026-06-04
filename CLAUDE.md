@@ -312,6 +312,10 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   **produktinfo + bilder** för Coop (perso-fetch scopas till 251300, så produkter som bara finns i
   andra butiker saknas; ICA-detaljen provar dock flera profiler via `ica_resolve_accounts`). Andra
   butikers ledgers (t.ex. 196183/176310) kan ge tomt i perso-söket (ej e-handelsindexerade).
+  **Willys/Hemköp (Axfood) och City Gross är NATIONELLA (empiriskt bekräftat, ej bara antaget):**
+  samma `/search`- resp. Loop54-pris oavsett `storeId`/`siteId`-param (testat utan/2102/2103 för
+  Willys, utan/21/46 för CG -> identiska priser). `storeId` är dessutom Axfoods param för erbjudanden,
+  så hade söket varit butiksscopat hade den slagit igenom. Därför `store=NULL` för dessa tre.
 - **Willys/Hemköp produktsök (fullkatalog):** `GET {willys|hemkop}.se/search?q=&page=&size=`
   (ingen auth) -> `results[]` + `pagination.totalNumberOfResults`. Item: `code` (Axfood-
   artikelkod - EAN resolvas via `ean_cache`/`/p/{code}` som offers), `name`, `manufacturer`,
