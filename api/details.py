@@ -103,6 +103,7 @@ _NUT_UNIT = {"kilojoule": "kJ", "kilokalori": "kcal", "gram": "g", "milligram": 
 
 
 def _normalize_nutrition(nutrition):
+    # API:t exponerar energi som två separata rader (kJ + kcal); app-visningen slår ihop dem.
     out = []
     for n in nutrition or []:
         lbl = (n.get("label") or "").strip()

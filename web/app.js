@@ -567,8 +567,20 @@ function renderProductInfo(d, chain) {
   if (x.storage) P.push(`<p class="small mb-1"><strong>Förvaring:</strong> ${esc(x.storage)}</p>`);
   if (x.nutrition && x.nutrition.length) {
     const basis = x.nutrition_basis ? `per ${esc(x.nutrition_basis.value || "")} ${esc(x.nutrition_basis.unit || "")}` : "";
-    const rows = x.nutrition.map((n) =>
-      `<tr><td>${esc(n.label)}</td><td class="nut-val">${esc(n.value)}${n.unit ? " " + esc(n.unit) : ""}</td></tr>`).join("");
+    // Slå ihop rader med samma etikett för visning (Energi i kJ + kcal -> "976 kJ / 236 kcal").
+    // API:t levererar dem separat; bara appen kombinerar.
+    const seen = new Map(), order = [];
+    for (const n of x.nutrition) {
+      const key = n.label || "";
+      const piece = `${n.value != null ? n.value : ""}${n.unit ? " " + n.unit : ""}`.trim();
+      if (!seen.has(key)) { seen.set(key, []); order.push(key); }
+      seen.get(key).push(piece);
+    }
+    const uPrio = (p) => p.includes("kJ") ? 0 : (p.includes("kcal") ? 1 : 2);  // kJ före kcal
+    const rows = order.map((key) => {
+      const pieces = seen.get(key).slice().sort((a, b) => uPrio(a) - uPrio(b));
+      return `<tr><td>${esc(key)}</td><td class="nut-val">${esc(pieces.join(" / "))}</td></tr>`;
+    }).join("");
     P.push(`<table class="nut-table small mb-1"><thead><tr><th>Näringsvärde</th><th class="nut-val">${basis}</th></tr></thead><tbody>${rows}</tbody></table>`);
   }
   if (x.sources && x.sources.length) {
