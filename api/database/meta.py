@@ -2,6 +2,7 @@ import json
 
 from ._conn import _now, get_conn
 from ..categories import raw_key
+from ..manufacturers import manufacturer_key
 from ..config import (
     BUILTIN_TAG_TYPES, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS, DEFAULT_PROVIDERS,
     DEFAULT_TAG_TYPES,
@@ -86,6 +87,53 @@ def delete_category_map(chain_key, raw_key):
     conn.execute("DELETE FROM category_map WHERE chain_key=? AND raw_key=?", (chain_key, raw_key))
     conn.commit()
     conn.close()
+
+
+def load_manufacturer_map():
+    """{grupperingsnyckel: kanoniskt display-namn} (override) för manufacturers.set_map."""
+    conn = get_conn()
+    rows = conn.execute("SELECT key, canonical FROM manufacturer_map").fetchall()
+    conn.close()
+    return {r["key"]: r["canonical"] for r in rows}
+
+
+def set_manufacturer_map(key, canonical):
+    conn = get_conn()
+    conn.execute("INSERT OR REPLACE INTO manufacturer_map (key, canonical) VALUES (?,?)", (key, canonical))
+    conn.commit()
+    conn.close()
+
+
+def delete_manufacturer_map(key):
+    conn = get_conn()
+    conn.execute("DELETE FROM manufacturer_map WHERE key=?", (key,))
+    conn.commit()
+    conn.close()
+
+
+def manufacturer_rows():
+    """Distinkta råa brands grupperade på grupperingsnyckel, med antal produkter, råvarianter och
+    ev. kanonisk override - för admin-flikens redigering. Mappade/stora grupper först."""
+    conn = get_conn()
+    raw = conn.execute(
+        "SELECT brand, COUNT(*) c FROM catalog_products WHERE brand IS NOT NULL AND brand != '' GROUP BY brand"
+    ).fetchall()
+    override = {r["key"]: r["canonical"] for r in conn.execute("SELECT key, canonical FROM manufacturer_map")}
+    conn.close()
+    groups = {}
+    for r in raw:
+        k = manufacturer_key(r["brand"])
+        if not k:
+            continue
+        g = groups.setdefault(k, {"key": k, "count": 0, "variants": set()})
+        g["count"] += r["c"]
+        g["variants"].add(r["brand"])
+    for k in override:
+        groups.setdefault(k, {"key": k, "count": 0, "variants": set()})
+    items = [{"key": g["key"], "count": g["count"], "variants": sorted(g["variants"]),
+              "canonical": override.get(g["key"])} for g in groups.values()]
+    items.sort(key=lambda x: (x["canonical"] is not None, -x["count"]))
+    return items
 
 
 def load_tag_types():

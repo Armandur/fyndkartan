@@ -60,7 +60,8 @@ class CatalogProduct(BaseModel):
 
     ean: str | None = Field(None, description="EAN/GTIN, eller null")
     name: str | None = Field(None, description="Produktnamn")
-    brand: str | None = Field(None, description="Varumärke eller null")
+    brand: str | None = Field(None, description="Varumärke (rått) eller null")
+    manufacturer: str | None = Field(None, description="Normaliserad tillverkare (kanonisk, skiftläge/legal-suffix-städad + admin-merges)")
     origin: list[str] | None = Field(None, description="Ursprungsländer (lista) eller null")
     origin_codes: list[str] | None = Field(None, description="Ursprungsländernas ISO-3166-koder (för flagg-emoji)")
     image: str | None = Field(None, description="Bild-URL")

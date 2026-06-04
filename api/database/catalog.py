@@ -8,7 +8,7 @@ from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, of
 from .products import get_product_origins, get_product_diets
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit, normalize_ean
-from .. import countries
+from .. import countries, manufacturers
 
 _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
@@ -387,8 +387,10 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
                    "store": m.get("store")}  # butiksscopat hyllpris (Coop/ICA); NULL = nationellt
                   for m in g if m["price"] is not None]
         pv = [p["price"] for p in prices]
+        brand = _cat_pick(g, "brand")
         out.append({
-            "ean": rep["ean"], "name": rep["name"], "brand": _cat_pick(g, "brand"),
+            "ean": rep["ean"], "name": rep["name"], "brand": brand,
+            "manufacturer": manufacturers.canonical(brand),  # normaliserad tillverkare (kanonisk)
             "origin": _parse_origin(_cat_pick(g, "origin")),  # cross-chain: första medlem med origin
             "image": _cat_pick(g, "image"), "category": cat,
             "package_size": _cat_pick(g, "package_size"), "package_value": rep["package_value"],

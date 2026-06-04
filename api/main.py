@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, matching, schemas, settings, tags
+from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, manufacturers, matching, schemas, settings, tags
 from .adapters import axfood_offers
 from .database import (
     get_cached_eans,
@@ -92,6 +92,7 @@ async def lifespan(app: FastAPI):
     tags.set_providers(database.load_providers())
     tags.set_provider_map(database.load_provider_map())
     categories.set_map(database.load_category_map())
+    manufacturers.set_map(database.load_manufacturer_map())
     conn = get_conn()
     n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
     conn.close()
@@ -625,6 +626,27 @@ async def set_category(payload: dict = Body(...), _=Depends(require_admin)):
     database.set_category_map(ck, rk, canon)
     categories.set_map(database.load_category_map())  # ladda om -> slår igenom direkt
     return {"chain_key": ck, "raw_key": rk, "canonical": canon}
+
+
+@app.get("/v1/admin/manufacturers")
+async def admin_manufacturers(_=Depends(require_admin)):
+    """Tillverkar-/varumärkesgrupper (auto-normaliserade på nyckel) + ev. kanonisk override - för
+    redigering. Auto-normalisering (skiftläge/legal-suffix) sker i koden; här sätts manuella merges."""
+    return {"items": database.manufacturer_rows()}
+
+
+@app.post("/v1/admin/manufacturers/map")
+async def set_manufacturer(payload: dict = Body(...), _=Depends(require_admin)):
+    key = (payload.get("key") or "").strip()
+    canon = (payload.get("canonical") or "").strip()
+    if not key:
+        return JSONResponse({"detail": "Nyckel krävs."}, status_code=400)
+    if canon:
+        database.set_manufacturer_map(key, canon)
+    else:
+        database.delete_manufacturer_map(key)  # tom -> rensa override (faller till auto-default)
+    manufacturers.set_map(database.load_manufacturer_map())  # ladda om -> slår igenom direkt
+    return {"key": key, "canonical": canon or None}
 
 
 # ---- API-nycklar för externa integratörer (konsol-utfärdade) ----

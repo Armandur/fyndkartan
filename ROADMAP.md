@@ -320,17 +320,18 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       historik ackumulerats** (kan inte backfillas) och utvärdera då i verklig data hur mycket som är
       riktiga ändringar vs källbrus (olika ingredienssträngar per hämtning) innan presentation byggs.
       Diffa per källa, inte mot den mergade raden.
-    - [ ] **Normalisera tillverkarnamn (förarbete till tillverkar-filtret).** Samma märke stavas
-      olika per kedja ("Arla", "Arla Foods", "ARLA AB"...) och `manufacturer`/`brand` kommer rått från
-      respektive kedjas API. Innan ett tillverkar-filter blir användbart behövs en kanonisk mappning
-      (derive-at-read likt `category_map`/`tag_map`: råname -> kanoniskt namn, redigerbar admin-flik).
-      Annars splittras en tillverkares produkter på flera stavningar. Detta är blockern - gör det först.
-    - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** Man ska kunna lista
-      alla produkter från en viss tillverkare/märke (`brand`/`manufacturer`-fältet finns redan i
-      katalogen + offers). Främst som API (t.ex. `?manufacturer=` på catalog-browse + en
-      tillverkar-katalog/aggregat), kanske inte i nuvarande kart-app men i en kommande konsument-/
-      analys-app. **Beror på tillverkarnamn-normaliseringen ovan** - utan den splittras märket på
-      olika stavningar. En råname-exakt v1 går att göra tidigare men ger begränsat värde.
+    - [x] **Normalisera tillverkarnamn BYGGT (förarbete till tillverkar-filtret).** Fristående
+      `api/manufacturers.py` (derive-at-read likt `categories`/`tags`): `manufacturer_key()` grupperar
+      varianter (gemener, konservativ legal-suffix/region-strippning - INTE "Foods"/"Group" som ofta är
+      del av namnet) och `canonical()` ger display-namn (MAP-override per nyckel, annars städad default).
+      `manufacturer_map`-tabell (admin-redigerbar) + `set_map` vid uppstart/ändring. Konsolens
+      **Tillverkare-flik** (`/v1/admin/manufacturers` + `.../map`): råvarianter grupperade på nyckel
+      med antal, sätt kanoniskt namn för semantiska merges ("Arla Foods"+"Arla"->"Arla"). Kalibrerat:
+      2808 brands -> 2473 nycklar (case/legal/punkt-varianter grupperas auto; 310 grupper med >1 variant).
+      `catalog_browse` exponerar `manufacturer` (kanonisk) per produkt.
+    - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** NU UPPLÅST av normaliseringen
+      ovan. Kvar: `?manufacturer=`-filter på catalog-browse (gruppera/filtrera på `manufacturer_key`) +
+      en tillverkar-katalog/aggregat. Främst API/analys-app, kanske inte i nuvarande kart-app.
     - **Kost-filter: vegan/vegetariskt (+ härled när otaggat).**
       - [ ] **Omvärdering: gör vegan/vegetariskt till EGNA (kombinerbara) KATEGORIER, inte ett separat
         filter.** Önskemål: vegan + vegetariskt ska visas/väljas som kategorier (likt Mejeri/Frukt osv)

@@ -159,6 +159,9 @@ def init_db():
         "INSERT OR IGNORE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
         [(ck, rk, canon) for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()],
     )
+    # Tillverkar-/varumärkesnormalisering: grupperingsnyckel -> kanoniskt display-namn (override).
+    # Auto-normalisering (skiftläge/legal-suffix) sker i koden; tabellen är manuella merges.
+    conn.execute("CREATE TABLE IF NOT EXISTS manufacturer_map (key TEXT PRIMARY KEY, canonical TEXT)")
     # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
     conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
     # Tombstone: typer användaren tagit bort. Hindrar att inbyggda återskapas vid omstart.

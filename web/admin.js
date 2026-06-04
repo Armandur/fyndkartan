@@ -1027,6 +1027,45 @@
       renderCatRows();
     }
 
+    // ---- Tillverkare (varumärkesnormalisering) ----
+    let manufData = { items: [] };
+    async function loadManufacturers() {
+      manufData = await (await api("/v1/admin/manufacturers")).json();
+      document.getElementById("manuf").innerHTML = `
+        <div class="card p-3">
+          <div class="d-flex align-items-center gap-2 mb-2 flex-wrap"><h6 class="mb-0 me-auto">Tillverkar-/varumärkesnormalisering</h6>
+            <div class="form-check form-switch small" style="white-space:nowrap"><input class="form-check-input" type="checkbox" id="manufMulti">
+              <label class="form-check-label" for="manufMulti">Bara flervariant</label></div>
+            <input id="manufSearch" class="form-control form-control-sm" style="max-width:220px" placeholder="Sök tillverkare…"></div>
+          <div class="small text-muted mb-2">Råa brand-namn auto-grupperas på nyckel (skiftläge/legal-suffix städas i koden). Sätt ett kanoniskt display-namn för att slå ihop semantiska varianter (t.ex. "Arla Foods" + "Arla" → "Arla"). Tomt = auto-default. Ändring slår igenom direkt.</div>
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Nyckel</th><th>Antal</th><th>Råvarianter</th><th>Kanonisk (display)</th></tr></thead>
+            <tbody id="manufBody"></tbody></table>
+          <div id="manufCount" class="small text-muted mt-1"></div></div>`;
+      document.getElementById("manufSearch").addEventListener("input", renderManufRows);
+      document.getElementById("manufMulti").addEventListener("change", renderManufRows);
+      renderManufRows();
+    }
+
+    function renderManufRows() {
+      const q = (document.getElementById("manufSearch").value || "").toLowerCase().trim();
+      const multi = document.getElementById("manufMulti").checked;
+      let items = manufData.items || [];
+      if (multi) items = items.filter(it => it.variants.length > 1);
+      if (q) items = items.filter(it => it.key.includes(q) || (it.canonical || "").toLowerCase().includes(q) || it.variants.some(v => v.toLowerCase().includes(q)));
+      const shown = items.slice(0, 400);
+      document.getElementById("manufBody").innerHTML = shown.map(it => `
+        <tr><td class="mono small">${esc(it.key)}</td><td>${fmtNum(it.count)}</td>
+          <td class="small text-muted">${it.variants.map(esc).join(", ")}</td>
+          <td><input class="form-control form-control-sm manuf-canon" data-key="${esc(it.key)}" value="${esc(it.canonical || "")}" placeholder="${esc(it.variants[0] || "")}" style="max-width:220px"></td></tr>`).join("");
+      document.getElementById("manufCount").textContent = `${fmtNum(items.length)} grupper${items.length > shown.length ? ` (visar ${shown.length})` : ""}`;
+      document.querySelectorAll("#manufBody .manuf-canon").forEach(inp => inp.addEventListener("change", async () => {
+        await api("/v1/admin/manufacturers/map", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: inp.dataset.key, canonical: inp.value.trim() }) });
+        const it = manufData.items.find(x => x.key === inp.dataset.key);
+        if (it) it.canonical = inp.value.trim() || null;
+      }));
+    }
+
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
     const CATALOG_IMPLEMENTED = ["citygross", "ica", "coop", "willys", "hemkop"];
     const CRAWL_STATUS = { idle: "väntar", running: "crawlar", ok: "klar", ok_med_fel: "klar (med fel)" };
@@ -1507,7 +1546,7 @@
       preview();
     }
 
-    const LOADERS = { overview: loadOverview, kedjor: loadKedjor, sweep: loadSweep, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, catalog: loadCatalog, marques: loadMarques, keys: loadKeys, settings: loadSettings };
+    const LOADERS = { overview: loadOverview, kedjor: loadKedjor, sweep: loadSweep, calls: loadCalls, sources: loadSources, tags: loadTags, cats: loadCategoriesTab, manuf: loadManufacturers, catalog: loadCatalog, marques: loadMarques, keys: loadKeys, settings: loadSettings };
 
     function show(tab) {
       active = tab;
