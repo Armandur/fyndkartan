@@ -23,6 +23,7 @@ from .database import (
     save_ean_meta,
     save_product_info,
     product_info_fresh_set,
+    archive_product_info,
 )
 from .geo import grid
 
@@ -97,6 +98,7 @@ def _piggyback_axfood_info(meta):
             if m.get("info") and (e := normalize_ean(m.get("ean")))}
     if not cand:
         return
+    archive_product_info(cand.items())  # innehållshistorik (append-on-change)
     fresh = product_info_fresh_set(cand.keys())
     for ean, info in cand.items():
         if ean not in fresh:

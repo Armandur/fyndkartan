@@ -113,6 +113,49 @@ def save_product_info(ean, data, partial=False):
     return now
 
 
+def _info_sig(ingredients, nutrition, origin):
+    """Normaliserad signatur för ändringsdetektering (skiftläge/whitespace-tålig, näring ordnad)."""
+    ing = " ".join((ingredients or "").lower().split())
+    nut = ";".join(sorted(
+        f"{(n.get('label') or '').lower()}={n.get('value')}{(n.get('unit') or '').lower()}"
+        for n in (nutrition or [])))
+    return f"{ing}|{nut}|{(origin or '').lower().strip()}"
+
+
+def archive_product_info(items):
+    """Append-on-change-historik per (ean, source) för produktinnehåll (recept-/närings-/ursprungs-
+    ändringar). `items` = iterabel av (ean, part) där part är enkällsform (source satt). Skriver bara
+    rader vars signatur skiljer sig från senaste observationen för (ean, source) -> kompakt
+    ändringslogg. Batchat (en SELECT + en INSERT). Inget UI än (se ROADMAP)."""
+    cand = []  # (ean, source, ingredients, nutrition, origin, sig)
+    for ean, part in items:
+        source = part.get("source")
+        ing, nut, orig = part.get("ingredients"), part.get("nutrition") or [], part.get("origin")
+        if not ean or not source or (not ing and not nut and not orig):
+            continue
+        cand.append((str(ean), source, ing, nut, orig, _info_sig(ing, nut, orig)))
+    if not cand:
+        return
+    conn = get_conn()
+    eans = list({c[0] for c in cand})
+    last = {}  # (ean, source) -> senaste signatur (id-ordnat -> sista vinner)
+    for r in conn.execute(
+        f"SELECT ean, source, ingredients, nutrition, origin FROM product_info_observations "
+        f"WHERE ean IN ({','.join('?' * len(eans))}) ORDER BY id", eans,
+    ):
+        last[(r["ean"], r["source"])] = _info_sig(
+            r["ingredients"], json.loads(r["nutrition"]) if r["nutrition"] else [], r["origin"])
+    now = _now()
+    rows = [(c[0], c[1], c[2], json.dumps(c[3], ensure_ascii=False) if c[3] else None, c[4], now)
+            for c in cand if last.get((c[0], c[1])) != c[5]]
+    if rows:
+        conn.executemany(
+            "INSERT INTO product_info_observations (ean, source, ingredients, nutrition, origin, observed_at) "
+            "VALUES (?,?,?,?,?,?)", rows)
+        conn.commit()
+    conn.close()
+
+
 def product_info_fresh_set(eans):
     """Mängd EAN som har en EJ utgången product_info-rad (full/partial/negativ). För piggyback-
     skrivningarnas skip-if-fresh - utgångna återfylls av nästa crawl/warm."""

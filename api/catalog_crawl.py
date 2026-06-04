@@ -335,6 +335,7 @@ def _piggyback_coop_info(items):
             cand[ean] = part
     if not cand:
         return
+    database.archive_product_info(cand.items())  # innehållshistorik (append-on-change)
     fresh = database.product_info_fresh_set(cand.keys())
     for ean, part in cand.items():
         if ean not in fresh:

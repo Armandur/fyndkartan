@@ -508,4 +508,5 @@ async def fetch_for_ean(client, ean, prefer_chain=None):
             parts.append(ic)
     if not parts:
         return None
+    db.archive_product_info([(ean, p) for p in parts])  # innehållshistorik per källa (append-on-change)
     return _merge(parts)

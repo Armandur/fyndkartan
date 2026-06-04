@@ -276,10 +276,17 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     - [x] **Bugg: "Laddar fler…" när allt laddats FIXAD.** `browseLoadingMore` var fortfarande `true`
       när `renderBrowseGrid()`/`renderBrowseProgress()` kördes på första sidan (sattes `false` först i
       `finally`, efter render). Nu sätts den `false` före render -> visar "Alla N produkter visade".
-    - [ ] **Näringsinnehåll i produktinfo som tabell (inte inline).** Produktmodalens näringsvärden
-      visas som löpande text/inline; bör renderas som en TABELL (näringsämne | mängd per 100g, ev.
-      per portion) för läsbarhet. Datan finns i `product_info` (näring), `details.py` parsar den redan
-      i olika format - normalisera till nyckel/värde-par och rendera tabell.
+    - [x] **Näringsinnehåll i produktinfo som tabell BYGGT.** Produktmodalen renderar näringen som en
+      tabell (näringsämne | mängd) med basis ("per 100 g") i rubriken; energi-rader (kJ + kcal) slås
+      ihop i appen (API:t behåller dem separata). Värde/enhet med mellanslag, EAN visas i modalen.
+    - [ ] **UI för produktinnehålls-historik (recept-/närings-/ursprungsändringar).** Fångst-lagret är
+      byggt: `product_info_observations` (per `(ean, source)`, append-on-change via
+      `database.archive_product_info`, matas ur crawl/warm-piggyback + on-demand `fetch_for_ean`).
+      Saknas: läs-endpoint (`GET /v1/products/{ean}/info-history`) + produktmodal-vy som visar
+      "receptet ändrades 2026-03: socker tillkom" / närings-diff / bytt ursprungsland. **Bygg först när
+      historik ackumulerats** (kan inte backfillas) och utvärdera då i verklig data hur mycket som är
+      riktiga ändringar vs källbrus (olika ingredienssträngar per hämtning) innan presentation byggs.
+      Diffa per källa, inte mot den mergade raden.
     - [ ] **Normalisera tillverkarnamn (förarbete till tillverkar-filtret).** Samma märke stavas
       olika per kedja ("Arla", "Arla Foods", "ARLA AB"...) och `manufacturer`/`brand` kommer rått från
       respektive kedjas API. Innan ett tillverkar-filter blir användbart behövs en kanonisk mappning

@@ -239,6 +239,18 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
     )
+    # Historik för produktinnehåll PER KÄLLA (recept-/närings-/ursprungsändringar). Append-on-change:
+    # en rad när Axf(Coop/ICA)s normaliserade ingredienser/näring/ursprung skiljer sig från den
+    # senaste för (ean, source) -> kompakt ändringslogg. Per källa (ej den mergade raden) så
+    # källvariation inte ser ut som receptändring (speglar offer_observations per butik). UI senare.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS product_info_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ean TEXT NOT NULL, source TEXT NOT NULL,
+            ingredients TEXT, nutrition TEXT, origin TEXT, observed_at TEXT
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pinfo_obs ON product_info_observations(ean, source, id)")
     # EAN(13) -> ICA consumerItemId (detalj-URL:en). Söket scopar på butikssortiment, så
     # resolvern provar flera butiker; cid='' = försökt utan träff (negativ cache).
     conn.execute(
