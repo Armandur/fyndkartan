@@ -5,8 +5,10 @@ import json
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
 from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, offers_for_eans, on_offer_eans
+from .products import get_product_origins
 from ..categories import category_for, category_from_detail
 from ..matching import _norm_unit, normalize_ean
+from .. import countries
 
 _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
@@ -368,6 +370,7 @@ def _normalize_catalog_page(page):
     sidans koder slås upp (bunden mängd, undviker full-table + SQLite-vargränsen)."""
     need = [c for p in page if not p["origin"] for c in p.get("_ax", [])]
     ax_origin = get_axfood_origins(need) if need else {}
+    po = get_product_origins([p["ean"] for p in page if p.get("ean")])  # produktdetalj-fallback
     for p in page:
         p["package_size"] = normalized_package(p["package_size"])
         for pr in p["prices"]:
@@ -377,4 +380,8 @@ def _normalize_catalog_page(page):
         else:  # Axfood-backfill: första kod i EAN-gruppen med warmat ursprung (ean_cache, sträng)
             hit = next((ax_origin[c] for c in p.get("_ax", []) if c in ax_origin), None)
             p["origin"] = norm_origin(hit.replace(",", "/").split("/")) if hit else None
+        codes = countries.codes_for(p["origin"])
+        if not codes and p.get("ean") and po.get(p["ean"]):  # fallback ur product_info
+            p["origin"], codes = po[p["ean"]]
+        p["origin_codes"] = codes
         p.pop("_ax", None)
