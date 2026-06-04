@@ -20,10 +20,13 @@ _BROWSE_IDX = {"ver": -1, "groups": None}   # cachad EAN-/namn-gruppering (map-o
 
 
 def _group_rows(rows):
-    """EAN-nyckel (annars kedja:namn) -> lista medlems-dicts."""
+    """EAN-nyckel (cross-chain) -> lista medlems-dicts. När EAN saknas (oresolvad Axfood-kod):
+    nyckel = (kedja, product_id) så varje distinkt katalograd blir egen produkt - INTE (kedja, namn),
+    som felaktigt slog ihop olika produkter med samma namn (t.ex. flera 'Sourcream Onion Chips' i
+    olika storlekar/märken)."""
     groups = {}
     for r in rows:
-        key = r["ean"] or f"{r['chain']}:{(r['name'] or '').lower()}"
+        key = r["ean"] or f"{r['chain']}:{r['product_id']}"
         groups.setdefault(key, []).append(r)
     return groups
 
