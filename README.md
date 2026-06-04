@@ -1,11 +1,11 @@
 # Matbutiker - Unified Store & Offers API
 
-Ett gemensamt API för fem svenska matbutikskedjor (ICA, Coop, Willys, Hemköp,
-Lidl): hittar butiker (med normaliserade veckoöppettider/taggar) och - för fyra
+Ett gemensamt API för sex svenska matbutikskedjor (ICA, Coop, Willys, Hemköp,
+Lidl, City Gross): hittar butiker (med normaliserade veckoöppettider/taggar) och - för fyra
 kedjor - de faktiska veckoerbjudandena, plus cross-chain prisjämförelse, produktsök
 och EAN-produktinfo, och en webbkarta på OpenStreetMap.
 
-- **Steg 1 (butiker):** klart - 5 kedjor, ~2682 butiker. Spec: [`UNIFIED-API.md`](UNIFIED-API.md).
+- **Steg 1 (butiker):** klart - 6 kedjor. Spec: [`UNIFIED-API.md`](UNIFIED-API.md).
 - **Steg 2 (erbjudanden):** byggt för ICA, Willys, Hemköp, Coop (Lidl kvar). Status + plan: [`ROADMAP.md`](ROADMAP.md).
 - **API-kontrakt:** Pydantic-modeller i `api/schemas.py`, grupperat `/docs`.
 - **Kodbasöversikt för utveckling:** [`CLAUDE.md`](CLAUDE.md).

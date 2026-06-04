@@ -1,8 +1,9 @@
 # CLAUDE.md - matbutiker
 
-Kodbasöversikt för utveckling. Projektet är ett unified API för fem svenska
-matbutikskedjor: hittar butiker (steg 1, klart) och deras erbjudanden (steg 2,
-pågår), med en Leaflet/OSM-karta. Aktuell status och plan: `ROADMAP.md`.
+Kodbasöversikt för utveckling. Projektet är ett unified API för sex svenska
+matbutikskedjor (ICA, Coop, Willys, Hemköp, Lidl, City Gross): hittar butiker
+(steg 1, klart) och deras erbjudanden (steg 2, pågår), med en Leaflet/OSM-karta.
+Aktuell status och plan: `ROADMAP.md`.
 
 ## Stack
 

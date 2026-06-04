@@ -98,10 +98,11 @@ app = FastAPI(
     title="Fyndkartan API",
     version="0.1.0",
     description=(
-        "Unified store & offers-API för fem svenska matbutikskedjor (ICA, Coop, Willys, "
-        "Hemköp, Lidl). Butiker med normaliserade veckoöppettider/taggar, lazy-cachade "
+        "Unified store & offers-API för sex svenska matbutikskedjor (ICA, Coop, Willys, "
+        "Hemköp, Lidl, City Gross). Butiker med normaliserade veckoöppettider/taggar, lazy-cachade "
         "erbjudanden med kanonisk kategori + deal-typ, cross-chain prisjämförelse på EAN, "
-        "och EAN-global produktinfo. Hela /v1 kräver inloggning eller `X-API-Key`."
+        "EAN-global produktinfo, och fulla sortiment (crawlad katalog med hyllpris). "
+        "Hela /v1 kräver inloggning eller `X-API-Key`."
     ),
     lifespan=lifespan,
 )

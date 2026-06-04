@@ -1,7 +1,7 @@
 # Matbutiker - Unified Store API (master-dokumentation)
 
 Ett gemensamt API som hittar matbutiker (och deras erbjudandesidor) för
-fem svenska kedjor: **ICA, Coop, Willys, Hemköp, Lidl**. Detta dokument är
+sex svenska kedjor: **ICA, Coop, Willys, Hemköp, Lidl, City Gross**. Detta dokument är
 specen för steg 1: *hitta butiker + länka till erbjudandesidor*. Själva
 erbjudande-innehållet (priser, varor) är steg 2.
 
@@ -10,7 +10,7 @@ erbjudande-innehållet (priser, varor) är steg 2.
 > [`ROADMAP.md`](ROADMAP.md). Kodbasöversikt i [`CLAUDE.md`](CLAUDE.md).
 
 Alla scheman nedan är **verifierade mot skarpa API-svar 2026-05-31** - alla
-fem kedjor nås via REST/HTTP, ingen headless-rendering krävs.
+sex kedjor nås via REST/HTTP, ingen headless-rendering krävs.
 
 ---
 
