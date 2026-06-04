@@ -61,13 +61,31 @@ function chainColor(chain) {
   return (state.chains[chain] && state.chains[chain].color) || "#666";
 }
 
-function markerIcon(chain) {
+function markerIcon(chain, label) {
+  // Vid produktfilter: visa erbjudandepriset direkt på markören (chip i kedjefärg)
+  // istället för en prick - så man slipper klicka in på varje butik.
+  if (label != null) {
+    return L.divIcon({
+      className: "",
+      html: `<div class="marker-price" style="background:${chainColor(chain)}">${esc(label)}</div>`,
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    });
+  }
   return L.divIcon({
     className: "",
     html: `<div class="marker-pin" style="background:${chainColor(chain)}"></div>`,
     iconSize: [16, 16],
     iconAnchor: [8, 8],
   });
+}
+
+// Kompakt pris-etikett per butik. Flerköp visas som beräknat styckpris (jämförbart),
+// annars rakt erbjudandepris.
+function offerPinLabel(off) {
+  if (!off || off.price == null) return "erb";
+  const qty = off.multibuy_qty || 1;
+  return qty > 1 ? `${kr(off.price / qty)} kr/st` : `${kr(off.price)} kr`;
 }
 
 const DOW = ["Mån", "Tis", "Ons", "Tors", "Fre", "Lör", "Sön"];
@@ -115,8 +133,10 @@ function popupHtml(s) {
   // Erbjudandepris för den produkt kartan ev. är filtrerad på (state.productFilter).
   const pf = state.productFilter;
   const off = pf && pf.offers && pf.offers.get(`${s.chain}:${s.store_id}`);
+  // Per-styck (flerköp) så bannern matchar pris-chipet på markören; pristexten ("3 för 18 kr") med vid flerköp.
+  const offQty = off ? (off.multibuy_qty || 1) : 1;
   const offBanner = off
-    ? `<div class="pop-offer">&#9733; ${esc(pf.name)}: <strong>${off.price != null ? kr(off.price) + " kr" : "på erbjudande"}</strong>${off.member_price ? " <span class='o-member'>Klubbpris</span>" : ""}${off.comparison_value != null ? ` &middot; ${kr(off.comparison_value)} kr/${esc(off.comparison_unit || "")}` : ""}${off.valid_to ? ` &middot; t.o.m. ${esc(off.valid_to)}` : ""}</div>`
+    ? `<div class="pop-offer">&#9733; ${esc(pf.name)}: <strong>${off.price != null ? kr(off.price / offQty) + " kr" + (offQty > 1 ? "/st" : "") : "på erbjudande"}</strong>${offQty > 1 && off.price_text ? ` &middot; ${esc(off.price_text)}` : ""}${off.member_price ? " <span class='o-member'>Klubbpris</span>" : ""}${off.comparison_value != null ? ` &middot; ${kr(off.comparison_value)} kr/${esc(off.comparison_unit || "")}` : ""}${off.valid_to ? ` &middot; t.o.m. ${esc(off.valid_to)}` : ""}</div>`
     : "";
   return `<div class="store-pop">
     <button class="pop-fav${isFav(s) ? " on" : ""}" aria-label="Favorit">&#9733;</button>
@@ -151,10 +171,12 @@ function visibleStores() {
 function render() {
   const list = visibleStores();
   cluster.clearLayers();
+  const pf = state.productFilter;
   const markers = [];
   for (const s of list) {
     if (!s.location) continue;
-    const m = L.marker([s.location.lat, s.location.lng], { icon: markerIcon(s.chain) });
+    const off = pf && pf.offers && pf.offers.get(`${s.chain}:${s.store_id}`);
+    const m = L.marker([s.location.lat, s.location.lng], { icon: markerIcon(s.chain, off ? offerPinLabel(off) : null) });
     m.bindPopup(popupHtml(s), { closeButton: true });
     s._marker = m;
     m._store = s;
@@ -366,7 +388,7 @@ async function openProductModal(ean, chain, name) {
     + '<div id="productInfoSection" class="text-muted small">Laddar produktinfo&hellip;</div>'
     + '<div id="priceHistorySection" class="mt-3 pt-2 border-top"></div>';
   modal.classList.remove("d-none");
-  loadOfferDetail(ean, chain);   // aktuellt erbjudande (vad erbjudandet FAKTISKT är)
+  loadOfferDetail(ean, chain, name);   // aktuellt erbjudande (vad erbjudandet FAKTISKT är)
   loadPriceHistory(ean);
   try {
     const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}?prefer_chain=${encodeURIComponent(chain || "")}`)).json();
@@ -378,7 +400,7 @@ async function openProductModal(ean, chain, name) {
 
 // Visar det AKTUELLA erbjudandet per kedja (offerns egna namn/pristext/förpackning) - avslöjar när rean
 // hör till en annan förpackning/multiköp som delar EAN med hyllvaran (rea högre än hyllpris-fallet).
-async function loadOfferDetail(ean, chain) {
+async function loadOfferDetail(ean, chain, name) {
   const el = document.getElementById("offerDetailSection");
   if (!el) return;
   try {
@@ -404,13 +426,22 @@ async function loadOfferDetail(ean, chain) {
         : `<span class="od-price o-offer">${esc(o.price_text || "")}</span>`;
       // Visa deal-texten ("3 för 18 kr") när det är flerköp; annars räcker styckpriset.
       const dealLabel = (qty > 1 && o.price_text) ? ` &middot; <span class="od-deal-txt">${esc(o.price_text)}</span>` : "";
+      // Per-kedja kartknapp: bara DEN kedjans butiker med erbjudandet.
+      const mapBtn = `<button class="od-map" type="button" data-chain="${esc(o.chain)}" title="Visa ${esc(m.label || o.chain)}-butiker med erbjudandet på kartan">Visa ${cnt} på kartan</button>`;
       return `<div class="od-row${o.chain === chain ? " od-hi" : ""}">
         <span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || o.chain)}</span>
         ${struck}${now}${dealLabel}${o.member_price ? ' <span class="o-member">Klubbpris</span>' : ""}
         <div class="od-sub text-muted">${esc(o.name || "")}${o.package ? " &middot; " + esc(o.package) : ""}${cmp}${o.valid_to ? " &middot; t.o.m. " + esc(o.valid_to) : ""} &middot; ${cnt} butik${cnt === 1 ? "" : "er"}</div>
+        <div class="od-actions">${mapBtn}</div>
       </div>`;
     }).join("");
     el.innerHTML = `<div class="od-head">Aktuellt erbjudande</div>${rows}`;
+    el.querySelectorAll(".od-map").forEach((btn) => btn.addEventListener("click", () => {
+      document.getElementById("productModal").classList.add("d-none");
+      _selfNav = true; location.hash = ""; showMapUI();
+      filterMapByProduct(ean, name, btn.dataset.chain);   // scope:a kartan till bara den kedjan
+      setTimeout(() => { _selfNav = false; }, 0);
+    }));
   } catch (e) { el.innerHTML = ""; }
 }
 

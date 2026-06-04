@@ -193,6 +193,13 @@ body {
   border: 2.5px solid #fff;
   box-shadow: 0 1px 4px rgba(0,0,0,.4);
 }
+/* Pris-chip på markören vid produktfilter (iconSize 0 -> centreras via transform) */
+.marker-price {
+  display: inline-block; transform: translate(-50%, -50%);
+  color: #fff; font-weight: 700; font-size: .72rem; line-height: 1;
+  padding: 3px 7px; border-radius: 11px; white-space: nowrap;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
 
 .pop-offers-btn {
   margin-top: .55rem;
@@ -288,6 +295,12 @@ img.o-img { cursor: zoom-in; }
 .od-row .od-price { font-weight: 800; margin-left: .35rem; }
 .od-row .od-deal-txt { font-weight: 600; color: #46505c; }
 .od-row .od-sub { font-size: .7rem; margin-top: 1px; }
+.od-row .od-actions { margin-top: .35rem; }
+.od-map {
+  background: none; border: 1px solid #d4dae0; color: #46505c;
+  font-size: .68rem; font-weight: 600; padding: 2px 9px; border-radius: 20px; cursor: pointer;
+}
+.od-map:hover { background: #eef1f4; }
 .o-offer-badge {
   font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;
   padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .02em;
