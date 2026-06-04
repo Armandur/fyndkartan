@@ -361,15 +361,50 @@ async function openProductModal(ean, chain, name) {
   const modal = document.getElementById("productModal");
   document.getElementById("productModalTitle").textContent = name || "Produktinfo";
   const body = document.getElementById("productModalBody");
-  body.innerHTML = '<div class="text-muted small">Laddar produktinfo&hellip;</div>';
+  // Tre oberoende sektioner (laddas parallellt i egna containrar -> ingen wipe).
+  body.innerHTML = '<div id="offerDetailSection"></div>'
+    + '<div id="productInfoSection" class="text-muted small">Laddar produktinfo&hellip;</div>'
+    + '<div id="priceHistorySection" class="mt-3 pt-2 border-top"></div>';
   modal.classList.remove("d-none");
+  loadOfferDetail(ean, chain);   // aktuellt erbjudande (vad erbjudandet FAKTISKT är)
+  loadPriceHistory(ean);
   try {
     const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}?prefer_chain=${encodeURIComponent(chain || "")}`)).json();
-    body.innerHTML = renderProductInfo(d, chain) + '<div id="priceHistorySection" class="mt-3 pt-2 border-top"></div>';
+    document.getElementById("productInfoSection").outerHTML = `<div id="productInfoSection">${renderProductInfo(d, chain)}</div>`;
   } catch (e) {
-    body.innerHTML = '<div class="text-danger small">Kunde inte hämta produktinfo.</div><div id="priceHistorySection" class="mt-3"></div>';
+    document.getElementById("productInfoSection").innerHTML = '<div class="text-danger small">Kunde inte hämta produktinfo.</div>';
   }
-  loadPriceHistory(ean);
+}
+
+// Visar det AKTUELLA erbjudandet per kedja (offerns egna namn/pristext/förpackning) - avslöjar när rean
+// hör till en annan förpackning/multiköp som delar EAN med hyllvaran (rea högre än hyllpris-fallet).
+async function loadOfferDetail(ean, chain) {
+  const el = document.getElementById("offerDetailSection");
+  if (!el) return;
+  try {
+    const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/stores`)).json();
+    const list = d.stores || [];
+    if (!list.length) { el.innerHTML = ""; return; }
+    const byChain = {};
+    for (const s of list) {
+      const cur = byChain[s.chain];
+      if (!cur || (s.price != null && (cur.price == null || s.price < cur.price))) byChain[s.chain] = s;
+    }
+    const rows = Object.values(byChain).sort((a, b) => (a.price ?? 9e9) - (b.price ?? 9e9)).map((o) => {
+      const m = state.chains[o.chain] || {};
+      const cnt = list.filter((s) => s.chain === o.chain).length;
+      const cmp = o.comparison_value != null ? ` <span class="text-muted">(${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")})</span>` : "";
+      const deal = o.deal_type === "multibuy" ? ` <span class="o-deal o-deal--mb">${o.multibuy_qty ? o.multibuy_qty + " för" : "Flerköp"}</span>`
+        : (o.deal_type === "by_weight" ? ` <span class="o-deal o-deal--bw">Per vikt</span>` : "");
+      const price = o.price_text ? esc(o.price_text) : (o.price != null ? `${kr(o.price)} kr` : "");
+      return `<div class="od-row${o.chain === chain ? " od-hi" : ""}">
+        <span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || o.chain)}</span>
+        <span class="od-price o-offer">${price}</span>${deal}${o.member_price ? ' <span class="o-member">Klubbpris</span>' : ""}
+        <div class="od-sub text-muted">${esc(o.name || "")}${o.package ? " &middot; " + esc(o.package) : ""}${cmp}${o.valid_to ? " &middot; t.o.m. " + esc(o.valid_to) : ""} &middot; ${cnt} butik${cnt === 1 ? "" : "er"}</div>
+      </div>`;
+    }).join("");
+    el.innerHTML = `<div class="od-head">Aktuellt erbjudande</div>${rows}`;
+  } catch (e) { el.innerHTML = ""; }
 }
 
 async function loadPriceHistory(ean) {
@@ -1250,12 +1285,10 @@ document.getElementById("browseCats").addEventListener("click", (e) => {
 document.getElementById("browseGrid").addEventListener("click", (e) => {
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
-  const offer = e.target.closest(".o-offer-link");  // klick på en kedjas rea -> kartan, scopad till kedjan
+  const offer = e.target.closest(".o-offer-link");  // klick på en kedjas rea -> visa det AKTUELLA erbjudandet
   if (offer && offer.dataset.ean) {
     e.preventDefault();
-    _selfNav = true; location.hash = ""; showMapUI();
-    filterMapByProduct(offer.dataset.ean, offer.dataset.name, offer.dataset.chain);
-    setTimeout(() => { _selfNav = false; }, 0);
+    openProductModal(offer.dataset.ean, offer.dataset.chain, offer.dataset.name);
     return;
   }
   const mapBtn = e.target.closest(".o-map");

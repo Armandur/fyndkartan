@@ -132,8 +132,8 @@ def stores_with_offer(ean):
     inte hyllsortiment."""
     conn = get_conn()
     rows = conn.execute(
-        "SELECT o.chain, o.store_id, o.name, o.price, o.comparison_value, o.comparison_unit, "
-        "o.valid_to, o.member_price FROM offer_eans oe "
+        "SELECT o.chain, o.store_id, o.name, o.price, o.price_text, o.package, o.comparison_value, "
+        "o.comparison_unit, o.valid_to, o.member_price FROM offer_eans oe "
         "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
         "WHERE oe.ean=?",
         (ean,),
@@ -144,10 +144,12 @@ def stores_with_offer(ean):
         key = (r["chain"], r["store_id"])
         cur = best.get(key)
         if cur is None or (r["price"] is not None and (cur["price"] is None or r["price"] < cur["price"])):
+            dt, mq = _deal_type(r["price_text"])
             best[key] = {"chain": r["chain"], "store_id": r["store_id"], "name": r["name"],
-                         "price": r["price"], "comparison_value": r["comparison_value"],
-                         "comparison_unit": r["comparison_unit"], "valid_to": r["valid_to"],
-                         "member_price": bool(r["member_price"])}
+                         "price": r["price"], "price_text": r["price_text"],
+                         "package": normalized_package(r["package"]), "deal_type": dt, "multibuy_qty": mq,
+                         "comparison_value": r["comparison_value"], "comparison_unit": _norm_unit(r["comparison_unit"]),
+                         "valid_to": r["valid_to"], "member_price": bool(r["member_price"])}
     return list(best.values())
 
 
