@@ -169,6 +169,17 @@ def sparse_partial_eans(limit=None):
     return [r["ean"] for r in rows]
 
 
+def product_info_observations_stats():
+    """(antal rader, distinkta produkter (ean), äldsta observation) för innehållshistoriken
+    (recept-/närings-/ursprungsändringar, product_info_observations)."""
+    conn = get_conn()
+    r = conn.execute(
+        "SELECT COUNT(*) c, COUNT(DISTINCT ean) p, MIN(observed_at) o FROM product_info_observations"
+    ).fetchone()
+    conn.close()
+    return {"rows": r["c"], "products": r["p"], "since": r["o"]}
+
+
 def partial_info_counts():
     """{partial: antal partial-rader, sparse: antal med gles näring (<4, uppgraderingskandidater)}."""
     conn = get_conn()

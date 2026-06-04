@@ -523,6 +523,7 @@ async def admin_overview(_=Depends(require_admin)):
         "storage": storage,
         "ean_stats": ean_stats,
         "price_history": database.offer_observations_stats(),
+        "info_history": database.product_info_observations_stats(),
         "syncing": STATE["running"],
         "scheduler": {"cron": settings.get("sync_cron"), "tz": settings.get("sync_tz"), "next_run": next_run},
         "catalog_crawl": {"cron": settings.get("catalog_crawl_cron"),
