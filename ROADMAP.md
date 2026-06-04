@@ -243,10 +243,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
     Axfood-EAN-resolve: koder utan EAN i `ean_cache` resolvas via `/p/{code}` (capat `AXFOOD_RESOLVE_CAP`
     /kedja+sök, ger även kategori, persisteras -> warmar) - lyfte cross-chain-träffarna kraftigt
     (t.ex. "yoghurt" 4-kedjes-matchningar med alla hyllpriser).
-    - [ ] **Se över produktkort-layouten (`catalogCard`/`offerCard`/`productCard`).** Korten har
-      vuxit organiskt (bild, märke, per-kedje-hyllpris+rea-rader, jämförpris, badges, knappar) och
-      behöver en designgenomgång - särskilt i bläddra-vyns rutnät där de visas tätt. Konsekvent
-      hierarki/spacing, tydligare rea-vs-hyllpris, ev. kompakt vs detaljerat läge.
+    - [x] **Produktkort-layouten översedd (`catalogCard`/`offerCard`/`productCard`).** Riktning
+      "städad horisontell": större bild (56px), namn klippt till 2 rader (jämn topphöjd), tydligare
+      rea-vs-hyllpris (hyllpris neutralt via `o-price--shelf`, rött reserverat för faktisk rea),
+      meta på en rad i rutnätet. Kompakt-vs-detaljerat-läge medvetet bortvalt (horisontell räckte).
+    - [ ] **Sortering & filtrering i bläddra-vyn (kategori + sökresultat).** Bläddra-vyn ska kunna
+      sortera/filtrera produkter på samma sätt som kartvyns erbjudande-/jämförelsepaneler - t.ex.
+      störst besparing, lägst pris, A-Ö, samt deal-typ. Idag har bläddra-vyn bara kategori-/kedje-/
+      "bara erbjudanden"-filter och en fast sortering. Kräver att `catalog_browse`/`/catalog/browse`
+      exponerar de fält som behövs (savings/jämförpris) och sorterings-/filterkontroller i `web/`.
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),
