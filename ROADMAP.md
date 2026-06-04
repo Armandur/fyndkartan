@@ -332,6 +332,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       analys-app. **Beror på tillverkarnamn-normaliseringen ovan** - utan den splittras märket på
       olika stavningar. En råname-exakt v1 går att göra tidigare men ger begränsat värde.
     - **Kost-filter: vegan/vegetariskt (+ härled när otaggat).**
+      - [ ] **Omvärdering: gör vegan/vegetariskt till EGNA (kombinerbara) KATEGORIER, inte ett separat
+        filter.** Önskemål: vegan + vegetariskt ska visas/väljas som kategorier (likt Mejeri/Frukt osv)
+        snarare än i en egen dropdown, och de TVÅ ska kombineras (vegetariskt inkluderar veganskt).
+        Hake: kanoniska kategorier är idag ÖMSESIDIGT UTESLUTANDE (en produkt -> en kategori), men
+        kost är TVÄRGÅENDE (en vegansk yoghurt är både "mejeri-alt" OCH vegansk). Så det blir en andra
+        dimension/taggnivå i kategori-UI:t (kombinerbara kategori-chips), inte en kanonisk kategori.
+        Designbeslut: behåll `diet`-härledningen, men exponera som valbara chips i bläddra-vyns
+        kategorilist (kombinerbara med vanlig kategori) i st.f. dropdown.
       - [x] **v1 BYGGT - härledning + badge.** `details.classify_diet(ingredients)` -> `diet`-fält
         (`vegan`/`vegetarian`/`none`/null) deriverat read-time i `normalize_info` (vokabulär likt
         `extract_allergens`: kött/fisk -> none; mejeri/ägg/honung/gelatin -> vegetarisk; annars vegan;
