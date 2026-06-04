@@ -389,19 +389,15 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       gång, lagras hashad) + återkalla. `X-API-Key`-middleware validerar om nyckel skickas
       (ogiltig/återkallad -> 401) men gatar inte de öppna läs-endpoints. `api_keys`-tabell.
       - [ ] Kvar: rate limiting + scopes per nyckel (när en faktisk konsument finns).
-  - [ ] **Samlad schemaläggnings-/inställningsflik i konsolen (override env).** Egen "Inställningar"-
-    flik som samlar ALLA schemaläggnings-värden: `SYNC_CRON` (butikssynk), `OFFERS_SWEEP_CRON`
-    (erbjudande-sweep), `CATALOG_CRAWL_CRON` (sortiment-crawl) och `SYNC_TZ` (tidszon). Idag är de
-    bara env-styrda (`os.getenv(...)`); fliken ska persistera overrides i `settings`-tabellen och
-    **resolva DB-värde > env > kod-default vid runtime** - spegla `SESSION_SECRET`/`category_map`.
-    Resolvas vid läsning så ändring slår igenom utan omstart (schemaläggar-loopen läser om nästa
-    varv; ev. signal/omstart av loopen för direkt effekt). Validera: cron mot `croniter`, tidszon
-    mot `zoneinfo` (avvisa ogiltiga). Visa nästa körning per schema (som Sortiment-fliken redan gör).
-    **UI: dubbelriktat.** Varje cron ska kunna sättas både via dropdown-meny(er) för vanliga
-    intervall (t.ex. "varje timme", "dagligen kl X", "veckovis mån kl X") OCH genom att klistra
-    in/skriva en fri cron-sträng - de två ska vara synkade: en inklistrad sträng som matchar ett
-    förval uppdaterar menyerna, och en sträng utanför förvalen visas/redigeras som råtext
-    (avancerat läge). Live-förhandsvisning av "nästa körning" medan man redigerar.
+  - [x] **Samlad Inställningar-flik i konsolen (override env) BYGGT.** Fliken samlar `SYNC_CRON`,
+    `OFFERS_SWEEP_CRON`, `CATALOG_CRAWL_CRON` + `SYNC_TZ`. `api/settings.py` resolvar DB-override
+    (`settings`-tabellen, `cfg_<key>`) > env > kod-default vid läsning. `run_scheduler` tar nu cron/tz
+    som callable och läser om varje varv (chunkad sömn `SCHEDULER_CHECK=30s`) -> **ändringar slår
+    igenom utan omstart** (verifierat). Validering: cron/`croniter`, tz/`zoneinfo`; `off`/tomt pausar.
+    UI: dropdown med förval + fri sträng (synkade, "Anpassad" utanför förval) + live nästa-körning-
+    förhandsvisning + override/env-default-badge + "Återställ env". Kvar (medvetet ej byggt):
+    tidpunkts-väljare ("dagligen kl X") som egen kontroll - fri sträng täcker det; `_offers_expired`-
+    tz läser fortfarande env (hot path, tz ändras sällan).
 
 ### Normalisering (datakvalitet)
 
