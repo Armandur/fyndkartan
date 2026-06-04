@@ -112,10 +112,17 @@ function popupHtml(s) {
   const offersBtn = ["ica", "willys", "hemkop", "coop", "citygross"].includes(s.chain)
     ? `<button class="pop-offers-btn" data-chain="${esc(s.chain)}" data-id="${esc(s.store_id)}" data-name="${esc(s.name)}">Visa veckans erbjudanden</button>`
     : "";
+  // Erbjudandepris för den produkt kartan ev. är filtrerad på (state.productFilter).
+  const pf = state.productFilter;
+  const off = pf && pf.offers && pf.offers.get(`${s.chain}:${s.store_id}`);
+  const offBanner = off
+    ? `<div class="pop-offer">&#9733; ${esc(pf.name)}: <strong>${off.price != null ? kr(off.price) + " kr" : "på erbjudande"}</strong>${off.member_price ? " <span class='o-member'>Klubbpris</span>" : ""}${off.comparison_value != null ? ` &middot; ${kr(off.comparison_value)} kr/${esc(off.comparison_unit || "")}` : ""}${off.valid_to ? ` &middot; t.o.m. ${esc(off.valid_to)}` : ""}</div>`
+    : "";
   return `<div class="store-pop">
     <button class="pop-fav${isFav(s) ? " on" : ""}" aria-label="Favorit">&#9733;</button>
     <span class="pop-brand" style="background:${color}">${esc(brand)}</span>
     <h6>${esc(s.name)}</h6>
+    ${offBanner}
     <div class="pop-addr">${esc(addr)}</div>
     ${oh.today ? `<div class="pop-hours">Idag: ${esc(oh.today)}</div>` : ""}
     ${weekHtml(oh)}
@@ -239,7 +246,7 @@ async function loadStores() {
 
 // Filtrera kartan till butiker som har ETT ERBJUDANDE på en vald vara (EAN). Bygger på
 // offers-cachen -> "med erbjudande", inte hyllsortiment (det vet vi inte).
-async function filterMapByProduct(ean, name) {
+async function filterMapByProduct(ean, name, chain = null) {
   if (!ean) return;
   const bar = document.getElementById("productFilterBar");
   const txt = document.getElementById("productFilterText");
@@ -247,15 +254,23 @@ async function filterMapByProduct(ean, name) {
   txt.textContent = `Laddar butiker med erbjudande på ${name || ean}…`;
   try {
     const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/stores`)).json();
-    const stores = new Set((d.stores || []).map((s) => `${s.chain}:${s.store_id}`));
-    state.productFilter = { ean, name: name || ean, stores, count: d.count || stores.size };
-    txt.textContent = state.productFilter.count
-      ? `Butiker med erbjudande på: ${state.productFilter.name} (${state.productFilter.count})`
-      : `Ingen butik har just nu ${state.productFilter.name} på erbjudande`;
+    let list = d.stores || [];
+    if (chain) list = list.filter((s) => s.chain === chain);  // scope:a till en kedja (klick på dess rea)
+    const offers = new Map(list.map((s) => [`${s.chain}:${s.store_id}`, s]));  // pris per butik
+    const stores = new Set(offers.keys());
+    state.productFilter = { ean, name: name || ean, chain, offers, stores, count: stores.size };
+    const prices = list.map((s) => s.price).filter((p) => p != null);
+    const priceTxt = prices.length
+      ? (Math.min(...prices) === Math.max(...prices) ? `${kr(Math.min(...prices))} kr` : `${kr(Math.min(...prices))}–${kr(Math.max(...prices))} kr`)
+      : "";
+    const chLbl = chain ? ` (${(state.chains[chain] || {}).label || chain})` : "";
+    txt.textContent = stores.size
+      ? `Erbjudande på ${state.productFilter.name}${chLbl}: ${priceTxt ? priceTxt + " · " : ""}${stores.size} butik${stores.size === 1 ? "" : "er"}`
+      : `Ingen butik har just nu ${state.productFilter.name}${chLbl} på erbjudande`;
     document.getElementById("productsPanel").classList.add("d-none");
     closeNav();
     render();
-    if (state.productFilter.count) fitToVisible();
+    if (stores.size) fitToVisible();
   } catch (e) {
     txt.textContent = "Kunde inte filtrera på varan.";
   }
@@ -852,7 +867,11 @@ function catalogCard(p) {
     const m = state.chains[pr.chain] || {};
     const hasOffer = pr.offer_price != null;
     const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>` : `${kr(pr.price)} kr`) : "-";
-    const rea = hasOffer ? `rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}` : "";
+    // Rea-cellen är klickbar -> kartan filtrerad på den kedjans erbjudande för produkten.
+    const reaTxt = hasOffer ? `rea ${kr(pr.offer_price)} kr${pr.offer_member ? " klubb" : ""}` : "";
+    const rea = (hasOffer && p.ean)
+      ? `<a class="o-offer-link" data-ean="${esc(p.ean)}" data-chain="${esc(pr.chain)}" data-name="${esc(p.name || "")}" title="Visa erbjudandet på kartan">${reaTxt}</a>`
+      : reaTxt;
     const valid = (hasOffer && pr.offer_valid_to) ? `t.o.m. ${esc((pr.offer_valid_to || "").slice(5))}` : "";
     const cmp = pr.comparison_value != null ? `${kr(pr.comparison_value)}${pr.comparison_derived ? "≈" : ""} kr/${esc(pr.comparison_unit || "")}` : "";
     return `<span class="o-sc-chain"><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || pr.chain)}</span></span>`
@@ -1231,6 +1250,14 @@ document.getElementById("browseCats").addEventListener("click", (e) => {
 document.getElementById("browseGrid").addEventListener("click", (e) => {
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
+  const offer = e.target.closest(".o-offer-link");  // klick på en kedjas rea -> kartan, scopad till kedjan
+  if (offer && offer.dataset.ean) {
+    e.preventDefault();
+    _selfNav = true; location.hash = ""; showMapUI();
+    filterMapByProduct(offer.dataset.ean, offer.dataset.name, offer.dataset.chain);
+    setTimeout(() => { _selfNav = false; }, 0);
+    return;
+  }
   const mapBtn = e.target.closest(".o-map");
   if (mapBtn) { _selfNav = true; location.hash = ""; showMapUI(); filterMapByProduct(mapBtn.dataset.ean, mapBtn.dataset.name); setTimeout(() => { _selfNav = false; }, 0); }
 });

@@ -285,17 +285,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       delmängd: bara produkter/kedjor som finns hos favoriterna. Kräver att `catalog_browse` kan
       ta ett favorit-/butiksfilter (katalogen är dock nationell/per-kedja, inte per butik - så
       filtret blir per KEDJA som favoriterna täcker, ev. kombinerat med offers-täckning per butik).
-    - [ ] **"Visa på karta" ska visa erbjudandepriset direkt för rea-produkter.** När man klickar
-      "Visa på karta" för en produkt som har erbjudande borde kartans butiks-popup/markör visa
-      erbjudandepriset direkt (inte bara filtrera fram butikerna). Idag filtreras kartan på produkten
-      men priset syns först när man öppnar butikens erbjudanden.
-    - [ ] **Klickbart erbjudande i bläddra-vyns produktkort -> direkt till erbjudandet.** En kedjas
-      rea-rad i katalogkortet ska gå att klicka för att komma direkt till själva erbjudandet (butikens
-      erbjudande-vy / offer-detalj / kartfilter på den kedjan+produkten), särskilt värdefullt när
-      erbjudandet ser ologiskt ut. Ex: "Citron Lime Fruktdryck" där ICA visar hyllpris 8 kr men
-      "rea 18 kr" (rean HÖGRE än hyllpriset) - troligen olika förpackningsstorlekar grupperade på
-      samma EAN ("2dl/1l"). Att kunna klicka sig till erbjudandet hjälper en förstå det. (Sido-spår
-      värt att kolla: bör olika förpackningsstorlekar verkligen grupperas på samma EAN i katalogen?)
+    - [x] **Erbjudandepriset på kartan + klickbar rea BYGGT.** Kartans butiks-popup visar nu
+      erbjudandepriset (pris/jämförpris/klubbpris/t.o.m.) för den produkt kartan är filtrerad på
+      (`state.productFilter` bär per-butik-offers ur `stores_with_offer`, som redan hade priset).
+      Produktfilter-baren visar prisintervall. Och en kedjas **rea-rad i katalogkortet är klickbar**
+      -> kartan filtrerad på DEN kedjans erbjudande för produkten (scope:at via `filterMapByProduct`
+      chain-param). Löser det "ologiska rea-fallet" (man ser priset/butikerna direkt). Sido-spår kvar
+      (ej här): bör olika förpackningsstorlekar grupperas på samma EAN i katalogen?
     - [x] **Frontend-läge BYGGT.** Produktpanelen har en lägesväxel: "Erbjudanden" (offers-cachen,
       snabb) vs "Hela sortimentet" (katalog-fan-out). Katalog-läget visar `catalogCard` med
       nationellt HYLLPRIS per kedja (ingen deal-badge/offer_count; beräknat jämförpris märkt ≈),

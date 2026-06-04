@@ -156,6 +156,9 @@ body {
 }
 .pop-fav.on, .pop-fav:hover { color: #ffc107; }
 .store-pop h6 { margin: 0 0 .2rem; font-weight: 700; }
+.store-pop .pop-offer { background: #fdecea; border: 1px solid #f4c7c0; color: #8a2a1c;
+  border-radius: 6px; padding: 3px 7px; margin: .25rem 0; font-size: .74rem; }
+.store-pop .pop-offer strong { color: #c0392b; }
 .store-pop .pop-brand {
   display: inline-block; font-size: .66rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .03em;
@@ -275,6 +278,8 @@ img.o-img { cursor: zoom-in; }
 .o-sc-valid { white-space: nowrap; font-size: .68rem; }
 .o-shelf .o-chainchip { flex: 0 0 auto; }
 .o-offer { color: #c0392b; font-weight: 700; }
+.o-offer-link { color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.o-offer-link:hover { text-decoration: underline; }
 .o-offer-badge {
   font-size: .6rem; font-weight: 700; color: #fff; background: #c0392b;
   padding: 1px 7px; border-radius: 10px; text-transform: uppercase; letter-spacing: .02em;
