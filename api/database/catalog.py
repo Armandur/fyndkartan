@@ -12,6 +12,36 @@ _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "comparison_value", "comparison_unit", "package_size", "package_value",
              "package_unit", "category_raw")
 
+_BROWSE_SQL = ("SELECT chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
+               "comparison_unit, package_size, package_value, package_unit, category_raw "
+               "FROM catalog_products")
+_CATALOG_VER = 0                            # bumpas vid varje skrivning till catalog_products (crawl)
+_BROWSE_IDX = {"ver": -1, "groups": None}   # cachad EAN-/namn-gruppering (map-oberoende)
+
+
+def _group_rows(rows):
+    """EAN-nyckel (annars kedja:namn) -> lista medlems-dicts."""
+    groups = {}
+    for r in rows:
+        key = r["ean"] or f"{r['chain']}:{(r['name'] or '').lower()}"
+        groups.setdefault(key, []).append(r)
+    return groups
+
+
+def _browse_groups():
+    """Cachad EAN-/namn-gruppering av HELA katalogen (available=1). Den dyra biten (~74k rader +
+    dict + gruppering, ~700ms) byggs EN gång och återanvänds tills katalogen ändras (crawlen bumpar
+    _CATALOG_VER). Grupperingen är kategori-map-oberoende -> map-ändringar slår igenom direkt (kategori
+    härleds vid läs-tid). Returnerar {key: [member-dicts]}; delas mellan anrop -> medlemmarna muteras
+    ALDRIG (catalog_browse/summary bygger egna output-dicts)."""
+    global _BROWSE_IDX
+    if _BROWSE_IDX["ver"] != _CATALOG_VER:
+        conn = get_conn()
+        rows = [dict(r) for r in conn.execute(_BROWSE_SQL + " WHERE available=1")]
+        conn.close()
+        _BROWSE_IDX = {"ver": _CATALOG_VER, "groups": _group_rows(rows)}
+    return _BROWSE_IDX["groups"]
+
 
 def _diff(a, b):
     """True om två pris/jämförvärden skiljer sig (tolerant; None hanteras)."""
@@ -81,6 +111,8 @@ def catalog_upsert(chain, rows):
         conn.commit()
     finally:
         conn.close()
+    global _CATALOG_VER
+    _CATALOG_VER += 1  # invalidera browse-/summary-cachen (efter commit; no-rows-fallet bumpar ej)
     return new, len(ids) - new, changed
 
 
@@ -91,6 +123,8 @@ def catalog_mark_unseen(chain, before):
                  (chain, before))
     conn.commit()
     conn.close()
+    global _CATALOG_VER
+    _CATALOG_VER += 1  # invalidera browse-/summary-cachen
 
 
 def catalog_stats():
@@ -156,25 +190,24 @@ def catalog_browse(q=None, category=None, chain=None, limit=60):
     ql = (q or "").strip()
     if q is not None and len(ql) < 2:
         return []
-    conn = get_conn()
-    sql = ("SELECT chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
-           "comparison_unit, package_size, package_value, package_unit, category_raw "
-           "FROM catalog_products WHERE available=1")
-    params = []
-    if chain:
-        sql += " AND chain=?"
-        params.append(chain)
-    if ql:
-        sql += " AND name LIKE ?"
-        params.append(f"%{ql}%")
-    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
-    conn.close()
-    groups = {}
-    for r in rows:
-        key = r["ean"] or f"{r['chain']}:{(r['name'] or '').lower()}"
-        groups.setdefault(key, []).append(r)
+    if ql or chain:
+        # Filtrerad delmängd: q SQL-snabbt (LIKE narrowar), chain ~en kedja -> läs direkt, ej cache.
+        conn = get_conn()
+        sql = _BROWSE_SQL + " WHERE available=1"
+        params = []
+        if chain:
+            sql += " AND chain=?"
+            params.append(chain)
+        if ql:
+            sql += " AND name LIKE ?"
+            params.append(f"%{ql}%")
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        conn.close()
+        groups = _group_rows(rows).values()
+    else:
+        groups = _browse_groups().values()  # hela katalogen, cachad (map-oberoende gruppering)
     out = []
-    for g in groups.values():
+    for g in groups:
         cat = _cat_canonical(g)
         if category and cat != category:
             continue
