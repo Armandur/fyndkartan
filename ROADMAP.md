@@ -253,11 +253,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       lagrade/skickade värden. Redan använt på ett par ställen i konsolen (crawl-feeden); gör det
       konsekvent (stat-kort, antal, prishistorik-räknare m.m.). Akta priser/decimaler (kr) så
       avgränsaren inte krockar med `kr()`-formateringen.
-    - [ ] **Sortering & filtrering i bläddra-vyn (kategori + sökresultat).** Bläddra-vyn ska kunna
-      sortera/filtrera produkter på samma sätt som kartvyns erbjudande-/jämförelsepaneler - t.ex.
-      störst besparing, lägst pris, A-Ö, samt deal-typ. Idag har bläddra-vyn bara kategori-/kedje-/
-      "bara erbjudanden"-filter och en fast sortering. Kräver att `catalog_browse`/`/catalog/browse`
-      exponerar de fält som behövs (savings/jämförpris) och sorterings-/filterkontroller i `web/`.
+    - [x] **Sortering i bläddra-vyn BYGGT.** `catalog_browse(sort=price|spread|name)` sorterar
+      server-side FÖRE paginering (korrekt med infinite scroll/total) + `browseSort`-dropdown.
+      `spread` = största hyllpris-skillnaden mellan kedjor (katalogens analog till "störst besparing",
+      gratis ur befintlig data). Filter klart sedan tidigare: kategori, kedja, bara erbjudanden.
+      - [ ] **Kvar: offer-baserad besparings-sort + deal-typ-filter.** Som kartvyns offer-paneler
+        (rea vs ordinarie, multibuy/per vikt). Kräver offer-enrichment av HELA kategorin före
+        paginering (offers-koncept på en hyllpris-katalog) - bygg via `offers_for_eans`/`on_offer_eans`
+        + deal_type per produkt om det blir efterfrågat.
     - [x] **Infinite scroll (append, inte ladda om).** Bläddra-vyn appendar nästa sida via
       offset-paginering (`catalog_browse` offset/limit) när man skrollar nära botten
       (IntersectionObserver på `#browseMore` i `#browseView`, rootMargin 400px) - behåller
