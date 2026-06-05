@@ -1204,6 +1204,24 @@
           <div id="storeSelTable" style="max-height:460px;overflow-y:auto"><div class="text-muted small">Laddar…</div></div>
           <div id="storeSelPager" class="small text-muted mt-2 d-flex align-items-center gap-2"></div>
         </div>
+        <div class="card p-3 mb-3">
+          <div class="d-flex align-items-center mb-1">
+            <h6 class="mb-0">Per-butik-pris-crawl (Steg 6)</h6>
+            <span id="spcStatus" class="ms-2 small text-muted"></span>
+          </div>
+          <div class="text-muted small mb-2">Crawlar de VALDA butikernas hela sortiment → per-butik-pris + historik (catalog_store_prices). Adaptiv parallellitet som självtunar mot WAF (mål rampar upp, halveras + cooldown vid block). Äldst-crawlad-först. Full körning är stor (timmar) - rotera över flera nätter.</div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <span id="spcStats" class="small text-muted"></span>
+            <span class="ms-auto"></span>
+            ${chip("ica")}
+            <button class="btn btn-sm btn-outline-dark spc-run" data-chain="ica" data-cap="5">Testa (5)</button>
+            <button class="btn btn-sm btn-dark spc-run" data-chain="ica">Crawla valda ICA</button>
+            <span>${chip("coop")}</span>
+            <button class="btn btn-sm btn-outline-dark spc-run" data-chain="coop" data-cap="5">Testa (5)</button>
+            <button class="btn btn-sm btn-dark spc-run" data-chain="coop">Crawla valda Coop</button>
+          </div>
+          <div id="spcProgress"></div>
+        </div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5">
@@ -1239,6 +1257,8 @@
         if (p && !p.disabled) triggerPartialUpgrade(p.dataset.cap ? Number(p.dataset.cap) : null);
         const m = e.target.closest(".measure-run");
         if (m && !m.disabled) triggerStoreMeasure(m.dataset.chain, document.getElementById("measureRecheck").checked, m.dataset.cap ? Number(m.dataset.cap) : null);
+        const sp = e.target.closest(".spc-run");
+        if (sp && !sp.disabled) triggerStorePriceCrawl(sp.dataset.chain, sp.dataset.cap ? Number(sp.dataset.cap) : null);
       });
       // Per-kedja-knappar (korten re-renderas varje poll -> delegerad lyssnare på containern).
       document.getElementById("catalogChains").addEventListener("click", (e) => {
@@ -1413,6 +1433,7 @@
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       const ms = await (await api("/v1/admin/store-prices/measure/status")).json();
+      const spc = await (await api("/v1/admin/store-prices/crawl/status")).json();
       ensureCatalogSkeleton();
       // Feeden delas av crawl, EAN-resolvning OCH partial-uppgradering. Ny körning -> nollställ.
       const warm = d.ean_warm || {};
@@ -1444,6 +1465,7 @@
       renderEanWarm(d.ean_warm || {}, d.running);
       renderPartialUpgrade(pu, d.running || warm.running);
       renderStoreMeasure(ms, d.running || warm.running || pu.running);
+      renderStorePriceCrawl(spc, ms.stats, d.running || warm.running || pu.running || ms.running);
       // Live-uppdatera prisändrings-loggen under crawl - bara i "Senaste"-läge, ej medan man söker/skrollat.
       const pcEl = document.getElementById("priceChanges");
       const pcSortVal = document.getElementById("pcSort")?.value || "recent";
@@ -1487,7 +1509,7 @@
         </div>`;
       }).join("");
       clearTimeout(catalogTimer);
-      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running) && active === "catalog")
+      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running || spc.running) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
     }
 
@@ -1591,6 +1613,33 @@
             ${ch.done}/${ch.total} &middot; ${ch.queryable} frågbara${ch.errors ? `, <span class="text-danger">${ch.errors} fel</span>` : ""}</div>`;
         }).join("");
       } else { prog.innerHTML = ""; }
+    }
+
+    function renderStorePriceCrawl(s, stats, otherRunning) {
+      const prog = document.getElementById("spcProgress"), status = document.getElementById("spcStatus");
+      const statsEl = document.getElementById("spcStats");
+      if (!prog) return;
+      const running = !!s.running;
+      document.querySelectorAll(".spc-run").forEach(b => { b.disabled = running || otherRunning; });
+      if (status) status.innerHTML = running ? `<span class="st-running">● crawlar ${esc(s.chain || "")}…</span>` : "";
+      const st = stats || {};
+      if (statsEl) statsEl.innerHTML = ["ica", "coop"].map(c =>
+        `${chip(c)} <strong>${((st[c] || {}).enabled || 0).toLocaleString("sv-SE")}</strong> valda`).join(" &nbsp;&middot;&nbsp; ");
+      if (running) {
+        const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+        const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
+        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
+          <div class="small text-muted mt-1">${chip(s.chain)} ${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv samtidighet (AIMD)">mål ${s.target}, ${s.active} aktiva</span>${cd}${s.current ? ` &middot; ${esc(s.current)}` : ""}</div>`;
+      } else if (s.finished_at) {
+        prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}</div>`;
+      } else { prog.innerHTML = ""; }
+    }
+
+    async function triggerStorePriceCrawl(chain, cap) {
+      const qs = new URLSearchParams({ chain });
+      if (cap) qs.set("cap", cap);
+      await api(`/v1/admin/store-prices/crawl?${qs}`, { method: "POST" });
+      loadCatalog();
     }
 
     async function triggerStoreMeasure(chain, recheck, cap) {
