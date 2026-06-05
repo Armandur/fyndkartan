@@ -30,8 +30,10 @@ STORE_PRICE_STATE = {
     "running": False, "chain": None, "done": 0, "total": 0, "stores_ok": 0,
     "rows": 0, "changed": 0, "errors": 0, "last_error": None, "current": None,
     "target": 0, "active": 0, "cooldown": False,  # adaptiv samtidighet (synlig i konsolen)
+    "recent": [],  # kategori-flöde för konsolens visualisering (nyast först, capad)
     "started_at": None, "finished_at": None,
 }
+_FEED_CAP = 60
 
 
 def _is_waf(e):
@@ -45,30 +47,50 @@ def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _emit(chain, sname, cat_label, cat_total):
+    """Lägg en kategori-post i crawl-feeden (butik · kategori + antal). Återanvänder feed-item-shapen
+    {chain, name, ean} så konsolens befintliga flöde kan strömma dem."""
+    item = {"chain": chain, "name": f"{sname} · {cat_label}",
+            "ean": f"{(cat_total or 0):,}".replace(",", " ") + " st"}
+    STORE_PRICE_STATE["recent"] = ([item] + STORE_PRICE_STATE["recent"])[:_FEED_CAP]
+
+
 async def _crawl_one_ica(client, token, acct):
     """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter."""
-    total_rows = 0
-    async for rows, total, _page in catalog_crawl._ica_fetch_store(client, acct, token, pace=_PAGE_PACE):
+    sname = database.store_name("ica", acct)
+    total_rows, prev = 0, None  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
+    async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, token, pace=_PAGE_PACE):
+        if prev and cat[0] != prev[0]:
+            _emit("ica", sname, prev[0], prev[1])
+        prev = cat
         if rows:
             _new, changed = database.upsert_store_prices("ica", acct, rows)
             total_rows += len(rows)
             STORE_PRICE_STATE["rows"] += len(rows)
             STORE_PRICE_STATE["changed"] += changed
-        STORE_PRICE_STATE["current"] = f"ICA {acct}: {total_rows}/{total}"
+        STORE_PRICE_STATE["current"] = f"ICA {sname}: {total_rows}/{total}"
+    if prev:
+        _emit("ica", sname, prev[0], prev[1])
     database.mark_store_crawled("ica", acct, total_rows)
     return total_rows
 
 
 async def _crawl_one_coop(client, ledger):
     """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal."""
-    total_rows = 0
-    async for rows, _t, _p in catalog_crawl._coop_fetch_store(client, ledger, pace=_PAGE_PACE):
+    sname = database.store_name("coop", ledger)
+    total_rows, prev = 0, None
+    async for rows, _t, _p, cat in catalog_crawl._coop_fetch_store(client, ledger, pace=_PAGE_PACE):
+        if prev and cat[0] != prev[0]:
+            _emit("coop", sname, prev[0], prev[1])
+        prev = cat
         if rows:
             _new, changed = database.upsert_store_prices("coop", ledger, rows)
             total_rows += len(rows)
             STORE_PRICE_STATE["rows"] += len(rows)
             STORE_PRICE_STATE["changed"] += changed
-        STORE_PRICE_STATE["current"] = f"Coop {ledger}: {total_rows}"
+        STORE_PRICE_STATE["current"] = f"Coop {sname}: {total_rows}"
+    if prev:
+        _emit("coop", sname, prev[0], prev[1])
     database.mark_store_crawled("coop", ledger, total_rows)
     return total_rows
 
@@ -88,7 +110,7 @@ async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
     STORE_PRICE_STATE.update(running=True, chain=chain, done=0, total=len(queue), stores_ok=0,
                              rows=0, changed=0, errors=0, last_error=None, current=None,
-                             target=min(2, ceiling), active=0, cooldown=False,
+                             target=min(2, ceiling), active=0, cooldown=False, recent=[],
                              started_at=_now(), finished_at=None)
     ctl = {"target": min(2, ceiling), "active": 0, "ok_streak": 0, "waf_streak": 0,
            "cooldown_until": 0.0, "abort": False}

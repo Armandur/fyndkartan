@@ -252,7 +252,8 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
                 if pid and pid not in seen:
                     seen.add(pid)
                     rows.append(_ica_row(d, acct))
-            yield rows, store_total, page
+            cat = ("Hela sortimentet", qtotal) if qs == "*" else (qs, qtotal)
+            yield rows, store_total, page, cat
             offset += len(docs)
             page += 1
             await asyncio.sleep(pace)
@@ -281,7 +282,7 @@ async def _crawl_ica(client, limit_pages):
     if not acct:
         st["status"] = "ok_med_fel"; st["last_errors"].append("ingen ICA-butiksprofil"); return
     try:
-        async for rows, total, page in _ica_fetch_store(client, acct, token, limit_pages):
+        async for rows, total, page, _cat in _ica_fetch_store(client, acct, token, limit_pages):
             st["total"] = total
             pages_full = max(1, -(-total // config.CATALOG_CRAWL_PAGE))  # antal sidor för hela katalogen
             st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
@@ -446,7 +447,7 @@ async def _coop_fetch_store(client, ledger, limit_pages=None, pace=None):
                     seen.add(ean)
                     rows.append(_coop_row(it, ledger))
             _piggyback_coop_info(items)  # gratis product_info (skip-if-fresh dedupar)
-            yield rows, 0, page
+            yield rows, 0, page, (roots.get(code) or str(code), total)
             skip += len(items)
             page += 1
             await asyncio.sleep(pace)

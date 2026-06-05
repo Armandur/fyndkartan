@@ -1439,18 +1439,20 @@
       const warm = d.ean_warm || {};
       const pu = d.partial_upgrade || {};
       const feedKey = d.running ? "c:" + d.started_at
-        : (warm.running ? "w:" + warm.started_at : (pu.running ? "p:" + pu.started_at : feedStartedAt));
+        : warm.running ? "w:" + warm.started_at
+        : pu.running ? "p:" + pu.started_at
+        : spc.running ? "s:" + spc.started_at : feedStartedAt;
       if (feedKey !== feedStartedAt) {
         feedStartedAt = feedKey;
         feedSeen = new Set(); feedQueue = [];
         const inner = document.getElementById("catalogFeedInner");
         if (inner) {
           inner.style.transition = "none"; inner.style.transform = "translateY(0)";
-          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl, EAN-resolvning eller partial-uppgradering för att se produkter strömma in.</div>';
+          inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl, EAN-resolvning, partial-uppgradering eller per-butik-pris-crawl för att se det strömma in.</div>';
         }
       }
-      feedRunning = !!(d.running || warm.running || pu.running);
-      enqueueFeed(d.running ? (d.recent || []) : (warm.running ? (warm.recent || []) : (pu.running ? (pu.recent || []) : [])));
+      feedRunning = !!(d.running || warm.running || pu.running || spc.running);
+      enqueueFeed(d.running ? (d.recent || []) : warm.running ? (warm.recent || []) : pu.running ? (pu.recent || []) : spc.running ? (spc.recent || []) : []);
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'

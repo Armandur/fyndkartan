@@ -212,6 +212,14 @@ def upsert_store_prices(chain, store, rows):
     return new, changed
 
 
+def store_name(chain, store):
+    """Denormaliserat butiksnamn ur store_crawl (för crawl-feeden), annars store-id:t."""
+    conn = get_conn()
+    r = conn.execute("SELECT name FROM store_crawl WHERE chain=? AND store=?", (chain, str(store))).fetchone()
+    conn.close()
+    return (r["name"] if r else None) or str(store)
+
+
 def store_crawl_stats():
     """Översikt för admin/konsol: antal butiker (ledgers/accounts) i store_crawl per kedja, samt hur många
     som är frågbara (queryable=1), omätta (NULL), ej frågbara (0) och valda (enabled=1)."""
