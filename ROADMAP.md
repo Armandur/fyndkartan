@@ -1028,16 +1028,22 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   omskrivning. Migrationer fortsatt utan Alembic (ALTER-guards) tills ORM införs.
 
 ### Faser (resumerbart)
-1. **Datamodell + mät-sweep:** `catalog_store_prices` + `store` i observationer + `store_crawl`
-   (queryable/enabled/priority/product_count). Mät-sweep fyller `queryable` (bekräfta ~310 Coop-ledgers)
-   + samplar produktantal/butik -> **grundad total-rad-uppskattning** (input till DB-beslutet). Låg risk.
-2. **Admin butiksväljare:** filterbar markera-flera-tabell (`enabled`-urval) + "alla vs valda"-läge.
-3. **Per-butik-crawler:** parametrisera butiken i `catalog_crawl`, rotations-kö (enabled + prio),
+1. ✅ **Datamodell + mät-sweep KLAR** (2026-06-05): `catalog_store_prices` + `store` i observationer +
+   `store_crawl` (queryable/enabled/priority/product_count + denormaliserat namn/ort). `store_measure.py`
+   probe:ar båda kedjorna (re-runnable, WAF-skydd) + admin-trigger-kort. **Mätt:** Coop 214/722 frågbara
+   (30%, lägre än Steg 0:s ~43%), ICA 1288/1289; ICA `SUM(product_count)` = **18,6M latest-rader**, Coop
+   ~2,7M (proxy) -> **~21M latest-rader** + per-butik-historik ovanpå. (ICA-data verifierat äkta per-butik
+   även för småsortiment-butiker - ingen queryable-tröskel, urvalstabellen styr i stället.)
+2. ✅ **Admin butiksväljare KLAR** (2026-06-05): filterbar markera-flera-tabell (`enabled`-urval, per-rad-
+   toggle + bulk "alla frågbara"), denormaliserat namn/ort (list ~2ms). `GET/POST /v1/admin/store-prices/stores`.
+3. **Per-butik-crawler (NÄSTA):** parametrisera butiken i `catalog_crawl`, rotations-kö (enabled + prio),
    egen cadence, WAF-skydd, per-butik append-on-change-historik.
 4. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
 5. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
 6. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
-- DB-beslut (SQLite/Postgres/ORM) tas EFTER Fas 1:s mät-siffra, eller när en trigger slår - inte i förväg.
+- **DB-beslut (SQLite/Postgres/ORM):** ~21M latest + växande historik -> SQLite (WAL) räcker att bygga Fas
+  3 på (inga omskrivningar); förbered ORM-bryggan, migrera när skriv-kontention/historik-tillväxt/geo/tjänste-
+  split slår. Beslut togs EFTER mät-siffran (per plan). Tas upp igen innan Fas 3 vid behov.
 
 ### Caveats att rama in
 - Per-butik-pris finns bara för FRÅGBARA butiker (Coop ~43%); favoritar/väljer man en ej-frågbar butik finns
