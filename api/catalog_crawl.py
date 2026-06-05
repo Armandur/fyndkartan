@@ -214,15 +214,28 @@ _ICA_CATEGORIES = (
     "Skafferi", "Dryck", "Fryst", "Glass", "Godis & snacks", "Färdigmat", "Vegetariskt", "Bak",
     "Blommor & växter", "Hem & hushåll", "Barn", "Djur", "Hälsa & skönhet",
 )
+# Offset-taket: '*' (och varje query) returnerar 0 docs vid offset >= 20000 (verifierat empiriskt).
+# totalHits är ärligt även när svaret cappas (storbutik rapporterade 44422). Butiker vars totalHits
+# <= taket fick HELA sortimentet ur '*' -> ingen kategori-walk behövs (89,6% av ICA-butikerna). Bara
+# butiker > taket tappar en svans och behöver gå bortom via kategori-frågor.
+_ICA_OFFSET_CAP = 20000
 
 
 async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, deep=True):
     """Async generator: paginerar en ICA-butiks katalog och yield:ar (rows, store_total, page) per sida.
-    rows = _ica_row-normaliserade, deduplicerade på gtin ÖVER hela walken. `deep=True` walkar '*' + varje
-    huvudkategori (förbi 20000-offset-cappen, ~hela sortimentet); `deep=False` bara '*' (snabbt, max 20k).
-    Kategorinamnen HÄRLEDS empiriskt: '*'-walken samlar varje produkts `mainCategoryName` (ICA:s faktiska
-    namn) -> exakt de kategorierna pagineras (∪ en hårdkodad lista som säkerhetsnät). DELAD walk - master-
-    och per-butik-crawlern ger samma walk olika write-target. `store_total` = '*'-totalHits. Höjer vid HTTP-fel."""
+    rows = _ica_row-normaliserade, deduplicerade på gtin ÖVER hela walken. DELAD walk - master- och
+    per-butik-crawlern ger samma walk olika write-target. `store_total` = '*'-totalHits (ärligt även när
+    svaret cappas). Höjer vid HTTP-fel.
+
+    STORLEKS-VILLKORLIG (empiriskt grundad, se UNIFIED-API.md / CLAUDE.md):
+    - '*'-walken paginerar hela katalogen men ICA cappar offset vid 20000. Butiker med totalHits <= 20000
+      (89,6% av ICA-butikerna) får HELA sortimentet ur '*' allena -> ingen kategori-walk. -> 100% täckning.
+    - Bara butiker > 20000 (storbutiker, ~10%) kategori-walkas för att nå bortom taket. Då används den
+      KOMPLETTA butiks-oberoende `mainCategoryName`-unionen (`ica_walk_categories`, skördad över alla
+      butiker - små butikers ocappade walk ger hela sin kategorimängd) + en hårdkodad bred lista som
+      säkerhetsnät. queryString på kategorinamn är textsök (100% recall, låg precision -> dedup på gtin).
+      Uppmätt: ~99,7% täckning på en 44k-butik (44268/44422) med ~52-kategori-union, ~179 requests.
+      `deep=False` = bara '*' (snabbtest, max 20k)."""
     seen, page, size = set(), 0, config.ICA_CRAWL_PAGE
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
     store_total = 0
@@ -244,8 +257,8 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
             prods = r.json().get("products") or {}
             docs = prods.get("documents") or []
             qtotal = (prods.get("stats") or {}).get("totalHits") or 0
-            if qs == "*":
-                store_total = qtotal
+            if qs == "*" and offset == 0:
+                store_total = qtotal  # bara första sidan: vid offset>=20000 svarar ICA totalHits=0
             if not docs:
                 break
             rows = []
@@ -264,11 +277,16 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
             await asyncio.sleep(pace)
             if offset >= qtotal or (limit_pages and page >= limit_pages):
                 break
-        # Efter '*': köa de empiriskt härledda kategorierna (+ hårdkodat säkerhetsnät) som ej körts.
+        # Efter '*': mata kategori-unionen (den här butikens skörd). Kategori-walk behövs BARA om '*'
+        # cappades (>tak) - små butiker fick redan hela sortimentet (89,6%). Stora butiker: använd den
+        # KOMPLETTA butiks-oberoende unionen (skördad över alla butiker) i st.f. denna butiks cappade
+        # skörd, så kategorier som bara finns ovanför taket ändå crawlas. + breda termer som säkerhetsnät.
         if qs == "*" and deep:
-            for c in sorted(harvested | set(_ICA_CATEGORIES)):
-                if c not in done_q:
-                    queue.append(c)
+            database.record_ica_categories(harvested)
+            if store_total > _ICA_OFFSET_CAP:
+                for c in sorted(database.ica_walk_category_list() | harvested | set(_ICA_CATEGORIES)):
+                    if c not in done_q:
+                        queue.append(c)
         if limit_pages and page >= limit_pages:
             break
 

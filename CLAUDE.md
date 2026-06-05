@@ -257,6 +257,22 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   timeout -> delresultat. Honest schema: INGA deal_type/offer_count (hyllpris ≠ deal). Katalog-
   specifika kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i `category_map`.
   Bara API (ingen frontend än). Auth via `require_consumer` som övriga `/v1`.
+- **ICA-crawlens täckning (`catalog_crawl._ica_fetch_store`, storleks-villkorlig):** ICA:s globalsearch
+  cappar offset HÅRT vid 20000 (`*` returnerar 0 docs vid offset >= 20000; `totalHits` är dock ärligt
+  även när svaret cappas - en 44k-butik rapporterar 44422). Crawlen är därför villkorlig på butiksstorlek
+  (`_ICA_OFFSET_CAP`):
+  - **Butiker med totalHits <= 20000 (89,6% av ICA-butikerna, 1155/1289): `*`-walken ger HELA sortimentet
+    -> ingen kategori-walk, ~100% täckning.** Sidstorlek `ICA_CRAWL_PAGE` (default 1000, verifierat take=2000
+    funkar) -> ~10x färre requests än gamla take=100.
+  - **Butiker > 20000 (~10%): `*` + kategori-walk för att nå bortom taket.** Kategorinamnen är den
+    KOMPLETTA butiks-oberoende `mainCategoryName`-unionen (`database.ica_walk_categories`, skördad vid
+    varje `*`-walk; små butikers ocappade walk bidrar med sin fulla kategorimängd -> unionen konvergerar
+    mot ICA:s taxonomi) + en hårdkodad bred lista (`_ICA_CATEGORIES`) som säkerhetsnät. **Mätt empiriskt:**
+    `mainCategoryName` saknas på ~0% av produkterna (ecom-nivåerna på ~6%), och queryString på kategorinamn
+    är textsök med 100% recall (låg precision -> dedup på gtin). Flaskhalsen var kategori-UPPTÄCKT, inte
+    matchning: med komplett union når en 44k-butik **~99,7% täckning** (44268/44422, ~179 requests) mot
+    ~94% med bara den cappade walkens egna skörd. ecomLevel2 (260 noder) ger 97,5% till ~4x requests -
+    ej använt (komplett mainCategory-union räcker). Delad av master- och per-butik-crawlern.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och

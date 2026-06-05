@@ -836,9 +836,26 @@ upserta i `catalog_products`. Per kedja (endpoints dokumenterade i "Kända datak
   -> "Matvaror"-barn med `link.categoryPageId` (35 toppkategorier; vissa är kampanjer/säsong som
   överlappar departments -> dedup på `product_id` per körning). Paginera `Loop54/category/{id}/products`
   (`skip`/`take`, har `totalCount`/`totalPages`). Normalisering = `_cg_row` (samma item-shape som offers).
-- [x] **ICA BYGGT** (`_crawl_ica`): INGET kategoriträd behövs - `queryString:"*"` (wildcard) + `offset`
-  paginerar HELA katalogen (~19 938 produkter), `stats.totalHits` = total. Återanvänder `catalog._norm_ica`,
-  `product_id`=gtin. (`""` ger 0; `*` är wildcarden.)
+- [x] **ICA BYGGT** (`_crawl_ica` / `_ica_fetch_store`): `queryString:"*"` (wildcard) + `offset`,
+  `stats.totalHits` = total. Återanvänder `catalog._norm_ica`, `product_id`=gtin. (`""` ger 0; `*` är wildcarden.)
+- [x] **ICA-crawl effektiviserad + storleks-villkorlig (2026-06-05, empiriskt grundad).** Bakgrund: ICA:s
+  globalsearch cappar offset HÅRT vid 20000 (`*` ger 0 docs vid offset >= 20000), så `*` allena når bara
+  ~20k av t.ex. 44k på en storbutik. `totalHits` är dock ärligt även när svaret cappas. **Mätningar (live
+  mot butik 1003807, 44 422 produkter):** (a) `mainCategoryName` saknas på ~0% av produkterna, ecom-nivåerna
+  på ~6%; (b) queryString på kategorinamn är textsök med **100% recall**, låg precision (over-return ->
+  dedup på gtin); (c) ingen kategori > ~4k -> inget kategori-fråga cappas; (d) `take`=2000 ger 2000 docs.
+  **Slutsats: flaskhalsen var kategori-UPPTÄCKT, inte matchning.** Åtgärder:
+    1. **`ICA_CRAWL_PAGE` (egen, default 1000)** i st.f. delade `CATALOG_CRAWL_PAGE`=100 -> ~10x färre
+       requests/butik. Verifierat take=2000 funkar; egen knapp då övriga kedjor kan ha andra server-caps.
+    2. **Storleks-villkorlig walk:** `totalHits <= 20000` (89,6% av butikerna, 1155/1289) -> `*` gav HELA
+       sortimentet, **ingen kategori-walk** (100% täckning, ~14-20 requests). `> 20000` (~10%) -> kategori-walk.
+    3. **Komplett kategori-union** (`database.ica_walk_categories`, ny tabell): varje `*`-walk skördar
+       `mainCategoryName` -> persisterad butiks-OBEROENDE union. Små butikers ocappade walk bidrar med hela
+       sin kategorimängd -> unionen konvergerar mot ICA:s taxonomi. Stora butiker använder DEN (inte sin egna
+       cappade 44-skörd) + `_ICA_CATEGORIES` som säkerhetsnät. **Mätt resultat: ~99,7% täckning** (44268/44422,
+       ~179 requests) mot ~94% med gammal metod. ecomLevel2 (260 noder) ger 97,5% till ~4x requests - ej använt.
+  Bugg-fix på vägen: `store_total` skrevs över med 0 vid offset>=20000 (ICA svarar `totalHits:0` där) ->
+  läs bara från första sidan. Dokumenterat i CLAUDE.md (Designbeslut: "ICA-crawlens täckning").
 - [x] **Coop BYGGT** (`_crawl_coop`): perso-search är fritext-only, MEN `POST personalization/search/
   entities/by-attribute` med `{"attribute":{"name":"categoryIds","value":"<kod>"},"resultsOptions":{skip,take}}`
   browsar en hel kategori (verifierat via Claude Chrome: Mejeri & Ägg = 876 produkter = by-attribute kod 6262).

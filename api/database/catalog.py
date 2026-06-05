@@ -29,6 +29,27 @@ def bump_catalog_version():
     _CATALOG_VER += 1
 
 
+def record_ica_categories(names):
+    """Mata den butiks-oberoende ICA-kategori-unionen (mainCategoryName ur en '*'-walk). Små butiker
+    (ocappade) bidrar med sin kompletta mängd -> unionen konvergerar mot ICA:s fulla taxonomi."""
+    names = [n for n in (names or []) if n]
+    if not names:
+        return
+    conn = get_conn()
+    conn.executemany("INSERT OR REPLACE INTO ica_walk_categories (name, last_seen) VALUES (?, ?)",
+                     [(n, _now()) for n in names])
+    conn.commit()
+    conn.close()
+
+
+def ica_walk_category_list():
+    """Hela den ackumulerade ICA-kategori-unionen (term-lista för stora butikers kategori-walk)."""
+    conn = get_conn()
+    out = {r["name"] for r in conn.execute("SELECT name FROM ica_walk_categories")}
+    conn.close()
+    return out
+
+
 def _group_rows(rows):
     """EAN-nyckel (cross-chain) -> lista medlems-dicts. När EAN saknas (oresolvad Axfood-kod):
     nyckel = (kedja, product_id) så varje distinkt katalograd blir egen produkt - INTE (kedja, namn),

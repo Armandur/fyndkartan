@@ -186,6 +186,13 @@ def init_db():
     _ensure_column(conn, "catalog_products", "price_max", "REAL")
     _ensure_column(conn, "catalog_products", "price_stores", "INTEGER")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_chain_product ON catalog_store_prices(chain, product_id)")
+    # Butiks-OBEROENDE union av ICA:s mainCategoryName (skördas vid varje '*'-walk). Stora butiker (>20k)
+    # cappas av offset-taket -> deras egen skörd är ofullständig; små butiker (<=20k, 89,6%) ger HELA sin
+    # kategorimängd ur en ocappad '*'-walk. Unionen konvergerar mot ICA:s fulla taxonomi och används som
+    # komplett term-lista när stora butiker kategori-walkas (se catalog_crawl._ica_fetch_store).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ica_walk_categories (name TEXT PRIMARY KEY, last_seen TEXT)"
+    )
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
