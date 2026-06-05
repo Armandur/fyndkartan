@@ -200,36 +200,56 @@ def _ica_row(doc, acct):
             "category_raw": doc.get("mainCategoryName"), "store": acct}
 
 
-async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None):
-    """Async generator: paginerar en ICA-butiks katalog ('*' + offset) och yield:ar (rows, total, page)
-    per sida. rows = _ica_row-normaliserade, deduplicerade på gtin. DELAD walk - master-crawlen
-    (_crawl_ica -> catalog_products) och per-butik-crawlern (-> catalog_store_prices) ger samma walk
-    olika write-target. Höjer undantag vid HTTP-fel (konsumenten hanterar)."""
-    seen, offset, page, size = set(), 0, 0, config.CATALOG_CRAWL_PAGE
+# ICA globalsearch cappar offset HÅRT vid 20000 -> '*' når bara de första 20k av ev. ~45k. Vägen förbi:
+# paginera även per huvudkategori (queryString=kategorinamn -> eget offset-rum < 20k), unionen dedupas på
+# gtin. Summan av kategori-counts > totalHits (överlapp) -> full täckning. Kategorinamnen matchar ICA:s
+# mainCategoryName (text-relevans, inte strikt filter - därför union med '*' för det som ingen kategori fångar).
+_ICA_CATEGORIES = (
+    "Frukt & grönt", "Mejeri", "Ost", "Kött & fågel", "Chark", "Fisk & skaldjur", "Bröd & kakor",
+    "Skafferi", "Dryck", "Fryst", "Glass", "Godis & snacks", "Färdigmat", "Vegetariskt", "Bak",
+    "Blommor & växter", "Hem & hushåll", "Barn", "Djur", "Hälsa & skönhet",
+)
+
+
+async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, deep=True):
+    """Async generator: paginerar en ICA-butiks katalog och yield:ar (rows, store_total, page) per sida.
+    rows = _ica_row-normaliserade, deduplicerade på gtin ÖVER hela walken. `deep=True` walkar '*' + varje
+    huvudkategori (förbi 20000-offset-cappen, ~hela sortimentet); `deep=False` bara '*' (snabbt, max 20k).
+    DELAD walk - master-crawlen (-> catalog_products) och per-butik-crawlern (-> catalog_store_prices) ger
+    samma walk olika write-target. `store_total` = '*'-totalHits (progress-nämnare). Höjer vid HTTP-fel."""
+    seen, page, size = set(), 0, config.CATALOG_CRAWL_PAGE
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
-    while True:
-        r = await client.post(_ICA_URL, json={
-            "queryString": "*", "take": size, "offset": offset, "accountNumber": acct,
-            "searchDomain": "All", "sessionId": "catalog-crawl"},
-            headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
-                     "Content-Type": "application/json"}, timeout=30)
-        r.raise_for_status()
-        prods = r.json().get("products") or {}
-        docs = prods.get("documents") or []
-        total = (prods.get("stats") or {}).get("totalHits") or 0
-        if not docs:
-            break
-        rows = []
-        for d in docs:
-            pid = str(d.get("gtin") or "")
-            if pid and pid not in seen:
-                seen.add(pid)
-                rows.append(_ica_row(d, acct))
-        yield rows, total, page
-        offset += len(docs)
-        page += 1
-        await asyncio.sleep(pace)
-        if offset >= total or (limit_pages and page >= limit_pages):
+    store_total = 0
+    queries = ["*"] + (list(_ICA_CATEGORIES) if deep else [])
+    for qs in queries:
+        offset = 0
+        while True:
+            r = await client.post(_ICA_URL, json={
+                "queryString": qs, "take": size, "offset": offset, "accountNumber": acct,
+                "searchDomain": "All", "sessionId": "catalog-crawl"},
+                headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json"}, timeout=30)
+            r.raise_for_status()
+            prods = r.json().get("products") or {}
+            docs = prods.get("documents") or []
+            qtotal = (prods.get("stats") or {}).get("totalHits") or 0
+            if qs == "*":
+                store_total = qtotal
+            if not docs:
+                break
+            rows = []
+            for d in docs:
+                pid = str(d.get("gtin") or "")
+                if pid and pid not in seen:
+                    seen.add(pid)
+                    rows.append(_ica_row(d, acct))
+            yield rows, store_total, page
+            offset += len(docs)
+            page += 1
+            await asyncio.sleep(pace)
+            if offset >= qtotal or (limit_pages and page >= limit_pages):
+                break
+        if limit_pages and page >= limit_pages:
             break
 
 
