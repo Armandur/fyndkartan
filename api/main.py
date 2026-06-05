@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, tags
+from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, store_measure, tags
 from .routes import admin_vocab, compare as compare_routes, products as products_routes, stores as stores_routes
 from .database import (
     get_conn,
@@ -678,6 +678,23 @@ async def trigger_partial_upgrade(cap: int | None = None, _=Depends(require_admi
 @app.get("/v1/admin/partials/upgrade/status")
 async def partial_upgrade_status(_=Depends(require_admin)):
     return PARTIAL_UPGRADE_STATE
+
+
+@app.post("/v1/admin/store-prices/measure")
+async def trigger_store_measure(chain: str | None = None, recheck: bool = False,
+                                cap: int | None = None, _=Depends(require_admin)):
+    """Starta queryability-mätningen per butik (Steg 6 Fas 1) i bakgrunden. `chain`=coop|ica (annars
+    båda), `recheck`=om-mät ALLA (annars bara omätta; fångar butiker som börjat erbjuda e-handel),
+    `cap`=max butiker/kedja. Fyller store_crawl.queryable + product_count (ICA)."""
+    if store_measure.MEASURE_STATE["running"]:
+        return {"status": "running", "detail": "En mätning pågår redan."}
+    asyncio.create_task(store_measure.measure_queryability(chain=chain, recheck=recheck, cap=cap))
+    return {"status": "started", "chain": chain, "recheck": recheck, "cap": cap}
+
+
+@app.get("/v1/admin/store-prices/measure/status")
+async def store_measure_status(_=Depends(require_admin)):
+    return {**store_measure.MEASURE_STATE, "stats": database.store_crawl_stats()}
 
 
 @app.post("/v1/admin/catalog/crawl")

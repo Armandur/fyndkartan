@@ -32,6 +32,41 @@ def seed_store_crawl():
     return n
 
 
+def stores_to_measure(chain=None, recheck=False, cap=None):
+    """(chain, store)-rader som ska queryability-mätas. `recheck=False` -> bara omätta (queryable IS NULL);
+    `recheck=True` -> alla (periodisk om-mätning, fångar butiker som börjat erbjuda e-handel). `chain`
+    scopar, `cap` begränsar. Ordnar omätta först, sedan äldst kontrollerade (rättvis rotation)."""
+    conn = get_conn()
+    sql = "SELECT chain, store FROM store_crawl WHERE 1=1"
+    args = []
+    if not recheck:
+        sql += " AND queryable IS NULL"
+    if chain:
+        sql += " AND chain=?"
+        args.append(chain)
+    sql += " ORDER BY (checked_at IS NOT NULL), checked_at"
+    if cap:
+        sql += f" LIMIT {int(cap)}"
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return [(r["chain"], r["store"]) for r in rows]
+
+
+def set_store_queryability(chain, store, queryable, product_count, status):
+    """Skriv mät-resultatet för en butik: queryable (True/False, eller None = lämna omätt vid transient fel
+    så re-körningen försöker igen), product_count (eller None) + status + tidsstämpel."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    q = None if queryable is None else (1 if queryable else 0)
+    conn = get_conn()
+    conn.execute(
+        "UPDATE store_crawl SET queryable=?, product_count=?, status=?, checked_at=? WHERE chain=? AND store=?",
+        (q, product_count, status, now, chain, str(store)),
+    )
+    conn.commit()
+    conn.close()
+
+
 def store_crawl_stats():
     """Översikt för admin/konsol: antal butiker (ledgers/accounts) i store_crawl per kedja, samt hur många
     som är frågbara (queryable=1), omätta (NULL), ej frågbara (0) och valda (enabled=1)."""
