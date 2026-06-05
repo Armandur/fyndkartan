@@ -1067,7 +1067,8 @@
     }
 
     // ---- Sortiment (fulla katalogen, steg 5): crawl-status + live-visualisering ----
-    const CATALOG_IMPLEMENTED = ["citygross", "ica", "coop", "willys", "hemkop"];
+    const CATALOG_IMPLEMENTED = ["citygross", "ica", "coop", "willys", "hemkop"];  // för prisändrings-filtret (alla har historik)
+    const MASTER_CHAINS = ["citygross", "willys", "hemkop"];  // master-crawlen (nationellt pris); ICA/Coop crawlas per butik (Steg 6)
     const CRAWL_STATUS = { idle: "väntar", running: "crawlar", ok: "klar", ok_med_fel: "klar (med fel)" };
     function fmtDur(sec) {
       sec = Math.round(sec);
@@ -1137,7 +1138,7 @@
           <button id="crawlTest" class="btn btn-sm btn-outline-dark ms-auto">Testa alla (2 steg/kedja)</button>
           <button id="crawlNow" class="btn btn-sm btn-dark ms-2">Crawla alla kedjor</button>
         </div>
-        <div class="text-muted small mb-1">Walk:ar kedjornas sortiment och persistar hela katalogen med hyllpris (ej bara erbjudanden) - prisändringar fångas över tid. Rate-limitat; en hel kedja tar några minuter. Knapparna uppe till höger kör <strong>alla</strong> implementerade kedjor; varje kedja har egna <em>Testa</em>/<em>Crawla</em>-knappar. Implementerat: City Gross, ICA, Coop, Willys, Hemköp.</div>
+        <div class="text-muted small mb-1">Walk:ar kedjornas sortiment och persistar hela katalogen med hyllpris (ej bara erbjudanden) - prisändringar fångas över tid. Rate-limitat; en hel kedja tar några minuter. Knapparna uppe till höger kör <strong>alla nationella</strong> kedjor (samma pris oavsett butik): City Gross, Willys, Hemköp. <strong>ICA & Coop är butiksprissatta</strong> - de crawlas per butik i "Per-butik-pris-crawl"-kortet nedan, inte här.</div>
         <div id="catalogSchedule" class="text-muted small mb-2"></div>
         <div class="card p-3 mb-3">
           <div class="d-flex align-items-center mb-1">
@@ -1476,7 +1477,7 @@
       const pcEl = document.getElementById("priceChanges");
       const pcSortVal = document.getElementById("pcSort")?.value || "recent";
       if (d.running && pcSortVal === "recent" && document.activeElement?.id !== "pcSearch" && (!pcEl || pcEl.scrollTop < 10)) loadPriceChanges();
-      document.getElementById("catalogChains").innerHTML = CATALOG_IMPLEMENTED.map((c) => {
+      document.getElementById("catalogChains").innerHTML = MASTER_CHAINS.map((c) => {
         const s = (d.chains || {})[c] || {};
         const st = stats[c] || {};
         const pct = s.categories_total ? Math.round((s.categories_done / s.categories_total) * 100) : 0;

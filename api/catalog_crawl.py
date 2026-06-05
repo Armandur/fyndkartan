@@ -23,6 +23,11 @@ def _now():
 
 CATALOG_CHAINS = ("citygross", "coop", "ica", "willys", "hemkop")
 _IMPLEMENTED = ("citygross", "ica", "coop", "willys", "hemkop")
+# Master-katalog-crawlen (nationellt sortiment) körs nu BARA för de NATIONELLT prissatta kedjorna
+# (Steg 6-cutover): Willys/Hemköp/CG har samma pris oavsett butik. ICA/Coop är BUTIKSPRISSATTA och
+# crawlas per butik (store_crawl.py) -> catalog_store_prices/intervall; deras _CRAWLERS-poster finns
+# kvar för ev. explicit engångskörning men ingår inte i default/cron längre.
+_MASTER_CHAINS = ("citygross", "willys", "hemkop")
 _RECENT_MAX = 60  # live-feed-buffert: senaste ingestade produkter (klient-kön tömmer en i taget)
 _RECENT_PER_CHAIN = 40  # per-kedje-buffert (för round-robin-rättvis feed)
 _RECENT_BY_CHAIN = {}  # {chain: [items]} - modulnivå, skickas EJ till klienten
@@ -601,7 +606,9 @@ async def crawl_all(limit_categories=None, chains=None):
     `limit_categories` cappar antal kategorier/sidor per kedja (snabbtest av visualiseringen)."""
     if CRAWL_STATE["running"]:
         return CRAWL_STATE
-    targets = [c for c in _IMPLEMENTED if not chains or c in chains]
+    # Default (cron/"crawla alla") = bara nationella kedjor; ICA/Coop crawlas per butik. Explicit
+    # `chains` kan fortfarande begära ica/coop (engångs), annars ingår de inte.
+    targets = [c for c in (chains or _MASTER_CHAINS) if c in _CRAWLERS]
     if not targets:
         return CRAWL_STATE
     CRAWL_STATE.update(running=True, started_at=_now(), finished_at=None, recent=[])
