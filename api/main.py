@@ -712,13 +712,14 @@ async def store_prices_list(chain: str | None = None, q: str | None = None,
 
 @app.post("/v1/admin/store-prices/crawl")
 async def trigger_store_price_crawl(chain: str = "ica", cap: int | None = None,
-                                    concurrency: int = 4, _=Depends(require_admin)):
+                                    concurrency: int | None = None, _=Depends(require_admin)):
     """Starta per-butik-pris-crawlen (Steg 6 Fas 3) i bakgrunden för de enabled+frågbara butikerna i
-    `chain` (rotation, äldst först). `cap` = max butiker denna körning, `concurrency` = butiker parallellt
-    (höj för fart, men ökar WAF-risk). Skriver catalog_store_prices + per-butik-historik. Steg 1: bara ICA."""
+    `chain` (rotation, äldst först). `cap` = max butiker denna körning. Samtidigheten ADAPTIVT auto-tunad
+    (AIMD upp till en hård säkerhetsgräns; WAF-backoffen hittar den faktiska gränsen) - `concurrency` är en
+    VALFRI manuell sänkning av taket. Skriver catalog_store_prices + per-butik-historik. Steg 1: bara ICA."""
     if store_crawl.STORE_PRICE_STATE["running"]:
         return {"status": "running", "detail": "En per-butik-crawl pågår redan."}
-    asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap, concurrency=max(1, min(concurrency, 10))))
+    asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap, concurrency=concurrency))
     return {"status": "started", "chain": chain, "cap": cap, "concurrency": concurrency}
 
 

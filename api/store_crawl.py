@@ -18,7 +18,8 @@ from .adapters import ica_token
 log = logging.getLogger("matbutiker")
 
 _PAGE_PACE = 0.35    # paus mellan sidor i EN butik (varje parallell butik throttlas separat)
-_CONCURRENCY = 4     # default-tak för adaptiv samtidighet (rampar upp mot detta)
+_MAX_CONC = 12       # HÅRD säkerhetsgräns (mot katastrofal overshoot). AIMD rampar mot den; det är WAF-
+                     # backoffen som hittar den FAKTISKA gränsen under - inte ett handsatt tak.
 _MIN_CONC = 1
 _RAMP_AFTER = 4      # additiv ökning (+1 mål) efter så här många butiker i rad utan WAF
 _WAF_COOLDOWN = 30   # sek paus efter WAF innan nya butiker startas
@@ -57,18 +58,19 @@ async def _crawl_one_ica(client, token, acct):
     return total_rows
 
 
-async def crawl_store_prices(chain="ica", cap=None, concurrency=_CONCURRENCY):
+async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
     """Crawla per-butik-priser för enabled+frågbara butiker i `chain` (rotation, äldst crawlad först, cap).
     Butiker körs parallellt med ADAPTIV samtidighet (AIMD): börjar lågt, +1 mål efter `_RAMP_AFTER` butiker
-    utan WAF (upp till taket `concurrency`), halverar målet + `_WAF_COOLDOWN`s paus vid WAF (429/403/503).
-    Inom en butik är pagineringen sekventiell. Global circuit-breaker (`_BREAKER` WAF i rad -> avbryt).
-    STEG 1: bara ICA. Bakgrund. Dispatcher fyller på upp till målet allt eftersom butiker blir klara."""
+    utan WAF, halverar målet + `_WAF_COOLDOWN`s paus vid WAF (429/403/503). Taket är en HÅRD säkerhetsgräns
+    (`_MAX_CONC`), inte en tuning-knapp - WAF-backoffen hittar den faktiska gränsen under den. `concurrency`
+    = valfri manuell SÄNKNING av taket (försiktighet). Inom en butik är pagineringen sekventiell. Global
+    circuit-breaker (`_BREAKER` WAF i rad -> avbryt). STEG 1: bara ICA. Bakgrund."""
     if STORE_PRICE_STATE["running"]:
         return {"status": "running"}
     if chain != "ica":
         return {"status": "error", "detail": "Steg 1 stödjer bara ICA än."}
     queue = [a for _, a in database.stores_to_crawl(chain="ica", cap=cap)]
-    ceiling = max(_MIN_CONC, min(concurrency, 10))
+    ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
     STORE_PRICE_STATE.update(running=True, chain=chain, done=0, total=len(queue), stores_ok=0,
                              rows=0, changed=0, errors=0, last_error=None, current=None,
                              target=min(2, ceiling), active=0, cooldown=False,
