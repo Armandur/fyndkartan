@@ -339,8 +339,14 @@ OWN_APIS = [
      "desc": "Sök/bläddra den PERSISTERADE katalogen (crawlad, hela sortimentet + hyllpris, EAN-"
              "grupperat) med aktuella erbjudanden överlagrade. Snabbare än live-/catalog.",
      "params": [{"name": "q", "desc": "Namn-filter (min 2 tecken)"},
-                {"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_CHAIN, _P_LIMIT],
+                {"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_CHAIN, _P_LIMIT,
+                {"name": "manufacturer", "desc": "Tillverkar-nyckel (se /catalog/manufacturers); tål fritt namn"}],
      "returns": schemas.fields_doc(schemas.CatalogSearchResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/manufacturers",
+     "desc": "Tillverkar-aggregat ur den persisterade katalogen: distinkta produkter per normaliserad "
+             "tillverkare (key matar /catalog/browse?manufacturer=, name = display-namn), flest först.",
+     "params": [_P_CHAIN, {"name": "q", "desc": "Filtrera på tillverkarnamn"}, _P_LIMIT],
+     "returns": schemas.fields_doc(schemas.CatalogManufacturersResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/7311870010970",
      "desc": "Produktinfo per EAN (ingredienser/näring/ursprung/allergener), sammanslagen över källor.",
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},

@@ -47,7 +47,7 @@ api/                 # Python-paketet (importeras som `api`)
   brands.py          # märkesvaru-paring: private-label-detektion + förslag (semantisk via embeddings, lexikal fallback) + APIRouter (/v1/admin/...)
   embeddings.py      # lättviktiga static-embeddings (model2vec, CPU/numpy) för semantisk produktnamn-likhet; lazy, degraderar till lexikal
   details.py         # EAN-produktinfo (fetch_for_ean): Axfood /p/{code} + Coop personalization-API + ICA SSR-detalj (handla.ica.se, cid via globalsearch)
-  catalog.py         # unified katalog-sök (live fan-out mot kedjornas sök-API:er, hela sortimentet/hyllpris, EAN-grupperat) -> GET /v1/products/catalog
+  catalog.py         # unified katalog-sök (live fan-out -> GET /v1/products/catalog) + persisterad katalog: catalog_browse (q/category/chain/diet/manufacturer-filter), catalog_summary (kategori-räknare), catalog_manufacturers (tillverkar-aggregat -> GET /v1/products/catalog/manufacturers)
   images.py          # unified produktbild per EAN: resolve+resize (Cloudinary-transform)+lokal cache (image_cache/)
   apilog.py          # anropslogg: utgående (make_client-hook) + inkommande (record_incoming, källa "egen"), ring-buffer/statistik
   tags.py            # tagg-normalisering: effective_types() (tag_map-override + seed_types) + effective_provider() (provider_map-override + classify_provider)

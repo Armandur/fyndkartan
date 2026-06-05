@@ -329,9 +329,16 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       med antal, sätt kanoniskt namn för semantiska merges ("Arla Foods"+"Arla"->"Arla"). Kalibrerat:
       2808 brands -> 2473 nycklar (case/legal/punkt-varianter grupperas auto; 310 grupper med >1 variant).
       `catalog_browse` exponerar `manufacturer` (kanonisk) per produkt.
-    - [ ] **Lista/filtrera produkter per tillverkare (API + framtida app).** NU UPPLÅST av normaliseringen
-      ovan. Kvar: `?manufacturer=`-filter på catalog-browse (gruppera/filtrera på `manufacturer_key`) +
-      en tillverkar-katalog/aggregat. Främst API/analys-app, kanske inte i nuvarande kart-app.
+    - [x] **Lista/filtrera produkter per tillverkare BYGGT (API)** (2026-06-05). `catalog_browse(manufacturer=...)`
+      filtrerar på normaliserad `manufacturer_key` (tål både aggregatets `key` och fritt namn -> samma nyckel).
+      Nytt aggregat `catalog_manufacturers(chain, q, limit)` + `GET /v1/products/catalog/manufacturers`
+      ({key, name, count}, flest produkter först; `q` filtrerar namn). Schema `CatalogManufacturersResponse`
+      + OWN_APIS + test_schemas (browse-count == aggregat-count). Bara API (ingen frontend - per ROADMAP).
+      Känd egenhet: `®`/sub-märken (Arla® vs Arla) blir separata nycklar (manufacturer_key strippar ej
+      trademark-symboler); admin-flikens map kan merga. Eventuell normaliserings-tuning är separat.
+    - [ ] **(framtid) Tillverkar-filter/-katalog i kart-appen.** API:t finns (ovan); en UI (tillverkar-chip
+      eller dropdown i bläddra-vyn ovanpå `/catalog/manufacturers` + `?manufacturer=`) återstår. Främst
+      relevant för analys-appen, kanske inte i nuvarande kart-app.
     - **Kost-filter: vegan/vegetariskt (+ härled när otaggat).**
       - [x] **Vegan/vegetariskt som kombinerbara chips BYGGT** (2026-06-05). Kost-dropdownen ersatt av två
         chips (🌱 Vegansk / 🥬 Vegetarisk) inblandade i bläddra-vyns kategori-rad (avvikande grön-tonad färg,

@@ -110,6 +110,23 @@ def test_product_stores_matches_model():
     return len(eans)
 
 
+def test_catalog_manufacturers_matches_model():
+    """catalog_manufacturers-aggregatet ska validera mot CatalogManufacturersResponse, och
+    catalog_browse(manufacturer=key) ska ge EXAKT aggregatets count (samma manufacturer_key-grund)."""
+    agg = database.catalog_manufacturers(limit=20)
+    schemas.CatalogManufacturersResponse.model_validate(agg)
+    items = agg["manufacturers"]
+    if not items:
+        return 0  # katalogen ej crawlad -> hoppa
+    top = items[0]
+    _, total = database.catalog_browse(manufacturer=top["key"], limit=1)
+    assert total == top["count"], f"browse({top['key']})={total} != aggregat-count {top['count']}"
+    # Fritt namn ska normaliseras till samma nyckel -> samma antal
+    _, total_name = database.catalog_browse(manufacturer=top["name"], limit=1)
+    assert total_name == top["count"], f"fritt namn {top['name']!r} gav {total_name} != {top['count']}"
+    return len(items)
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
@@ -117,3 +134,4 @@ if __name__ == "__main__":
     print(f"OK: {test_offer_matches_model()} erbjudanden validerade mot Offer")
     print(f"OK: {test_price_history_matches_model()} prishistorik-EAN validerade mot PriceHistoryResponse")
     print(f"OK: {test_product_stores_matches_model()} EAN validerade mot ProductStoresResponse")
+    print(f"OK: {test_catalog_manufacturers_matches_model()} tillverkare validerade mot CatalogManufacturersResponse")

@@ -361,14 +361,15 @@ _BROWSE_SORTS = {
 
 
 def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_offers=False,
-                   sort=None, deal=None, fav_stores=None, diet=None):
+                   sort=None, deal=None, fav_stores=None, diet=None, manufacturer=None):
     """Distinkta produkter ur den persisterade katalogen (`catalog_products`, available=1),
     grupperade på EAN cross-chain (annars (kedja, namn)). Per produkt: representativ metadata,
     kanonisk kategori, kedjor och per-kedje-hyllpris (CatalogProduct-form, samma som live-söket -
     frontend återanvänder catalogCard). Namn-filter `q` (SQL LIKE), `category` (kanonisk), `chain`,
-    `only_offers` (bara produkter med aktuellt erbjudande). `sort`: price|spread|name (annars default:
-    flest kedjor, billigast, namn). `offset`/`limit` paginerar (sort sker FÖRE paginering, server-side).
-    Returnerar `(sida, total)` där total = antal matchande produkter före paginering."""
+    `only_offers` (bara produkter med aktuellt erbjudande), `manufacturer` (normaliserad tillverkar-
+    nyckel, se catalog_manufacturers). `sort`: price|spread|name (annars default: flest kedjor, billigast,
+    namn). `offset`/`limit` paginerar (sort sker FÖRE paginering, server-side). Returnerar `(sida, total)`
+    där total = antal matchande produkter före paginering."""
     ql = (q or "").strip()
     if q is not None and len(ql) < 2:
         return [], 0
@@ -388,10 +389,15 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
         groups = _group_rows(rows).values()
     else:
         groups = _browse_groups().values()  # hela katalogen, cachad (map-oberoende gruppering)
+    # Tillverkar-filter (normaliserad nyckel): tål både aggregatets `key` (idempotent) och fritt namn.
+    mkey = manufacturers.manufacturer_key(manufacturer) if manufacturer else None
     out = []
     for g in groups:
         cat = _cat_canonical(g)
         if category and cat != category:
+            continue
+        brand = _cat_pick(g, "brand")
+        if mkey and manufacturers.manufacturer_key(brand) != mkey:
             continue
         rep = next((m for m in g if m.get("name")), g[0])
         prices = [{"chain": m["chain"], "price": m["price"], "comparison_value": m["comparison_value"],
@@ -399,7 +405,6 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
                    "store": m.get("store")}  # butiksscopat hyllpris (Coop/ICA); NULL = nationellt
                   for m in g if m["price"] is not None]
         pv = [p["price"] for p in prices]
-        brand = _cat_pick(g, "brand")
         out.append({
             "ean": rep["ean"], "name": rep["name"], "brand": brand,
             "manufacturer": manufacturers.canonical(brand),  # normaliserad tillverkare (kanonisk)
@@ -453,6 +458,32 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
         p.pop("_savings", None)
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (perf + SQLite-vargräns)
     return page, len(out)
+
+
+def catalog_manufacturers(chain=None, q=None, limit=200):
+    """Tillverkar-aggregat ur katalogen (available=1, EAN-grupperat): distinkta produkter per
+    normaliserad tillverkare. `{key, name (kanonisk), count}`, flest produkter först. `key` är
+    `manufacturer_key` (stabil, matar `catalog_browse(manufacturer=...)`); `name` är display-namnet.
+    `chain` scopar till en kedjas katalog, `q` filtrerar på namnet (skiftläges-okänsligt). Okänd/tom
+    tillverkare hoppas. Returnerar `{manufacturers, total}` (total = antal distinkta tillverkare)."""
+    counts, names = {}, {}
+    for g in _browse_groups().values():
+        members = [m for m in g if m["chain"] == chain] if chain else g
+        if not members:
+            continue
+        brand = _cat_pick(members, "brand")
+        key = manufacturers.manufacturer_key(brand)
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        if key not in names:
+            names[key] = manufacturers.canonical(brand)
+    items = [{"key": k, "name": names[k], "count": c} for k, c in counts.items()]
+    if q:
+        ql = q.lower()
+        items = [it for it in items if ql in (it["name"] or "").lower()]
+    items.sort(key=lambda it: (-it["count"], (it["name"] or "").lower()))
+    return {"manufacturers": items[:limit], "total": len(items)}
 
 
 def _parse_origin(s):

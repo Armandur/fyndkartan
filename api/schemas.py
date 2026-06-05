@@ -84,6 +84,17 @@ class CatalogSearchResponse(BaseModel):
     products: list[CatalogProduct] = Field(..., description="Produkter (hela sortimentet, hyllpris)")
 
 
+class CatalogManufacturer(BaseModel):
+    key: str = Field(..., description="Normaliserad tillverkar-nyckel (stabil; matar /catalog/browse?manufacturer=)")
+    name: str | None = Field(None, description="Kanoniskt display-namn (legal-suffix-städat + admin-merges)")
+    count: int = Field(..., description="Antal distinkta produkter i katalogen för tillverkaren")
+
+
+class CatalogManufacturersResponse(BaseModel):
+    manufacturers: list[CatalogManufacturer] = Field(..., description="Tillverkare, flest produkter först")
+    total: int = Field(..., description="Antal distinkta tillverkare (före limit)")
+
+
 class ProductCategoryResponse(BaseModel):
     category: str = Field(..., description="Kanonisk kategori-nyckel")
     count: int = Field(..., description="Antal produkter")

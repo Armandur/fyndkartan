@@ -82,21 +82,22 @@ async def products_catalog_browse(
     deal: str | None = Query(None, description="multibuy|by_weight|flat - filtrera på erbjudande-typ"),
     favorites: bool = Query(False, description="bara produkter på rea hos inloggad användares favoritbutiker"),
     diet: str | None = Query(None, description="vegan|vegetarian - härledd kost (vegan ⊂ vegetarian); okänt faller bort"),
+    manufacturer: str | None = Query(None, description="Tillverkar-nyckel (se /catalog/manufacturers); tål även fritt namn"),
     user=Depends(require_consumer),
 ):
     """Sök/bläddra den PERSISTERADE katalogen (`catalog_products`, fylld av crawlen) - hela
     sortimentet med hyllpris, EAN-grupperat cross-chain, + aktuella erbjudanden överlagrade.
     Snabbare än live-`/catalog` (ingen fan-out) och täcker crawlade kedjor. q ELLER category krävs.
     `offset` paginerar; `only_offers` filtrerar; `sort` ordnar (inkl. `savings` = störst besparing);
-    `deal` filtrerar på erbjudande-typ (begränsar till rea-produkter). Server-side före paginering.
-    `total` = antal matchande produkter (för progress/paginering)."""
+    `deal` filtrerar på erbjudande-typ (begränsar till rea-produkter); `manufacturer` filtrerar på
+    normaliserad tillverkare. Server-side före paginering. `total` = antal matchande produkter."""
     fav_stores = None
     if favorites and user:  # inloggad användares favoritbutiker (server-side, ej från klient)
         fav_stores = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
     products, total = database.catalog_browse(q=q, category=category, chain=chain,
                                                limit=max(1, min(limit, 100)), offset=max(0, offset),
                                                only_offers=only_offers, sort=sort, deal=deal,
-                                               fav_stores=fav_stores, diet=diet)
+                                               fav_stores=fav_stores, diet=diet, manufacturer=manufacturer)
     catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som live-söket)
     return {"query": q or category or "", "count": len(products), "total": total, "products": products}
 
@@ -113,6 +114,15 @@ async def products_catalog_summary(chain: str | None = None, only_offers: bool =
     if favorites and user:
         fav_stores = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
     return database.catalog_summary(chain=chain, only_offers=only_offers, fav_stores=fav_stores, diet=diet)
+
+
+@router.get("/v1/products/catalog/manufacturers", responses={200: {"model": schemas.CatalogManufacturersResponse}})
+async def products_catalog_manufacturers(chain: str | None = None, q: str | None = None,
+                                         limit: int = 200, _auth=Depends(require_consumer)):
+    """Tillverkar-aggregat ur den persisterade katalogen: distinkta produkter per normaliserad
+    tillverkare (`key` = stabil nyckel som matar `/catalog/browse?manufacturer=`, `name` = display-
+    namn), flest först. `chain` scopar, `q` filtrerar på namnet. För tillverkar-katalog/filter."""
+    return database.catalog_manufacturers(chain=chain, q=q, limit=max(1, min(limit, 1000)))
 
 
 async def _resolve_product_info(ean: str, prefer_chain: str | None = None):
