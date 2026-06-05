@@ -1164,7 +1164,10 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
 // Hash-driven: #sortiment[/k/<kategori>|/s/<sök>]. Kedje-/erbjudande-filter är transient UI-state.
-const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "", deal: "", favorites: false, diet: "" };
+const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "", deal: "", favorites: false, vegan: false, vegetarian: false };
+// Kost är ett TVÄRGÅENDE filter (kombineras med vanlig kategori), exponerat som två chips.
+// Båda kan vara på; vegetariskt ⊃ veganskt -> vegetarisk dominerar (superset) när båda valda.
+function browseDietParam() { return browseState.vegetarian ? "vegetarian" : (browseState.vegan ? "vegan" : ""); }
 let browseTimer = null, browseToken = 0, browseProducts = [];
 const BROWSE_PAGE = 60;  // sidstorlek för infinite scroll (offset-paginering)
 let browseHasMore = false, browseLoadingMore = false, browseObserver = null, browseTotalCount = null;
@@ -1249,7 +1252,7 @@ function populateBrowseChain() {
 let browseSummary = null, _summaryChain = " ";  // sentinel: ingen summary hämtad än
 async function loadBrowseSummary() {
   // Kategori-siffrorna speglar samma filter som bläddra-vyn (kedja + bara erbjudanden + favoriter + kost).
-  const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}|${browseState.diet}`;
+  const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}|${browseDietParam()}`;
   if (_summaryChain === key && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
   _summaryChain = key;
   try {
@@ -1257,7 +1260,8 @@ async function loadBrowseSummary() {
     if (browseState.chain) p.set("chain", browseState.chain);
     if (browseState.onlyOffers) p.set("only_offers", "1");
     if (browseState.favorites) p.set("favorites", "1");
-    if (browseState.diet) p.set("diet", browseState.diet);
+    const diet = browseDietParam();
+    if (diet) p.set("diet", diet);
     browseSummary = await (await fetch(`/v1/products/catalog/summary?${p}`)).json();
   } catch (e) { browseSummary = null; }
   renderBrowseCats();
@@ -1285,9 +1289,15 @@ function renderBrowseCats() {
     .map(([k, label]) => ({ k, label, n: counts[k] }))
     .filter((e) => !browseSummary || e.n)  // göm tomma kategorier när antalen är kända
     .sort((a, b) => (b.n || 0) - (a.n || 0) || a.label.localeCompare(b.label, "sv"));
-  box.innerHTML = entries.map((e) =>
+  // Kost-chips (tvärgående filter) inblandade i kategori-raden, avvikande färg. Inga räknare
+  // (kategori-räknarna speglar redan vald kost). Båda valbara; vegetarisk ⊃ vegansk.
+  const dietChips =
+    `<span class="browse-cat browse-diet${browseState.vegan ? " on" : ""}" data-diet="vegan">🌱 Vegansk</span>` +
+    `<span class="browse-cat browse-diet${browseState.vegetarian ? " on" : ""}" data-diet="vegetarian">🥬 Vegetarisk</span>`;
+  const catChips = entries.map((e) =>
     `<span class="browse-cat${browseState.category === e.k ? " on" : ""}" data-cat="${esc(e.k)}">${esc(e.label)}` +
     `${e.n != null ? ` <span class="browse-cat-n">${fmtNum(e.n)}</span>` : ""}</span>`).join("");
+  box.innerHTML = dietChips + catChips;
 }
 
 // Staggad fade-in: animation-delay per kort i batchen (capad) -> kaskad-infällning.
@@ -1375,7 +1385,8 @@ function browseQS(offset) {
   if (browseState.sort) p.set("sort", browseState.sort);
   if (browseState.deal) p.set("deal", browseState.deal);
   if (browseState.favorites) p.set("favorites", "1");
-  if (browseState.diet) p.set("diet", browseState.diet);
+  const diet = browseDietParam();
+  if (diet) p.set("diet", diet);
   return p;
 }
 
@@ -1435,11 +1446,6 @@ document.getElementById("browseDeal").addEventListener("change", (e) => {
   browseState.deal = e.target.value;
   loadBrowse();  // deal-typ-filter (server-side, begränsar till rea-produkter)
 });
-document.getElementById("browseDiet").addEventListener("change", (e) => {
-  browseState.diet = e.target.value;
-  loadBrowseSummary();  // kategori-siffrorna speglar filtret
-  loadBrowse();  // härlett kost-filter (server-side; produkter utan ingredienslista faller bort)
-});
 document.getElementById("browseFav").addEventListener("change", (e) => {
   browseState.favorites = e.target.checked;
   loadBrowseSummary();  // kategori-siffrorna speglar filtret
@@ -1448,6 +1454,13 @@ document.getElementById("browseFav").addEventListener("change", (e) => {
 document.getElementById("browseCats").addEventListener("click", (e) => {
   const c = e.target.closest(".browse-cat");
   if (!c) return;
+  if (c.dataset.diet) {  // kost-chip: toggla flaggan (tvärgående, kombineras med vald kategori)
+    browseState[c.dataset.diet] = !browseState[c.dataset.diet];
+    renderBrowseCats();    // omedelbar chip-feedback (räknarna uppdateras strax av summary)
+    loadBrowseSummary();   // kategori-räknarna speglar filtret
+    loadBrowse();          // server-filter -> hämta om sidan
+    return;
+  }
   const cat = browseState.category === c.dataset.cat ? "" : c.dataset.cat;
   browseGo(cat ? "sortiment/k/" + encodeURIComponent(cat) : "sortiment");
 });

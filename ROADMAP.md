@@ -333,14 +333,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       ovan. Kvar: `?manufacturer=`-filter på catalog-browse (gruppera/filtrera på `manufacturer_key`) +
       en tillverkar-katalog/aggregat. Främst API/analys-app, kanske inte i nuvarande kart-app.
     - **Kost-filter: vegan/vegetariskt (+ härled när otaggat).**
-      - [ ] **Omvärdering: gör vegan/vegetariskt till EGNA (kombinerbara) KATEGORIER, inte ett separat
-        filter.** Önskemål: vegan + vegetariskt ska visas/väljas som kategorier (likt Mejeri/Frukt osv)
-        snarare än i en egen dropdown, och de TVÅ ska kombineras (vegetariskt inkluderar veganskt).
-        Hake: kanoniska kategorier är idag ÖMSESIDIGT UTESLUTANDE (en produkt -> en kategori), men
-        kost är TVÄRGÅENDE (en vegansk yoghurt är både "mejeri-alt" OCH vegansk). Så det blir en andra
-        dimension/taggnivå i kategori-UI:t (kombinerbara kategori-chips), inte en kanonisk kategori.
-        Designbeslut: behåll `diet`-härledningen, men exponera som valbara chips i bläddra-vyns
-        kategorilist (kombinerbara med vanlig kategori) i st.f. dropdown.
+      - [x] **Vegan/vegetariskt som kombinerbara chips BYGGT** (2026-06-05). Kost-dropdownen ersatt av två
+        chips (🌱 Vegansk / 🥬 Vegetarisk) inblandade i bläddra-vyns kategori-rad (avvikande grön-tonad färg,
+        `.browse-diet`). TVÄRGÅENDE: kombineras fritt med en vanlig kategori (Mejeri + Vegansk = veganska
+        mejeri-alt; verifierat 2986 -> 322 vegan / 1402 vegetarisk). Designval (bekräftat med användaren):
+        båda valbara samtidigt, vegetarisk dominerar (⊃ vegansk) via `browseDietParam()`; `browseState.diet`
+        ersatt av flaggorna `vegan`/`vegetarian`. Backend oförändrad (stödde redan `category`+`diet`).
+        Frontend ej browser-testad (node --check OK). Kvar (sido): diet i delbar hash (idag transient).
       - [x] **v1 BYGGT - härledning + badge.** `details.classify_diet(ingredients)` -> `diet`-fält
         (`vegan`/`vegetarian`/`none`/null) deriverat read-time i `normalize_info` (vokabulär likt
         `extract_allergens`: kött/fisk -> none; mejeri/ägg/honung/gelatin -> vegetarisk; annars vegan;

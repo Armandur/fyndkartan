@@ -421,6 +421,10 @@ body.browse-mode .sidebar { display: none; }
   background: #fff; border: 1px solid #dfe4ea; color: #46505c; user-select: none; }
 .browse-cat:hover { background: #eef1f4; }
 .browse-cat.on { background: #19c37d; border-color: #19c37d; color: #04231a; font-weight: 700; }
+/* Kost-chips (tvärgående filter) - avvikande grön-tonad bas så de skiljer sig från kanoniska kategorier. */
+.browse-diet { background: #f0fbf4; border-color: #b9e6cc; color: #1c7a4d; font-weight: 600; }
+.browse-diet:hover { background: #e3f6ea; }
+.browse-diet.on { background: #0f9d58; border-color: #0f9d58; color: #fff; font-weight: 700; }
 .browse-title { max-width: 1200px; margin: 0 auto .5rem; font-weight: 700; color: #1c2530; }
 .browse-grid { max-width: 1560px; margin: 0 auto;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(490px, 1fr)); gap: .6rem; }
