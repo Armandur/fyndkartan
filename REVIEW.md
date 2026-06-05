@@ -172,12 +172,12 @@ kost-filter, tillverkar-normalisering). Det har växt filerna igen och tillfört
 i små pass (admin/, products/, compare/, auth/) - lifespan/middleware/app-setup kvar i main. Görs FÖRE
 Steg 6 (som lägger på fler endpoints).
 
-**B. (P1) Testtäckning utökad men luckor kvar.** Ny `tests/test_reads.py` (beteende-invarianter för de
-NYA tunga läs-funktionerna: `catalog_browse` paginering/filter/sort, `catalog_price_changes`,
-`catalog_price_history`, diet-klassificering, tillverkar-normalisering, `split_origins`,
-`get_product_diets/origins`). Kvar otestat: `build_comparisons` (compare-grupperingen), auth-gating,
-`_ensure_offers`/sweep, catalog_crawl-parsers. (`test_logic.py` täcker normalize_ean/archive_offers/
-stores_with_offer/category_from_name/price_history_axfood sedan tidigare.)
+**B. (P1) Testtäckning kraftigt utökad.** `tests/test_reads.py` (catalog_browse/price_changes/
+price_history/diet/manufacturers/origins), `tests/test_compare.py` (✅ `build_comparisons`: min_chains/
+min_stores-grindar, per-butik-dedup, unit_price-vs-price, manual_groups-merge - syntetiska entries,
+ingen DB), `tests/test_auth.py` (✅ gating: 11 gatade endpoints -> 401/403, öppna -> 200, ogiltig
+X-API-Key avvisas). (`test_logic.py` täcker normalize_ean/archive/stores_with_offer/category_from_name/
+price_history_axfood.) **Kvar otestat:** `_ensure_offers`/sweep-cykeln, catalog_crawl per-kedje-parsers.
 
 **C. (P1) Duplicerat batch-uppslag mot `product_info`.** `get_product_categories`, `get_product_origins`,
 `get_product_diets`, `product_info_fresh_set`, `partial_info_counts` gör snarlika `SELECT ...
@@ -198,7 +198,7 @@ butik. Inför Steg 6 (per-butik) behövs `store` här - planerat i Steg 6-datamo
 som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända datakälle-fakta + Steg 6.
 
 ### Rekommenderad ordning härnäst
-1. (B) `build_comparisons`- + auth-tester (mest regressions-risk, bygger på test_reads-mönstret).
-2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6).
+1. ✅ (B) `build_comparisons`- + auth-tester GJORT (`test_compare.py` + `test_auth.py`).
+2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6). **Nästa.**
 3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
 4. Resten (E/F/G) inom respektive feature / Steg 6.
