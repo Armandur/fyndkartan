@@ -928,13 +928,14 @@ klar: alla P1-fynd + de fristående P2 (C/D/E) åtgärdade; kvar = sweep-/crawl-
 fynd (F: per-butik-`store`-kolumn, G: Coop-butiksscoping).
 
 
-## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PLANERAT, ej påbörjat)
+## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PÅBÖRJAS - Fas 1)
 
 Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), så vi kan svara
 "var är varan/matkassen billigast - hos mina favoritbutiker / nära mig". Bygger ovanpå Steg 5
-(katalog) men är ett eget, tyngre subsystem. **Bygg inte förrän det finns en uttalad produkt
-(t.ex. statistik-/matkasse-appen) som motiverar det - en representativ butik per kedja räcker
-för enkel cross-chain-jämförelse.**
+(katalog) men är ett eget, tyngre subsystem. **Beslut 2026-06-05: vi siktar på ALLA frågbara butiker
+(ej bara efterfrågestyrt), med per-butik-historik från dag 1 och admin-styrt urval.** (Den tidigare
+brasklappen "vänta på en uttalad konsument" är medvetet åsidosatt.) Fas 1 (datamodell + mät-sweep) är
+låg risk och ger skala-siffran som DB-beslutet vilar på.
 
 ### Nuläge (grunden som redan finns)
 - `catalog_products.store` taggar vilken butik (ledger/account) priset är scopat till (Coop=251300,
@@ -951,13 +952,17 @@ för enkel cross-chain-jämförelse.**
 - **ICA:** 100% queryable (alla 1289 accounts svarar), per-butik-pris, ingen zon-struktur -> alla 1289.
 - Slutsats: ingen billig genväg. Full matris worst case ~39M ICA + ~? Coop pris-punkter.
 
-### Vägval: bygg INTE hela matrisen eagerly - efterfrågestyrt
-Crawla i prioritetsordning, inte allt:
-1. **Favoritbutiker** (användare bryr sig) - full katalog, tätare. När någon favoritar en NY butik ->
-   köa den för crawl (demand-driven). Bundet av faktiskt intresse, inte 39M på spekulation.
-2. **Representativt urval** per kedja/region för nationell-ish jämförelse + "billigast nära dig"-grundtäckning.
-3. **Resten** inkrementellt/sampling, lägst prio.
-Detta håller storage + last bundet till vad som faktiskt används.
+### Mål: ALLA frågbara butiker (beslut 2026-06-05), admin-styrt urval
+Slutmålet är full täckning av alla FRÅGBARA butiker (ICA 100% + Coop ~43%; resten kan inte täckas - hårt
+tak, ej e-handelsindexerade). Prioriterad rotation är fortfarande crawl-ORDNINGEN (inte ett tak):
+1. **Favoritbutiker** (+ demand-crawl: favoritmarkering köar butiken) - tätare refresh.
+2. **Representativt urval** per kedja/region - grundtäckning för "billigast nära dig".
+3. **Resten av de frågbara** inkrementellt tills allt täcks.
+**Admin väljer omfång:** crawla alla frågbara ELLER ett manuellt urval (se admin-tabellen nedan). Den
+verkliga begränsningen är crawl-tid/WAF, inte lagring -> per-butik-färskhet på dagar/veckor är inneboende.
+**Pris-historik per butik från dag 1** (beslut 2026-06-05): append-on-change-observationer skrivs per butik,
+inte bara senaste pris (kan inte backfillas). Huvud-raddrivaren -> mät-sweepen (Fas 1) ger den riktiga skalan
+som DB-beslutet (SQLite/Postgres) vilar på.
 
 ### Datamodell (separera master från butikspris)
 ```
@@ -966,14 +971,23 @@ catalog_products            -- BLIR butiksoberoende master (namn/brand/ean/kateg
 catalog_store_prices         -- NY. PK (chain, product_id, store)
   ean, price, comparison_value, comparison_unit, available, first_seen, last_seen
   -- INDEX(ean), INDEX(chain, store), INDEX(store)
-catalog_price_observations   -- + store-kolumn -> append-on-change per (chain, product_id, store)
-store_crawl                  -- NY. per (chain, store): queryable (bool), priority, last_crawled,
-                               product_count, status. Driver rotationen + minns ej-frågbara (sluta fråga).
+catalog_price_observations   -- + store-kolumn -> append-on-change per (chain, product_id, store) FRÅN DAG 1
+store_crawl                  -- NY. per (chain, store): queryable (bool), enabled (admin-vald, bool),
+                               priority, last_crawled, product_count, status. Driver rotationen + urvalet +
+                               minns ej-frågbara (sluta fråga). Mät-sweepen (Fas 1) fyller queryable+product_count.
 ```
 Mappning favorit -> crawl-butik: favoritens `store_id` -> `stores.native` -> ledger/account.
 
+### Admin: butiksväljare (omfångskontroll)
+Filterbar tabell-lista i `/admin` (Sortiment-fliken) över butiker ur `store_crawl` joinat med `stores`:
+kolumner kedja, namn, ort, frågbar, vald (`enabled`), senast crawlad, produktantal, status. **Markera flera /
+välj alla**-kryssrutor + filter (kedja/ort/frågbar/namn-sök) -> sätt `enabled` på urvalet. Lägesväxel
+"crawla ALLA frågbara" vs "bara valda". Driver vilka butiker rotations-crawlern tar. Speglar mönstret från
+partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan inte väljas.
+
 ### Crawl-strategi (generisk per-butik-rotation, återanvänd Steg 5)
-- En kö av (chain, store) ur `store_crawl`, prioritetsordnad (favoriter > representativa > resten).
+- En kö av (chain, store) ur `store_crawl` WHERE `enabled=1` (admin-vald omfång), prioritetsordnad
+  (favoriter > representativa > resten).
 - Staggrat: N butiker/natt, tungt rate-limitat, egen cadence (`STORE_PRICE_CRON`), circuit-breaker/
   cooldown vid WAF (samma mönster som EAN-warmingen/sweepen).
 - Coop varierar `store={ledger}`; markera ej-frågbara i `store_crawl.queryable=0` (sluta fråga).
@@ -1014,16 +1028,19 @@ Mappning favorit -> crawl-butik: favoritens `store_id` -> `stores.native` -> led
   omskrivning. Migrationer fortsatt utan Alembic (ALTER-guards) tills ORM införs.
 
 ### Faser (resumerbart)
-1. **Datamodell:** `catalog_store_prices` + `store` i observationer + `store_crawl` (queryability/prio).
-2. **Per-butik-crawler:** parametrisera butiken i `catalog_crawl`, rotations-kö, egen cadence, WAF-skydd.
-   Starta med favoriter + ett litet representativt urval; markera ej-frågbara Coop-ledgers.
-3. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
-4. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
-5. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
-- DB-migrering (Postgres/ORM) tas in NÄR en trigger slår, inte som egen fas i förväg.
+1. **Datamodell + mät-sweep:** `catalog_store_prices` + `store` i observationer + `store_crawl`
+   (queryable/enabled/priority/product_count). Mät-sweep fyller `queryable` (bekräfta ~310 Coop-ledgers)
+   + samplar produktantal/butik -> **grundad total-rad-uppskattning** (input till DB-beslutet). Låg risk.
+2. **Admin butiksväljare:** filterbar markera-flera-tabell (`enabled`-urval) + "alla vs valda"-läge.
+3. **Per-butik-crawler:** parametrisera butiken i `catalog_crawl`, rotations-kö (enabled + prio),
+   egen cadence, WAF-skydd, per-butik append-on-change-historik.
+4. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
+5. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
+6. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
+- DB-beslut (SQLite/Postgres/ORM) tas EFTER Fas 1:s mät-siffra, eller när en trigger slår - inte i förväg.
 
 ### Caveats att rama in
-- Per-butter-pris finns bara för FRÅGBARA butiker (Coop ~43%); favoritar man en ej-frågbar butik finns
+- Per-butik-pris finns bara för FRÅGBARA butiker (Coop ~43%); favoritar/väljer man en ej-frågbar butik finns
   inget hyllpris - kommunicera det.
 - Hyllpris != kassapris (samma caveat som idag); medlemspris/erbjudanden ovanpå.
-- Stor storage/last -> efterfrågestyrt (favoriter först), inte full matris.
+- Real begränsning = crawl-tid/WAF (1600 butiker, rate-limitat) -> per-butik-färskhet dagar/veckor, inte daglig.
