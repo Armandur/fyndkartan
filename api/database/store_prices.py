@@ -135,15 +135,22 @@ def _pdiff(a, b):
     return abs(a - b) >= 0.005
 
 
-def stores_to_crawl(chain=None, cap=None):
+def stores_to_crawl(chain=None, cap=None, max_age_hours=None):
     """(chain, store)-par som ska per-butik-pris-crawlas: enabled=1 OCH queryable=1. Äldst crawlad först
-    (rättvis rotation; aldrig-crawlad = först). `chain` scopar, `cap` begränsar antal per körning."""
+    (rättvis rotation; aldrig-crawlad = först). `chain` scopar, `cap` begränsar. `max_age_hours` > 0 ->
+    HOPPA butiker crawlade nyligare än så (bara NULL eller äldre) -> 'lägg till + crawla' kör bara de nya;
+    daglig rotation refreshar det som blivit gammalt. None/0 = crawla alla enabled (full om-crawl)."""
     conn = get_conn()
     sql = "SELECT chain, store FROM store_crawl WHERE enabled=1 AND queryable=1"
     args = []
     if chain:
         sql += " AND chain=?"
         args.append(chain)
+    if max_age_hours and max_age_hours > 0:
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sql += " AND (last_crawled IS NULL OR last_crawled < ?)"
+        args.append(cutoff)
     sql += " ORDER BY (last_crawled IS NOT NULL), last_crawled"
     if cap:
         sql += f" LIMIT {int(cap)}"

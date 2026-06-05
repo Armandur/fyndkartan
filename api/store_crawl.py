@@ -95,7 +95,7 @@ async def _crawl_one_coop(client, ledger):
     return total_rows
 
 
-async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
+async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):
     """Crawla per-butik-priser för enabled+frågbara butiker i `chain` (rotation, äldst crawlad först, cap).
     Butiker körs parallellt med ADAPTIV samtidighet (AIMD): börjar lågt, +1 mål efter `_RAMP_AFTER` butiker
     utan WAF, halverar målet + `_WAF_COOLDOWN`s paus vid WAF (429/403/503). Taket är en HÅRD säkerhetsgräns
@@ -106,7 +106,7 @@ async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
         return {"status": "running"}
     if chain not in ("ica", "coop"):
         return {"status": "error", "detail": "Stödjer ica|coop."}
-    queue = [a for _, a in database.stores_to_crawl(chain=chain, cap=cap)]
+    queue = [a for _, a in database.stores_to_crawl(chain=chain, cap=cap, max_age_hours=max_age_hours)]
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
     STORE_PRICE_STATE.update(running=True, chain=chain, done=0, total=len(queue), stores_ok=0,
                              rows=0, changed=0, errors=0, last_error=None, current=None,

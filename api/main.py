@@ -712,15 +712,18 @@ async def store_prices_list(chain: str | None = None, q: str | None = None,
 
 @app.post("/v1/admin/store-prices/crawl")
 async def trigger_store_price_crawl(chain: str = "ica", cap: int | None = None,
-                                    concurrency: int | None = None, _=Depends(require_admin)):
+                                    concurrency: int | None = None, max_age_hours: int = 20,
+                                    _=Depends(require_admin)):
     """Starta per-butik-pris-crawlen (Steg 6 Fas 3) i bakgrunden för de enabled+frågbara butikerna i
     `chain` (rotation, äldst först). `cap` = max butiker denna körning. Samtidigheten ADAPTIVT auto-tunad
-    (AIMD upp till en hård säkerhetsgräns; WAF-backoffen hittar den faktiska gränsen) - `concurrency` är en
-    VALFRI manuell sänkning av taket. `chain` = ica|coop. Skriver catalog_store_prices + per-butik-historik."""
+    (AIMD; `concurrency` = valfri manuell sänkning av taket). `max_age_hours` (default 20) HOPPAR butiker
+    crawlade nyligare än så -> 'lägg till + crawla' kör bara de nya; 0 = full om-crawl av alla valda.
+    `chain` = ica|coop. Skriver catalog_store_prices + per-butik-historik."""
     if store_crawl.STORE_PRICE_STATE["running"]:
         return {"status": "running", "detail": "En per-butik-crawl pågår redan."}
-    asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap, concurrency=concurrency))
-    return {"status": "started", "chain": chain, "cap": cap, "concurrency": concurrency}
+    asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap, concurrency=concurrency,
+                                                       max_age_hours=max_age_hours))
+    return {"status": "started", "chain": chain, "cap": cap, "max_age_hours": max_age_hours}
 
 
 @app.get("/v1/admin/store-prices/crawl/status")
