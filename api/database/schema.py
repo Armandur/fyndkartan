@@ -143,6 +143,38 @@ def init_db():
             "SELECT chain, product_id, ean, price, comparison_value, comparison_unit, fetched_at "
             "FROM catalog_products WHERE price IS NOT NULL"
         )
+
+    # --- Steg 6: per-butik-priser (Fas 1 datamodell) ---
+    # Vilken butik en prisobservation gäller (NULL = nationellt/representativt, som idag). Per-butik-
+    # historik skrivs append-on-change med store satt.
+    _ensure_column(conn, "catalog_price_observations", "store", "TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_store ON catalog_price_observations(chain, product_id, store)")
+    # Senaste hyllpris PER BUTIK (en rad per (chain, product_id, store)). Historiken ligger i
+    # catalog_price_observations (store-kolumnen ovan); detta är snabb-uppslags-bordet för "billigast var".
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS catalog_store_prices (
+            chain TEXT NOT NULL, product_id TEXT NOT NULL, store TEXT NOT NULL,
+            ean TEXT, price REAL, comparison_value REAL, comparison_unit TEXT,
+            available INTEGER DEFAULT 1, first_seen TEXT, last_seen TEXT,
+            PRIMARY KEY (chain, product_id, store)
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_ean ON catalog_store_prices(ean)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_chain_store ON catalog_store_prices(chain, store)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_store ON catalog_store_prices(store)")
+    # Per-butik crawl-styrning: frågbarhet (queryable: NULL=omätt, 0=ej frågbar, 1=frågbar), admin-valt
+    # omfång (enabled), prioritet + rotations-metadata. Driver rotations-crawlern + admin-väljaren.
+    # `store` = kedjans butiks-id för pris-API:t (Coop ledger / ICA accountNumber).
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS store_crawl (
+            chain TEXT NOT NULL, store TEXT NOT NULL,
+            queryable INTEGER, enabled INTEGER DEFAULT 0, priority INTEGER DEFAULT 0,
+            last_crawled TEXT, product_count INTEGER, status TEXT, checked_at TEXT,
+            PRIMARY KEY (chain, store)
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_store_crawl_enabled ON store_crawl(enabled, priority)")
+
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
     if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
