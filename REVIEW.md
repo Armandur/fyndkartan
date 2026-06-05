@@ -178,6 +178,13 @@ Steg 6 (som lägger på fler endpoints).
   `/v1/providers`). Helt självständig (rör bara `database`/`categories`/`manufacturers`/`tags`) - inget
   `require_consumer`/STATE-beroende, så ingen cirkulär import. Nästa pass kräver att `require_consumer`
   flyttas till `api/deps.py` innан konsument-routerna (products/compare/stores) kan brytas ut.
+- **Pass 2 ✅** (2026-06-05): `require_consumer` flyttad från main.py till föreskrivna `api/deps.py`
+  (re-exporterar även `require_admin`). main.py importerar grinden därifrån; oanvänd `HTTPException`
+  borttagen. Route-path-set oförändrat (90 routes), sviten grön, servern startar rent. Låser upp
+  konsument-route-utbrytningen.
+- **Pass 3 (kvar):** bryt ut konsument-routerna (products/compare/stores/catalog). Kräver att de
+  delade resolver-helpersen (`_resolve_product_info`/`_resolve_product_image`, delas med admin-
+  spegelrouterna) + `STATE`/`get_conn`-beroenden hanteras - egen, mer hopflätad pass.
 
 **B. (P1) Testtäckning kraftigt utökad.** `tests/test_reads.py` (catalog_browse/price_changes/
 price_history/diet/manufacturers/origins), `tests/test_compare.py` (✅ `build_comparisons`: min_chains/
@@ -207,6 +214,7 @@ som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända dat
 ### Rekommenderad ordning härnäst
 1. ✅ (B) `build_comparisons`- + auth-tester GJORT (`test_compare.py` + `test_auth.py`).
 2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6). **Pågår:** pass 1 (vokabulär-
-   admin) ✅ klart. Pass 2: flytta `require_consumer` -> `api/deps.py`, bryt sedan ut konsument-routerna.
+   admin) ✅ + pass 2 (`require_consumer` -> `api/deps.py`) ✅. Pass 3: bryt ut konsument-routerna
+   (kräver att de delade resolver-helpersen + `STATE`/`get_conn` hanteras).
 3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
 4. Resten (E/F/G) inom respektive feature / Steg 6.
