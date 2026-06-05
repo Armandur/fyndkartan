@@ -179,6 +179,13 @@ def init_db():
     _ensure_column(conn, "store_crawl", "name", "TEXT")
     _ensure_column(conn, "store_crawl", "city", "TEXT")
     _ensure_column(conn, "store_crawl", "store_count", "INTEGER")
+    # Materialiserat per-butik-prisaggregat på master-produkten (ICA/Coop: pris varierar per butik ->
+    # visa INTERVALL i bläddra-vyn i st.f. ett representativt pris). Fylls av recompute_store_aggregates
+    # ur catalog_store_prices. National-kedjor använder `price` (enkelt); dessa är NULL för dem.
+    _ensure_column(conn, "catalog_products", "price_min", "REAL")
+    _ensure_column(conn, "catalog_products", "price_max", "REAL")
+    _ensure_column(conn, "catalog_products", "price_stores", "INTEGER")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_chain_product ON catalog_store_prices(chain, product_id)")
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
