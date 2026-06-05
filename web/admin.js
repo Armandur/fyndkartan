@@ -1186,6 +1186,24 @@
           </div>
           <div id="measureProgress"></div>
         </div>
+        <div class="card p-3 mb-3">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <h6 class="mb-0">Butiksurval för per-butik-priser (Steg 6)</h6>
+            <span id="storeSelStats" class="small text-muted"></span>
+          </div>
+          <div class="text-muted small mb-2">Välj vilka butiker per-butik-pris-crawlern ska ta (<em>enabled</em>). Markera flera + bulk, eller "Aktivera alla frågbara". Bara frågbara butiker kan väljas. (Coop saknar produktantal - kräver department-crawl.)</div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <select id="ssChain" class="form-select form-select-sm" style="width:auto"><option value="">Alla kedjor</option><option value="coop">Coop</option><option value="ica">ICA</option></select>
+            <select id="ssQueryable" class="form-select form-select-sm" style="width:auto"><option value="">Frågbar: alla</option><option value="1">Frågbara</option><option value="0">Ej frågbara</option></select>
+            <select id="ssEnabled" class="form-select form-select-sm" style="width:auto"><option value="">Vald: alla</option><option value="1">Valda</option><option value="0">Ej valda</option></select>
+            <input id="ssSearch" class="form-control form-control-sm" style="width:170px" placeholder="Sök namn/ort…">
+            <span class="ms-auto"></span>
+            <button id="ssEnableAllQ" class="btn btn-sm btn-dark">Aktivera alla frågbara</button>
+            <button id="ssDisableAll" class="btn btn-sm btn-outline-danger">Inaktivera alla</button>
+          </div>
+          <div id="storeSelTable" style="max-height:460px;overflow-y:auto"><div class="text-muted small">Laddar…</div></div>
+          <div id="storeSelPager" class="small text-muted mt-2 d-flex align-items-center gap-2"></div>
+        </div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5">
@@ -1235,8 +1253,90 @@
         if (row && row.dataset.ean) openProductModal(row.dataset.ean, row.dataset.name);
       });
       loadPriceChanges();  // initial fyllning (beständig data, oberoende av crawl-status)
+      // Butiksurval (Steg 6): filter, bulk + per-rad-toggle (kryssruta = enabled direkt).
+      const ssReload = () => loadStoreSelect(0);
+      ["ssChain", "ssQueryable", "ssEnabled"].forEach(id => document.getElementById(id).addEventListener("change", ssReload));
+      let ssT; document.getElementById("ssSearch").addEventListener("input", () => { clearTimeout(ssT); ssT = setTimeout(ssReload, 300); });
+      document.getElementById("ssEnableAllQ").addEventListener("click", () => bulkStoreEnable({ all_queryable: true, enabled: true, chain: document.getElementById("ssChain").value || undefined }));
+      document.getElementById("ssDisableAll").addEventListener("click", () => bulkStoreEnable({ all_queryable: true, enabled: false }));
+      document.getElementById("storeSelTable").addEventListener("change", (e) => {
+        const cb = e.target.closest(".ss-cb");
+        if (cb) bulkStoreEnable({ stores: [cb.dataset.key], enabled: cb.checked });
+        const all = e.target.closest(".ss-all");
+        if (all) {
+          const keys = [...document.querySelectorAll(".ss-cb")].map(c => c.dataset.key);
+          if (keys.length) bulkStoreEnable({ stores: keys, enabled: all.checked });
+        }
+      });
+      document.getElementById("storeSelPager").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-off]");
+        if (b) loadStoreSelect(Number(b.dataset.off));
+      });
+      loadStoreSelect(0);
     }
     let pcTimer = null;
+    let ssOffset = 0;
+    const SS_PAGE = 200;
+
+    async function loadStoreSelect(offset) {
+      ssOffset = offset || 0;
+      const p = new URLSearchParams({ limit: SS_PAGE, offset: ssOffset });
+      const ch = document.getElementById("ssChain")?.value, qv = document.getElementById("ssQueryable")?.value;
+      const en = document.getElementById("ssEnabled")?.value, q = document.getElementById("ssSearch")?.value.trim();
+      if (ch) p.set("chain", ch);
+      if (qv !== "") p.set("queryable", qv);
+      if (en !== "") p.set("enabled", en);
+      if (q) p.set("q", q);
+      const d = await (await api(`/v1/admin/store-prices/stores?${p}`)).json();
+      renderStoreSelect(d);
+    }
+
+    function renderStoreSelect(d) {
+      const el = document.getElementById("storeSelTable"), statsEl = document.getElementById("storeSelStats");
+      const pager = document.getElementById("storeSelPager");
+      if (!el) return;
+      const st = d.stats || {};
+      if (statsEl) statsEl.innerHTML = ["coop", "ica"].map(c => {
+        const s = st[c] || {};
+        return `${chip(c)} <strong>${(s.enabled || 0).toLocaleString("sv-SE")}</strong> valda / ${(s.queryable || 0).toLocaleString("sv-SE")} frågbara`;
+      }).join(" &nbsp;&middot;&nbsp; ");
+      const rows = d.stores || [];
+      if (!rows.length) { el.innerHTML = '<div class="text-muted small p-2">Inga butiker matchar filtret.</div>'; if (pager) pager.innerHTML = ""; return; }
+      const tr = rows.map(r => {
+        const key = `${r.chain}:${r.store}`;
+        const cb = r.queryable === 1
+          ? `<input type="checkbox" class="ss-cb" data-key="${esc(key)}"${r.enabled ? " checked" : ""}>`
+          : '<span class="text-muted" title="Ej frågbar - kan inte crawlas">–</span>';
+        const qbadge = r.queryable === 1 ? '<span class="badge bg-success">frågbar</span>'
+          : (r.queryable === 0 ? '<span class="badge bg-secondary">ej frågbar</span>' : '<span class="badge bg-light text-dark">omätt</span>');
+        return `<tr>
+          <td class="text-center">${cb}</td>
+          <td>${chip(r.chain)}</td>
+          <td class="text-truncate" style="max-width:220px" title="${esc(r.name || r.store)}">${esc(r.name || "(okänd)")}${r.store_count > 1 ? ` <span class="text-muted">(${r.store_count} butiker)</span>` : ""}</td>
+          <td class="small text-muted">${esc(r.city || "")}</td>
+          <td class="text-end small">${r.product_count != null ? r.product_count.toLocaleString("sv-SE") : "<span class='text-muted'>–</span>"}</td>
+          <td>${qbadge}</td>
+          <td class="small text-muted">${r.last_crawled ? esc(fmtTs(r.last_crawled)) : "<span class='text-muted'>aldrig</span>"}</td>
+        </tr>`;
+      }).join("");
+      const allChecked = rows.filter(r => r.queryable === 1).every(r => r.enabled) && rows.some(r => r.queryable === 1);
+      el.innerHTML = `<table class="table table-sm small mb-0 align-middle">
+        <thead><tr class="text-muted">
+          <th class="text-center"><input type="checkbox" class="ss-all"${allChecked ? " checked" : ""} title="Markera alla frågbara på sidan"></th>
+          <th>Kedja</th><th>Butik</th><th>Ort</th><th class="text-end">Produkter</th><th>Status</th><th>Senast crawlad</th>
+        </tr></thead><tbody>${tr}</tbody></table>`;
+      if (pager) {
+        const from = ssOffset + 1, to = Math.min(ssOffset + rows.length, d.total);
+        pager.innerHTML = `Visar ${from}-${to} av ${d.total.toLocaleString("sv-SE")}
+          ${ssOffset > 0 ? `<button class="btn btn-sm btn-outline-secondary py-0" data-off="${Math.max(0, ssOffset - SS_PAGE)}">&larr; Föregående</button>` : ""}
+          ${to < d.total ? `<button class="btn btn-sm btn-outline-secondary py-0" data-off="${ssOffset + SS_PAGE}">Nästa &rarr;</button>` : ""}`;
+      }
+    }
+
+    async function bulkStoreEnable(payload) {
+      await api("/v1/admin/store-prices/stores/enable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      loadStoreSelect(ssOffset);  // ladda om sidan -> kryssrutor + stats uppdateras
+    }
 
     async function loadPriceChanges() {
       const chainEl = document.getElementById("pcChain"), qEl = document.getElementById("pcSearch");
