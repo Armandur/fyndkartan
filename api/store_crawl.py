@@ -39,10 +39,14 @@ _FEED_CAP = 60
 
 
 def _is_waf(e):
-    """True om felet ser ut som WAF/rate-limit (429/403) eller anslutnings-/timeout-strul."""
+    """True om felet ska trigga back-off/breaker: WAF/rate-limit (429/403/503) ELLER vilket som helst
+    transport-/anslutningsfel. httpx.TransportError täcker ConnectError, ConnectTimeout, ReadError,
+    ReadTimeout, WriteError, PoolTimeout, RemoteProtocolError m.fl. - dvs nät-/last-strul som vi ska
+    backa av på (tidigare missades ReadError/ConnectTimeout/PoolTimeout -> breakern slog aldrig till och
+    crawlen brände igenom alla butiker när nätet var mättat)."""
     if isinstance(e, httpx.HTTPStatusError):
         return e.response.status_code in (429, 403, 503)
-    return isinstance(e, (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError))
+    return isinstance(e, httpx.TransportError)
 
 
 def _now():
@@ -126,7 +130,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
                 ctl["ok_streak"] = 0
         except Exception as e:  # noqa: BLE001
             cs["errors"] += 1
-            cs["last_error"] = str(e)[:200]
+            cs["last_error"] = f"{type(e).__name__}: {e}"[:200]  # transport-fel har tom str(e) -> ta med typen
             ctl["ok_streak"] = 0
             if _is_waf(e):
                 ctl["waf_streak"] += 1

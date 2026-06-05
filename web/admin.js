@@ -1653,9 +1653,9 @@
           const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
           return `<div class="small text-muted mt-1 d-flex align-items-center gap-2 flex-wrap">${chip(c)}
             <div class="progress" style="height:6px;width:120px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
-            <span>${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}</span></div>`;
+            <span>${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}</span>${s.last_error ? `<div class="small text-danger w-100">senaste fel: ${esc(s.last_error)}</div>` : ""}</div>`;
         }
-        return `<div class="small text-muted mt-1">${chip(c)} senast ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}</div>`;
+        return `<div class="small text-muted mt-1">${chip(c)} senast ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}${s.last_error ? ` &middot; <span class="text-danger">senaste fel: ${esc(s.last_error)}</span>` : ""}</div>`;
       }).join("");
     }
 
