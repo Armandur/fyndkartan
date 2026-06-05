@@ -3,8 +3,9 @@ skriver catalog_store_prices + per-butik append-on-change-historik. Återanvänd
 (catalog_crawl._ica_fetch_store) - samma walk, per-butik write-target. Admin-triggat bakgrundsjobb (ingen
 auto-körning vid uppstart), rate-limitat + circuit-breaker.
 
-STEG 1: ICA (skippar masterbutik - ingen catalog_products-skrivning; per-butik-pris är sanningskällan,
-allmänt jämförpris härleds senare ur catalog_store_prices). Coop:s department-walk följer i nästa pass."""
+ICA (`*` + empirisk kategori-walk) och Coop (department-rötter via by-attribute) - båda parametriserade på
+butik. Skippar masterbutik (ingen catalog_products-skrivning än; per-butik-pris är sanningskällan, allmänt
+jämförpris härleds senare ur catalog_store_prices). Samtidigheten är adaptiv (AIMD) och kedje-agnostisk."""
 import asyncio
 import logging
 import time
@@ -58,6 +59,20 @@ async def _crawl_one_ica(client, token, acct):
     return total_rows
 
 
+async def _crawl_one_coop(client, ledger):
+    """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal."""
+    total_rows = 0
+    async for rows, _t, _p in catalog_crawl._coop_fetch_store(client, ledger, pace=_PAGE_PACE):
+        if rows:
+            _new, changed = database.upsert_store_prices("coop", ledger, rows)
+            total_rows += len(rows)
+            STORE_PRICE_STATE["rows"] += len(rows)
+            STORE_PRICE_STATE["changed"] += changed
+        STORE_PRICE_STATE["current"] = f"Coop {ledger}: {total_rows}"
+    database.mark_store_crawled("coop", ledger, total_rows)
+    return total_rows
+
+
 async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
     """Crawla per-butik-priser för enabled+frågbara butiker i `chain` (rotation, äldst crawlad först, cap).
     Butiker körs parallellt med ADAPTIV samtidighet (AIMD): börjar lågt, +1 mål efter `_RAMP_AFTER` butiker
@@ -67,9 +82,9 @@ async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
     circuit-breaker (`_BREAKER` WAF i rad -> avbryt). STEG 1: bara ICA. Bakgrund."""
     if STORE_PRICE_STATE["running"]:
         return {"status": "running"}
-    if chain != "ica":
-        return {"status": "error", "detail": "Steg 1 stödjer bara ICA än."}
-    queue = [a for _, a in database.stores_to_crawl(chain="ica", cap=cap)]
+    if chain not in ("ica", "coop"):
+        return {"status": "error", "detail": "Stödjer ica|coop."}
+    queue = [a for _, a in database.stores_to_crawl(chain=chain, cap=cap)]
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
     STORE_PRICE_STATE.update(running=True, chain=chain, done=0, total=len(queue), stores_ok=0,
                              rows=0, changed=0, errors=0, last_error=None, current=None,
@@ -82,8 +97,11 @@ async def crawl_store_prices(chain="ica", cap=None, concurrency=None):
         ctl["active"] += 1
         STORE_PRICE_STATE["active"] = ctl["active"]
         try:
-            token = await ica_token.get_token(client)
-            await _crawl_one_ica(client, token, acct)
+            if chain == "ica":
+                token = await ica_token.get_token(client)  # cachad + auto-förnyad
+                await _crawl_one_ica(client, token, acct)
+            else:  # coop - nyckeln resolvas i _coop_post (cachad, re-key vid 401/403)
+                await _crawl_one_coop(client, acct)
             STORE_PRICE_STATE["stores_ok"] += 1
             ctl["waf_streak"] = 0
             ctl["ok_streak"] += 1

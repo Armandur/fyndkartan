@@ -316,8 +316,8 @@ _COOP_ROOTS = {}  # cachad {kod: namn} departement-lista (harvestas en gång, å
 
 
 
-def _coop_params():
-    return {"api-version": "v1", "store": config.COOP_DETAIL_STORE, "groups": "CUSTOMER_PRIVATE",
+def _coop_params(store=None):
+    return {"api-version": "v1", "store": str(store or config.COOP_DETAIL_STORE), "groups": "CUSTOMER_PRIVATE",
             "device": "desktop", "direct": "false"}
 
 
@@ -360,11 +360,12 @@ async def _coop_harvest_roots(client):
     return _COOP_ROOTS
 
 
-def _coop_row(it):
+def _coop_row(it, store=None):
     base = catalog._norm_coop(it)
     raw = details._parse_coop_item(it).get("category_raw")
     # Coop-pris/sortiment är butiksspecifikt (perso-API:t scopar på ledger) -> tagga med butiken.
-    return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw, "store": config.COOP_DETAIL_STORE}
+    return {**base, "product_id": str(base.get("ean") or ""), "category_raw": raw,
+            "store": str(store or config.COOP_DETAIL_STORE)}
 
 
 def _piggyback_coop_info(items):
@@ -415,6 +416,43 @@ async def _coop_browse(client, code, st, seen, max_pages):
         page += 1
         await asyncio.sleep(config.CATALOG_CRAWL_PACE)
         if skip >= total or (max_pages and page >= max_pages):
+            break
+
+
+async def _coop_fetch_store(client, ledger, limit_pages=None, pace=None):
+    """Async generator: walkar en Coop-butiks (ledger) katalog via department-rötter (by-attribute,
+    skip/take), yield:ar (rows, 0, page) per sida. rows = _coop_row, deduplicerade på EAN ÖVER walken.
+    Departement-rötterna harvestas globalt (kategori-trädet är butiks-oberoende, cachas). Behåller
+    piggyback-product_info (skip-if-fresh dedupar över butiker). För per-butik-pris-crawlern. Höjer vid fel."""
+    pace = config.CATALOG_CRAWL_PACE if pace is None else pace
+    roots = await _coop_harvest_roots(client)
+    seen, page, size = set(), 0, config.CATALOG_CRAWL_PAGE
+    for code in list(roots):
+        skip = 0
+        while True:
+            j = await _coop_post(client, _COOP_BY_ATTR, _coop_params(ledger), {
+                "attribute": {"name": "categoryIds", "value": str(code)},
+                "resultsOptions": {"skip": skip, "take": size, "sortBy": [], "facets": []},
+                "customData": {"getEntitiesByAttributeABTest": False, "consent": False}})
+            res = j.get("results") or {}
+            items = res.get("items") or []
+            total = res.get("count") or 0
+            if not items:
+                break
+            rows = []
+            for it in items:
+                ean = matching.normalize_ean(it.get("ean"))
+                if ean and ean not in seen:
+                    seen.add(ean)
+                    rows.append(_coop_row(it, ledger))
+            _piggyback_coop_info(items)  # gratis product_info (skip-if-fresh dedupar)
+            yield rows, 0, page
+            skip += len(items)
+            page += 1
+            await asyncio.sleep(pace)
+            if skip >= total or (limit_pages and page >= limit_pages):
+                break
+        if limit_pages and page >= limit_pages:
             break
 
 
