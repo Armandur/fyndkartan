@@ -432,8 +432,13 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
             sql += " AND chain=?"
             params.append(chain)
         if ql:
-            sql += " AND name LIKE ?"
-            params.append(f"%{ql}%")
+            # GRUPP-vis namnmatchning: inkludera ALLA kedjors rader för en produkt vars NÅGON kedja matchar
+            # namnet (ICA/Coop har ofta annan ordordning, "Havredryck Choklad" vs "Choklad Havredryck") ->
+            # annars saknas de matchande produkternas ICA/Coop-pris/intervall i sökträffen.
+            like = f"%{ql}%"
+            sql += (" AND (name LIKE ? OR (ean IS NOT NULL AND ean IN "
+                    "(SELECT ean FROM catalog_products WHERE available=1 AND ean IS NOT NULL AND name LIKE ?)))")
+            params += [like, like]
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
         conn.close()
         groups = _group_rows(rows).values()
