@@ -283,16 +283,20 @@ def catalog_stats():
                          "missing_ean": r["missing_ean"] or 0, "last_crawl": r["last"]} for r in rows}
 
 
-def catalog_summary(chain=None, only_offers=False, fav_stores=None):
+def catalog_summary(chain=None, only_offers=False, fav_stores=None, diet=None):
     """Översikt av den persisterade katalogen (available=1): antal distinkta produkter
     (EAN-grupperat cross-chain) per kanonisk kategori, totalsumma, samt råa produktantal
-    per kedja. `only_offers`/`fav_stores` begränsar till rea-produkter (globalt resp. hos
-    favoritbutiker) -> kategori-siffrorna speglar samma filter som bläddra-vyn."""
+    per kedja. `only_offers`/`fav_stores`/`diet` begränsar (rea globalt resp. hos favoritbutiker,
+    härledd kost) -> kategori-siffrorna speglar samma filter som bläddra-vyn (catalog_browse)."""
     oset = None  # EAN-restriktion (None = ingen)
     if fav_stores:
         oset = eans_on_offer_at_stores(fav_stores)
     elif only_offers:
         oset = on_offer_eans()
+    dmap = okdiet = None  # diet-restriktion (None = ingen); spegl-ar catalog_browse
+    if diet in ("vegan", "vegetarian"):
+        dmap = get_product_diets()
+        okdiet = {"vegan"} if diet == "vegan" else {"vegan", "vegetarian"}
     by_chain = {}
     cats = {}
     total = 0
@@ -301,6 +305,8 @@ def catalog_summary(chain=None, only_offers=False, fav_stores=None):
         if not members:
             continue
         if oset is not None and (members[0]["ean"] not in oset):  # gruppen delar en EAN
+            continue
+        if dmap is not None and dmap.get(members[0]["ean"]) not in okdiet:  # okänt faller bort
             continue
         total += 1
         for m in members:

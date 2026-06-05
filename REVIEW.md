@@ -215,8 +215,12 @@ tom-koll, IN-klausul och conn-hantering; de tre funktionerna mappar bara raderna
 `save_product_info` (enda product_info-skrivaren -> alla 6 anropare täcks). Repeat-anrop återanvänder
 kartan (samma objekt); diet-vokabulären är fast (ej admin-redigerbar) så ingen vokab-invalidering behövs.
 
-**E. (P2) `catalog_summary` (kategori-räknarna) speglar inte diet-filtret** (only_offers/favoriter gör).
-Inkonsekvent UX - finputs.
+**E. ✅ (P2) `catalog_summary` (kategori-räknarna) speglade inte diet-filtret** (only_offers/favoriter gjorde).
+**Fixat** (2026-06-05): `catalog_summary` tar nu `diet` och filtrerar grupperna identiskt med `catalog_browse`
+(samma `get_product_diets()`-map, okänt faller bort). Route `/v1/products/catalog/summary` + frontend
+(`loadBrowseSummary` skickar `diet`, cachenyckeln + `browseDiet`-listenern uppdaterar räknarna). Verifierat:
+summary.frukt_gront matchar browse(frukt_gront).total exakt per filter (1024 -> vegan 45 / vegetarian 48).
+Frontend ej browser-testad (bara backend + wiring som speglar chain/only_offers/favoriter-mönstret).
 
 **F. (P2) `catalog_price_observations` saknar `store`-kolumn.** Hyllpris-historiken är implicit enkel-
 butik. Inför Steg 6 (per-butik) behövs `store` här - planerat i Steg 6-datamodellen.

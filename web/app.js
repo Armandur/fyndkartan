@@ -1236,8 +1236,8 @@ function populateBrowseChain() {
 
 let browseSummary = null, _summaryChain = " ";  // sentinel: ingen summary hämtad än
 async function loadBrowseSummary() {
-  // Kategori-siffrorna speglar samma filter som bläddra-vyn (kedja + bara erbjudanden + favoriter).
-  const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}`;
+  // Kategori-siffrorna speglar samma filter som bläddra-vyn (kedja + bara erbjudanden + favoriter + kost).
+  const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}|${browseState.diet}`;
   if (_summaryChain === key && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
   _summaryChain = key;
   try {
@@ -1245,6 +1245,7 @@ async function loadBrowseSummary() {
     if (browseState.chain) p.set("chain", browseState.chain);
     if (browseState.onlyOffers) p.set("only_offers", "1");
     if (browseState.favorites) p.set("favorites", "1");
+    if (browseState.diet) p.set("diet", browseState.diet);
     browseSummary = await (await fetch(`/v1/products/catalog/summary?${p}`)).json();
   } catch (e) { browseSummary = null; }
   renderBrowseCats();
@@ -1424,6 +1425,7 @@ document.getElementById("browseDeal").addEventListener("change", (e) => {
 });
 document.getElementById("browseDiet").addEventListener("change", (e) => {
   browseState.diet = e.target.value;
+  loadBrowseSummary();  // kategori-siffrorna speglar filtret
   loadBrowse();  // härlett kost-filter (server-side; produkter utan ingredienslista faller bort)
 });
 document.getElementById("browseFav").addEventListener("change", (e) => {
