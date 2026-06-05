@@ -352,10 +352,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         ~11k EAN) + `diet`-param i `catalog_browse` (filtrerar HELA mängden före paginering; vegan ⊂
         vegetarian; produkter utan ingredienslista faller bort) + `diet` på `/v1/products/catalog/browse`
         + dropdown "🥬 Vegetariskt / 🌱 Veganskt" i bläddra-vyn. Verifierat (choklad: 200 alla -> 31 vegan).
-      - [ ] **Kvar/finputs:** (a) kategori-räknarna (`catalog_summary`) speglar inte diet-filtret än
-        (som only_offers/favoriter gör); (b) bara LIVSMEDEL - icke-livsmedel med ingredienslista kan
-        bli falskt vegan, exkludera via kanonisk kategori; (c) täckning växer med product_info-warmingen
-        (idag ~11k av 35k katalog-EAN har ingredienser).
+      - [x] **(a) Kategori-räknarna speglar diet-filtret BYGGT** (2026-06-05, REVIEW E). `catalog_summary`
+        tar nu `diet` och filtrerar grupperna identiskt med `catalog_browse` (samma `get_product_diets()`-map);
+        `/v1/products/catalog/summary` + frontend (`loadBrowseSummary` skickar diet, cachenyckel + listener
+        uppdaterar räknarna). Verifierat: summary-kategori = browse-total per filter (frukt_gront 1024 ->
+        vegan 45 / vegetarian 48).
+      - [ ] **Kvar/finputs:** (b) bara LIVSMEDEL - icke-livsmedel med ingredienslista kan bli falskt vegan,
+        exkludera via kanonisk kategori; (c) täckning växer med product_info-warmingen (idag ~11k av 35k
+        katalog-EAN har ingredienser).
     - [x] **Filtrera bläddra-vyn på "rea hos favoriter" BYGGT.** Toggle "★ Rea hos favoriter"
       (login-only) -> visar bara produkter som har ett ERBJUDANDE hos användarens specifika
       favoritbutiker (per-butik-exakt via `eans_on_offer_at_stores`, chunkat). Favoriterna hämtas
@@ -883,26 +887,30 @@ jämförpris-ändring (+ baslinje vid första pris).
 
 ---
 
-## Översyn - datalager + struktur (MESTADELS GJORD)
+## Översyn - datalager + struktur (GJORD)
 
-> **Status:** de strukturella punkterna (1-2) är till stora delar genomförda. Kvar = test/städning (3-4).
+> **Status:** de strukturella punkterna (1-2) är genomförda. Testtäckningen (3) i stort sett klar; kvar = sweep-test + småstädning.
 
 1. **Filstorlekar/struktur:** [x] `database.py`-monoliten splittad till paketet `api/database/` per domän
    (`_conn`/`offers`/`stores`/`catalog`/`ean`/`products`/`meta`). [x] offers-/sweep-logiken utbruten till
-   `api/offers.py`. [x] konsol-logiken i `web/admin.js` (ej inline i admin.html). [ ] Kvar: `api/main.py`
-   är fortfarande stort (route-grupper till `api/routes/` ej gjort); `web/app.js` växer.
+   `api/offers.py`. [x] konsol-logiken i `web/admin.js` (ej inline i admin.html). [x] **`api/main.py`-route-
+   split GJORD** (2026-06-05, pass 1-3): konsument-routerna utbrutna till `api/routes/` (admin_vocab/stores/
+   compare/products) + `require_consumer` till `api/deps.py`; main.py 1446 -> 739 rader. [ ] Kvar: `web/app.js` växer.
 2. **Query-grunden:** [x] indexerad `offer_eans`-tabell byggd (offer_id->ean, fylld vid
    `replace_store_offers`) -> snabba uppslag i `stores_with_offer`/`offers_for_eans`/`price_history`,
    ersätter `json_each`-scans. (EAN normaliseras nu vid skrivning, se "normalisera offers-EAN".)
-3. **Testtäckning:** [~] `tests/test_schemas.py` (shape) + `tests/test_logic.py` (normalize_ean/archive/
-   stores_with_offer/price_history) + NY `tests/test_reads.py` (beteende-invarianter för de nya tunga
-   läs-funktionerna: catalog_browse paginering/filter/sort, price_changes, price_history, diet,
-   tillverkar-normalisering, split_origins). [ ] Kvar: `build_comparisons` + auth-gating + sweep.
-4. **Övrigt:** [ ] döda/oanvända helpers, dubblerad logik (se REVIEW.md fynd C: batch-product_info),
-   derive-at-read-drift, konsekvent felhantering.
+3. **Testtäckning:** [x] `tests/test_schemas.py` (shape) + `tests/test_logic.py` (normalize_ean/archive/
+   stores_with_offer/price_history) + `tests/test_reads.py` (catalog_browse paginering/filter/sort,
+   price_changes, price_history, diet, tillverkar-normalisering, split_origins) + `tests/test_compare.py`
+   (`build_comparisons`: min_chains/min_stores-grindar, dedup, unit_price-vs-price, manual_groups) +
+   `tests/test_auth.py` (gating: 13 endpoints -> 401/403, öppna -> 200, ogiltig X-API-Key). [ ] Kvar:
+   `_ensure_offers`/sweep-cykeln, catalog_crawl per-kedje-parsers.
+4. **Övrigt:** [x] dubblerad `product_info`-batch-logik avduplicerad (REVIEW fynd C: `_product_info_fields`)
+   + diet-map cachad (fynd D). [ ] Kvar: ev. döda/oanvända helpers, derive-at-read-drift, konsekvent felhantering.
 
-Fullständig genomlysning + rangordnade fynd i **REVIEW.md** (uppdaterad 2026-06-05). Resterande (3-4)
-tas i en fokuserad städ-runda; de strukturella tunga lyften är redan inne.
+Fullständig genomlysning + rangordnade fynd i **REVIEW.md** (uppdaterad 2026-06-05). Översynen är i praktiken
+klar: alla P1-fynd + de fristående P2 (C/D/E) åtgärdade; kvar = sweep-/crawl-parser-tester och Steg 6-bundna
+fynd (F: per-butik-`store`-kolumn, G: Coop-butiksscoping).
 
 
 ## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PLANERAT, ej påbörjat)
