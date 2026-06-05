@@ -13,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, tags
-from .deps import require_consumer
 from .routes import admin_vocab, compare as compare_routes, products as products_routes, stores as stores_routes
 from .database import (
     get_conn,
