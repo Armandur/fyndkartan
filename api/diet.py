@@ -17,7 +17,10 @@ _ANIMAL = re.compile(
     r"vasslepulver|skummjölk)", re.I)
 _PLANT_OK = ("kokosmjölk", "havremjölk", "sojamjölk", "mandelmjölk", "risdryck", "havredryck",
              "sojadryck", "äggplanta", "jordnötssmör", "mandelsmör", "kakaosmör", "sheasmör",
-             "jordnötter", "frukost")
+             "jordnötter", "frukost",
+             # Tång-/alg-baserad "rom"/"kaviar" är VEGANSKA fisk-substitut - nolla dem före fisk-
+             # kollen så "tångrom"/"tångkaviar" inte felklassas som fisk via _FISH_EXTRA.
+             "tångrom", "tångkaviar", "tångcaviar", "algrom", "algkaviar", "sjögräsrom", "sjögräskaviar")
 # Fisk/skaldjur/rom som ofta står som SUFFIX i sammansättningar (skarpsill, regnbågslax, löjrom) -
 # där _MEAT:s \b-ordstart missar dem. Delsträngs-matchning (starka fisk-signaler, försumbar falsk-
 # positiv-risk i livsmedel). Generell fiskrom via "-rom" i ordslut, men `(?<![ak])` undantar
