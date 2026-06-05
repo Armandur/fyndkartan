@@ -1168,6 +1168,24 @@
           </div>
           <div id="partialProgress"></div>
         </div>
+        <div class="card p-3 mb-3">
+          <div class="d-flex align-items-center mb-1">
+            <h6 class="mb-0">Per-butik-priser: queryability-mätning (Steg 6)</h6>
+            <span id="measureStatus" class="ms-2 small text-muted"></span>
+          </div>
+          <div class="text-muted small mb-2">Probe:ar varje Coop-ledger + ICA-account: vilka butiker som har e-handelspris (frågbara) + ICA:s sortimentstorlek. Re-runnable - <em>Om-mät alla</em> fångar butiker som börjat erbjuda e-handel. Rate-limitat + WAF-skydd. (Coops produktantal kräver department-crawl - visas ej här.)</div>
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+            <span id="measureStats" class="small text-muted"></span>
+            <label class="small d-flex align-items-center gap-1 ms-auto text-nowrap" style="cursor:pointer"><input type="checkbox" id="measureRecheck"> Om-mät alla</label>
+            ${chip("coop")}
+            <button class="btn btn-sm btn-outline-dark measure-run" data-chain="coop" data-cap="20">Testa (20)</button>
+            <button class="btn btn-sm btn-dark measure-run" data-chain="coop">Mät alla</button>
+            <span>${chip("ica")}</span>
+            <button class="btn btn-sm btn-outline-dark measure-run" data-chain="ica" data-cap="20">Testa (20)</button>
+            <button class="btn btn-sm btn-dark measure-run" data-chain="ica">Mät alla</button>
+          </div>
+          <div id="measureProgress"></div>
+        </div>
         <div class="row g-3">
           <div class="col-12 col-lg-7" id="catalogChains"></div>
           <div class="col-12 col-lg-5">
@@ -1201,6 +1219,8 @@
         if (b && !b.disabled) triggerWarmEans(b.dataset.cap ? Number(b.dataset.cap) : null, b.dataset.chain);
         const p = e.target.closest(".partial-run");
         if (p && !p.disabled) triggerPartialUpgrade(p.dataset.cap ? Number(p.dataset.cap) : null);
+        const m = e.target.closest(".measure-run");
+        if (m && !m.disabled) triggerStoreMeasure(m.dataset.chain, document.getElementById("measureRecheck").checked, m.dataset.cap ? Number(m.dataset.cap) : null);
       });
       // Per-kedja-knappar (korten re-renderas varje poll -> delegerad lyssnare på containern).
       document.getElementById("catalogChains").addEventListener("click", (e) => {
@@ -1292,6 +1312,7 @@
 
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
+      const ms = await (await api("/v1/admin/store-prices/measure/status")).json();
       ensureCatalogSkeleton();
       // Feeden delas av crawl, EAN-resolvning OCH partial-uppgradering. Ny körning -> nollställ.
       const warm = d.ean_warm || {};
@@ -1322,6 +1343,7 @@
       document.getElementById("crawlTest").disabled = d.running;
       renderEanWarm(d.ean_warm || {}, d.running);
       renderPartialUpgrade(pu, d.running || warm.running);
+      renderStoreMeasure(ms, d.running || warm.running || pu.running);
       // Live-uppdatera prisändrings-loggen under crawl - bara i "Senaste"-läge, ej medan man söker/skrollat.
       const pcEl = document.getElementById("priceChanges");
       const pcSortVal = document.getElementById("pcSort")?.value || "recent";
@@ -1365,7 +1387,7 @@
         </div>`;
       }).join("");
       clearTimeout(catalogTimer);
-      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running) && active === "catalog")
+      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
     }
 
@@ -1444,6 +1466,40 @@
 
     async function triggerPartialUpgrade(cap) {
       await api(`/v1/admin/partials/upgrade${cap ? `?cap=${cap}` : ""}`, { method: "POST" });
+      loadCatalog();
+    }
+
+    function renderStoreMeasure(ms, otherRunning) {
+      const prog = document.getElementById("measureProgress"), status = document.getElementById("measureStatus");
+      const statsEl = document.getElementById("measureStats");
+      if (!prog) return;
+      const running = !!ms.running;
+      document.querySelectorAll(".measure-run").forEach(b => { b.disabled = running || otherRunning; });
+      if (status) status.innerHTML = running ? '<span class="st-running">● mäter…</span>' : "";
+      const st = ms.stats || {};
+      if (statsEl) statsEl.innerHTML = ["coop", "ica"].map(c => {
+        const s = st[c] || {};
+        return `${chip(c)} <strong>${(s.queryable || 0).toLocaleString("sv-SE")}</strong> frågbara / ${(s.total || 0).toLocaleString("sv-SE")} (${(s.unmeasured || 0)} omätta, ${(s.enabled || 0)} valda)`;
+      }).join(" &nbsp;&middot;&nbsp; ");
+      if (running) {
+        prog.innerHTML = ["coop", "ica"].map(c => {
+          const ch = (ms.chains || {})[c] || {};
+          if (!ch.total) return "";
+          const pct = ch.total ? Math.round((ch.done / ch.total) * 100) : 0;
+          return `<div class="small text-muted mt-1 d-flex align-items-center gap-2">${chip(c)}
+            <div class="progress" style="height:6px;width:120px"><div class="progress-bar bg-success" style="width:${pct}%;transition:width .5s ease"></div></div>
+            ${ch.done}/${ch.total} &middot; ${ch.queryable} frågbara${ch.errors ? `, <span class="text-danger">${ch.errors} fel</span>` : ""}</div>`;
+        }).join("");
+      } else { prog.innerHTML = ""; }
+    }
+
+    async function triggerStoreMeasure(chain, recheck, cap) {
+      const p = new URLSearchParams();
+      if (chain) p.set("chain", chain);
+      if (recheck) p.set("recheck", "1");
+      if (cap) p.set("cap", cap);
+      const qs = p.toString();
+      await api(`/v1/admin/store-prices/measure${qs ? "?" + qs : ""}`, { method: "POST" });
       loadCatalog();
     }
 
