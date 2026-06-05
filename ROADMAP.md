@@ -366,10 +366,10 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       server-side ur inloggad användares `list_favorites` (ej från klient). Vald tolkning: "på rea
       hos favoriterna" (katalogen är nationell -> per-butik-sortiment finns ej; per-kedje-varianten
       valdes bort).
-    - [ ] **Zooma kartan till favoriternas bbox vid favorit-vyer.** När man väljer "mina butikers
-      erbjudanden" / "jämför mina favoriter" i kartappen borde kartan zooma till en ruta som rymmer
-      användarens favoritbutiker (i st.f. att stå kvar på nuvarande vy). Återanvänd `fitToVisible`-
-      mönstret men begränsa till favoritbutikernas koordinater (`map.fitBounds(favPunkter, padding)`).
+    - [x] **Zooma kartan till favoriternas bbox vid favorit-vyer BYGGT** (2026-06-05). `fitToFavorites(keys)`
+      i `web/app.js` (`map.fitBounds` till favoritbutikernas koordinater, symmetrisk padding/maxZoom 13).
+      `showFavoriteOffers` zoomar till alla favoriter, `showCompareFavorites` till de jämförda (COMPARE_CHAINS-
+      delmängden). No-op om inga favoriter har koordinater. Frontend ej browser-testad (syntax OK).
     - [x] **Aktuellt erbjudande i produktmodalen + erbjudandepris på kartan BYGGT.** En kedjas
       **rea-rad i katalogkortet är klickbar** -> öppnar produktmodalen med en "Aktuellt erbjudande"-
       sektion som visar erbjudandets EGNA namn/pristext/förpackning/deal-typ per kedja

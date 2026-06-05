@@ -325,6 +325,16 @@ function fitToVisible() {
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
 }
 
+// Zooma till en ruta som rymmer favoritbutikerna (för favorit-vyerna). `keys` = ev. delmängd
+// (Set eller "chain:store_id"-array); utelämnad -> alla favoriter. No-op om inga har koordinater.
+function fitToFavorites(keys) {
+  const set = keys instanceof Set ? keys : new Set(keys || [...state.favorites]);
+  const pts = state.stores
+    .filter((s) => s.location && set.has(favKey(s)))
+    .map((s) => [s.location.lat, s.location.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+}
+
 document.getElementById("productFilterClear").addEventListener("click", () => {
   _selfNav = true; location.hash = ""; clearProductFilter(); setTimeout(() => { _selfNav = false; }, 0);
 });
@@ -865,6 +875,7 @@ async function showCompareFavorites() {
   }
   document.getElementById("compareList").innerHTML =
     `<div class="text-muted small p-2">Laddar erbjudanden för dina favoriter&hellip;</div>`;
+  fitToFavorites(favs);  // zooma kartan till de jämförda favoritbutikerna
   try {
     const r = await fetch(`/v1/compare/stores?stores=${favs.join(",")}&min_chains=2`);
     const d = await r.json();
@@ -897,6 +908,7 @@ async function showFavoriteOffers() {
   }
   document.getElementById("compareList").innerHTML =
     `<div class="text-muted small p-2">Laddar dina favoriters erbjudanden&hellip;</div>`;
+  fitToFavorites();  // zooma kartan till en ruta som rymmer favoritbutikerna
   compareRender = renderFavOffers;
   try {
     const d = await (await fetch("/v1/favorites/offers")).json();
