@@ -861,6 +861,11 @@ upserta i `catalog_products`. Per kedja (endpoints dokumenterade i "Kända datak
   browsar en hel kategori (verifierat via Claude Chrome: Mejeri & Ägg = 876 produkter = by-attribute kod 6262).
   Departement-rötterna (kod = navCategories-rot, tom `superCategories`; 19 st) harvestas ur produkternas
   `navCategories` via ~30 breda sökningar och cachas (`_COOP_ROOTS`). `_norm_coop` återanvänds; product_id=EAN.
+- [x] **Coop-crawl utvärderad + sidstorlek höjd (2026-06-05).** Till skillnad från ICA har Coop INGET
+  offset-cap (skip paginerar till sista produkten) och de 19 departement-rötterna är en KOMPLETT partition
+  (mätt: 694 sök-samplade produkter låg alla i departement-crawlen, 0 saknade rot). Ingen kategori-union/
+  villkorlig logik behövs. Enda vinsten: `COOP_CRAWL_PAGE` (default 300) i st.f. 100 - take cappar vid
+  ~400-499 (500 ger tomt 200-svar), så ~3x färre requests. Full butik = ~12,7k distinkta EAN.
 - [x] **Axfood (Willys/Hemköp) BYGGT** (`_crawl_axfood`): kategoriträd `GET leftMenu/categorytree` (rot N00 ->
   19 avdelningar, slug i `url`), produktlista `GET /c/<slug>?page=&size=` (`results` + `pagination.numberOfPages`).
   Olika prefix per sajt (Willys `/axfood/rest/v1`, Hemköp bart) + eget träd/koder per sajt. EAN ej inline ->

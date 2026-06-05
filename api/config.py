@@ -65,6 +65,8 @@ CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkte
 # ICA:s globalsearch klarar stora sidor (verifierat take=2000 ger 2000 docs) -> färre requests/butik
 # (~10x). Egen knapp då övriga kedjors API:er kan ha andra server-caps. Höjd default = ICA-crawlern.
 ICA_CRAWL_PAGE = int(os.getenv("ICA_CRAWL_PAGE", "1000"))
+# Coops by-attribute cappar take vid ~400-499 (take<=400 OK, 500 ger tomt 200-svar) -> 300 = säker 3x.
+COOP_CRAWL_PAGE = int(os.getenv("COOP_CRAWL_PAGE", "300"))
 CATALOG_CRAWL_PACE = float(os.getenv("CATALOG_CRAWL_PACE", "0.3"))   # paus mellan sidor (s)
 CATALOG_CRAWL_RETRIES = int(os.getenv("CATALOG_CRAWL_RETRIES", "3"))
 CATALOG_CRAWL_BACKOFF = float(os.getenv("CATALOG_CRAWL_BACKOFF", "1.5"))

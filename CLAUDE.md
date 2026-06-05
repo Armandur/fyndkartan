@@ -273,6 +273,14 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
     matchning: med komplett union når en 44k-butik **~99,7% täckning** (44268/44422, ~179 requests) mot
     ~94% med bara den cappade walkens egna skörd. ecomLevel2 (260 noder) ger 97,5% till ~4x requests -
     ej använt (komplett mainCategory-union räcker). Delad av master- och per-butik-crawlern.
+- **Coop-crawlens täckning (`catalog_crawl._coop_fetch_store`):** Coop har INTE ICA:s cap-problem.
+  by-attribute (`categoryIds=<departement-rot>`, skip/take) paginerar utan offset-tak (verifierat: skip
+  till sista produkten fungerar), och de ~19 departement-rötterna (harvestade ur produkternas
+  navCategories, `_coop_harvest_roots`) är en KOMPLETT partition: 694 sök-samplade produkter låg alla i
+  departement-crawlen (100%, 0 saknade rot). Enda förbättringen är sidstorleken: `COOP_CRAWL_PAGE`
+  (default 300) i st.f. delade 100 - Coops take cappar vid ~400-499 (take<=400 OK, 500 ger tomt 200-svar),
+  så 3x färre requests. Full crawl av en butik = ~12,7k distinkta EAN (summa departement-counts ~13,8k,
+  ~8% överlapp dedupas på EAN). Delad av master- och per-butik-crawlern.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och

@@ -413,7 +413,7 @@ def _piggyback_coop_info(items):
 
 
 async def _coop_browse(client, code, st, seen, max_pages):
-    skip, page, size = 0, 0, config.CATALOG_CRAWL_PAGE
+    skip, page, size = 0, 0, config.COOP_CRAWL_PAGE
     while True:
         j = await _coop_post(client, _COOP_BY_ATTR, _coop_params(), {
             "attribute": {"name": "categoryIds", "value": str(code)},
@@ -450,7 +450,7 @@ async def _coop_fetch_store(client, ledger, limit_pages=None, pace=None):
     piggyback-product_info (skip-if-fresh dedupar över butiker). För per-butik-pris-crawlern. Höjer vid fel."""
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
     roots = await _coop_harvest_roots(client)
-    seen, page, size = set(), 0, config.CATALOG_CRAWL_PAGE
+    seen, page, size = set(), 0, config.COOP_CRAWL_PAGE
     for code in list(roots):
         skip = 0
         while True:
