@@ -492,14 +492,13 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
   taggar: översikt (kedjor/cacher/schemaläggare), **API-anrop** (logg + statistik per
   källa via httpx-hook i `apilog.py`), datakällor per kedja, och tagg-underhållet
   (mappa omappade råetiketter mot vokabulären).
-  - [ ] **TODO (2026-06-05): se över ALLA kort + tabeller på Översikt-fliken (#overview).** Stämmer de
-    fortfarande efter all ny funktionalitet (Steg 5 katalog, Steg 6 per-butik-priser m.m.)? Saknas
-    nya stats (catalog_store_prices-volym, per-butik-crawl-status, queryability), visar något stale
-    siffror? Inventera kort-för-kort + tabellerna och uppdatera/lägg till det som fattas.
-  - [ ] **TODO (2026-06-05): "Uppgradera alla glesa" kör bara 300 i taget trots att fler finns.**
-    `trigger_partial_upgrade` utan cap faller till `config.PARTIAL_UPGRADE_CAP` (=300), så "alla"-knappen
-    cappas ändå. Antingen ska "alla" loopa batchar tills inga glesa kvar (cap = rate-limit PER batch, inte
-    totalt), eller skicka cap=0/obegränsat från knappen. Förtydliga semantiken + fixa.
+  - [x] **Översikt-fliken (#overview) genomgången (2026-06-05).** Lade till Steg 6-kort "Per-butik-priser
+    (ICA/Coop)" (catalog_store_prices-volym, antal crawlade butiker, valda, senaste crawl + crawlar-status)
+    via ny `database.store_prices_stats()` -> `overview.store_prices`. Övriga kort/tabeller stämde fortf.
+  - [x] **"Uppgradera alla glesa" cappas inte längre till 300 (2026-06-05).** Knappen skickar `cap=0` ->
+    `upgrade_sparse_partials(cap=0)` tolkar 0 som obegränsat (`limit=None`), schemalagd körning (cap=None)
+    behåller `PARTIAL_UPGRADE_CAP`-defaulten. Frontend `triggerPartialUpgrade` skickar nu cap-param även
+    vid 0 (`cap != null`, tidigare falsy-droppad).
   - [x] **API-konsol med separat admin-auth BYGGT.** Admin/drift är skild från
     kartappen: `web/admin.html` på `/admin` heter "API-konsol" och har egen
     inloggningsruta (`/v1/console/auth/*`). Konsol-admins ligger i egen tabell

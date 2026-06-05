@@ -23,6 +23,12 @@
       const storeTot = d.chains.reduce((a, c) => a + (c.store_count || 0), 0);
       const sw = d.offers_sweep || {};  // bara nästa-körning-kortet kvar i översikten; resten i Erbjudanden-fliken
       const pu = d.partial_upgrade || {};
+      const sp = d.store_prices || {};
+      const spStats = sp.stats || {};
+      const spRows = Object.values(spStats).reduce((a, s) => a + (s.price_rows || 0), 0);
+      const spStores = Object.values(spStats).reduce((a, s) => a + (s.crawled || 0), 0);
+      const spEnabled = Object.values(spStats).reduce((a, s) => a + (s.enabled || 0), 0);
+      const spLast = Object.values(spStats).map(s => s.last_crawled).filter(Boolean).sort().pop();
       // Alla schemalagda jobb -> ett kort, soonest överst (next_run = "YYYY-MM-DD HH:MM", strängsortbart).
       const jobs = [
         { name: "Butikssynk", next: (d.scheduler || {}).next_run, cron: (d.scheduler || {}).cron },
@@ -52,6 +58,7 @@
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Prishistorik (observationer)</div><div class="stat">${fmtNum(d.price_history.rows)}</div><div class="small text-muted">${fmtNum(d.price_history.products)} produkter${d.price_history.since ? ` sedan ${esc((d.price_history.since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Innehållshistorik (recept/näring)</div><div class="stat">${fmtNum((d.info_history || {}).rows || 0)}</div><div class="small text-muted">${fmtNum((d.info_history || {}).products || 0)} produkter${(d.info_history || {}).since ? ` sedan ${esc(((d.info_history || {}).since || "").slice(0, 10))}` : ""}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Partial-rader (piggyback)</div><div class="stat">${fmtNum((pu.counts || {}).partial || 0)}</div><div class="small text-muted">${fmtNum((pu.counts || {}).sparse || 0)} glesa &rarr; uppgraderas${pu.running ? ` · <span class="st-running">uppgraderar… ${fmtNum(pu.done || 0)}/${fmtNum(pu.total || 0)}</span>` : (pu.finished_at ? ` · senast ${fmtNum(pu.upgraded || 0)} st ${esc(fmtTs(pu.finished_at))}` : "")}</div></div></div>
+          <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Per-butik-priser (ICA/Coop)</div><div class="stat">${fmtNum(spRows)}</div><div class="small text-muted">${fmtNum(spStores)} butiker crawlade · ${fmtNum(spEnabled)} valda${sp.running ? ` · <span class="st-running">crawlar…</span>` : (spLast ? ` · senast ${esc(fmtTs(spLast))}` : "")}</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Lagring på disk</div><div class="stat">${fmtBytes((d.storage || {}).total_bytes || 0)}</div><div class="small text-muted">DB ${fmtBytes((d.storage || {}).db_bytes || 0)} · bilder ${fmtBytes((d.storage || {}).image_bytes || 0)} (${(d.storage || {}).image_count || 0} st)</div></div></div>
           <div class="col-6 col-md-3"><div class="card p-3"><div class="text-muted small">Nästa schemalagda körning</div>
             ${jobs.length
@@ -1165,7 +1172,7 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
             <span id="partialCounts" class="small text-muted"></span>
             <button class="btn btn-sm btn-outline-dark ms-auto partial-run" data-cap="50">Testa (50)</button>
-            <button class="btn btn-sm btn-dark partial-run">Uppgradera alla glesa</button>
+            <button class="btn btn-sm btn-dark partial-run" data-cap="0">Uppgradera alla glesa</button>
           </div>
           <div id="partialProgress"></div>
         </div>
@@ -1594,7 +1601,7 @@
     }
 
     async function triggerPartialUpgrade(cap) {
-      await api(`/v1/admin/partials/upgrade${cap ? `?cap=${cap}` : ""}`, { method: "POST" });
+      await api(`/v1/admin/partials/upgrade${cap != null ? `?cap=${cap}` : ""}`, { method: "POST" });  // cap=0 = ALLA
       loadCatalog();
     }
 

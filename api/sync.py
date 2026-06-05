@@ -182,7 +182,9 @@ async def upgrade_sparse_partials(cap=None):
     cap/körning + bunden parallellism + paus, för ICA-detaljen är WAF-känslig. Egen cadence."""
     if PARTIAL_UPGRADE_STATE["running"]:
         return
-    eans = sparse_partial_eans(cap or config.PARTIAL_UPGRADE_CAP)
+    # cap=0 -> ALLA glesa ("Uppgradera alla glesa"); None -> schemalagd default; N -> N.
+    limit = None if cap == 0 else (cap or config.PARTIAL_UPGRADE_CAP)
+    eans = sparse_partial_eans(limit)
     names = catalog_names_for_eans(eans)
     PARTIAL_UPGRADE_STATE.update(running=True, total=len(eans), done=0, upgraded=0, failed=0,
                                  started_at=_now(), finished_at=None, recent=[])
