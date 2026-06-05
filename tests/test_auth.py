@@ -28,6 +28,8 @@ _GATED = [
     ("GET", "/v1/admin/overview"),
     ("GET", "/v1/admin/manufacturers"),
     ("GET", "/v1/admin/categories"),
+    ("GET", "/v1/tags"),         # utbruten till routes/admin_vocab.py - säkra att gatingen följde med
+    ("GET", "/v1/providers"),    # samma router (require_admin på router-nivå)
     ("POST", "/v1/sync"),
     ("POST", "/v1/offers/sweep"),
     ("POST", "/v1/admin/partials/upgrade"),

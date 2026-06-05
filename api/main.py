@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, manufacturers, matching, schemas, settings, tags
+from .routes import admin_vocab
 from .adapters import axfood_offers
 from .database import (
     get_cached_eans,
@@ -209,6 +210,7 @@ if config.CORS_ORIGINS:
     )
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 app.include_router(brands.router)  # märkesvaru-paring (/v1/admin/brands|private-products|matches...)
+app.include_router(admin_vocab.router)  # vokabulär-admin (/v1/admin/categories|manufacturers, /v1/tags*, /v1/providers*)
 
 
 @app.middleware("http")
@@ -611,44 +613,6 @@ async def admin_sources(_=Depends(require_admin)):
     return {"sources": config.DATA_SOURCES, "own_apis": config.OWN_APIS}
 
 
-@app.get("/v1/admin/categories")
-async def admin_categories(_=Depends(require_admin)):
-    return {"canonical": categories.CANONICAL, "items": database.category_label_counts()}
-
-
-@app.post("/v1/admin/categories/map")
-async def set_category(payload: dict = Body(...), _=Depends(require_admin)):
-    ck = (payload.get("chain_key") or "").strip()
-    rk = (payload.get("raw_key") or "").strip()
-    canon = (payload.get("canonical") or "").strip()
-    if not ck or not rk or canon not in {c["key"] for c in categories.CANONICAL}:
-        return JSONResponse({"detail": "Ogiltig mappning."}, status_code=400)
-    database.set_category_map(ck, rk, canon)
-    categories.set_map(database.load_category_map())  # ladda om -> slår igenom direkt
-    return {"chain_key": ck, "raw_key": rk, "canonical": canon}
-
-
-@app.get("/v1/admin/manufacturers")
-async def admin_manufacturers(_=Depends(require_admin)):
-    """Tillverkar-/varumärkesgrupper (auto-normaliserade på nyckel) + ev. kanonisk override - för
-    redigering. Auto-normalisering (skiftläge/legal-suffix) sker i koden; här sätts manuella merges."""
-    return {"items": database.manufacturer_rows()}
-
-
-@app.post("/v1/admin/manufacturers/map")
-async def set_manufacturer(payload: dict = Body(...), _=Depends(require_admin)):
-    key = (payload.get("key") or "").strip()
-    canon = (payload.get("canonical") or "").strip()
-    if not key:
-        return JSONResponse({"detail": "Nyckel krävs."}, status_code=400)
-    if canon:
-        database.set_manufacturer_map(key, canon)
-    else:
-        database.delete_manufacturer_map(key)  # tom -> rensa override (faller till auto-default)
-    manufacturers.set_map(database.load_manufacturer_map())  # ladda om -> slår igenom direkt
-    return {"key": key, "canonical": canon or None}
-
-
 # ---- API-nycklar för externa integratörer (konsol-utfärdade) ----
 @app.get("/v1/admin/api-keys")
 async def list_api_keys(_=Depends(require_admin)):
@@ -720,123 +684,6 @@ async def admin_proxy(payload: dict = Body(...), _=Depends(require_admin)):
     except Exception as e:  # noqa: BLE001
         log.warning("proxy %s misslyckades: %s", url, e)
         return JSONResponse({"detail": str(e)}, status_code=502)
-
-
-@app.get("/v1/tags")
-async def list_tags(_=Depends(require_admin)):
-    items = []
-    for label, info in database.tag_label_counts().items():
-        types = tags.effective_types(label)
-        items.append(
-            {
-                "label": label,
-                "count": info["count"],
-                "chains": sorted(info["chains"]),
-                "types": types,
-                "provider": tags.effective_provider(label),
-                "provider_overridden": label in tags.PROVIDER_MAP,
-                "overridden": label in tags.TAG_MAP,
-            }
-        )
-    # Behöver-uppmärksamhet (ej override och bara "other") först, sedan på antal.
-    items.sort(key=lambda x: (x["overridden"] or x["types"] != ["other"], -x["count"]))
-    return {"types": tags.CANONICAL, "providers": tags.PROVIDERS, "tags": items}
-
-
-@app.post("/v1/tags/map")
-async def set_tag(payload: dict = Body(...), _=Depends(require_admin)):
-    label = (payload.get("label") or "").strip()
-    types = [t for t in (payload.get("types") or []) if tags.valid_type(t)]
-    if not label or not types:
-        return JSONResponse({"detail": "Ogiltig label eller typer."}, status_code=400)
-    database.set_tag_map(label, types)
-    tags.put(label, types)
-    return {"label": label, "types": types}
-
-
-# ---- Kanonisk vokabulär (typer) ----
-@app.get("/v1/tags/types")
-async def list_types(_=Depends(require_admin)):
-    return {"types": tags.CANONICAL, "builtin": sorted(config.BUILTIN_TAG_TYPES)}
-
-
-@app.post("/v1/tags/types")
-async def add_type(payload: dict = Body(...), _=Depends(require_admin)):
-    raw = (payload.get("type") or "").strip().lower()
-    for a, b in (("å", "a"), ("ä", "a"), ("ö", "o"), ("é", "e"), ("ü", "u")):
-        raw = raw.replace(a, b)
-    type_ = re.sub(r"[^a-z0-9_]+", "_", raw).strip("_")
-    if not type_:
-        return JSONResponse({"detail": "Ogiltig typ."}, status_code=400)
-    if type_ not in tags.CANONICAL:
-        database.add_tag_type(type_)
-        tags.set_types(database.load_tag_types())
-    return {"type": type_, "types": tags.CANONICAL}
-
-
-@app.delete("/v1/tags/types/{type_}")
-async def remove_type(type_: str, _=Depends(require_admin)):
-    # Även inbyggda typer får tas bort. Följden: en seed-producerad typ utan vokabulär-
-    # post faller till 'other' (effective_types filtrerar mot vokabulären). Tombstone
-    # (remove_tag_type) hindrar att den återskapas vid omstart. Manuella mappningar
-    # (tag_map) skyddas dock fortfarande.
-    if database.tag_type_in_use(type_):
-        return JSONResponse({"detail": "Typen används i en mappning."}, status_code=400)
-    database.remove_tag_type(type_)
-    tags.set_types(database.load_tag_types())
-    return {"type": type_, "removed": True, "types": tags.CANONICAL}
-
-
-@app.delete("/v1/tags/map/{label:path}")
-async def del_tag(label: str, _=Depends(require_admin)):
-    database.delete_tag_map(label)
-    tags.remove(label)
-    # Returnera auto-typerna så klienten kan uppdatera raden in-place (ingen omladdning).
-    return {"label": label, "removed": True, "types": tags.effective_types(label)}
-
-
-# ---- Speditörer (vokabulär + label-override) ----
-@app.get("/v1/providers")
-async def list_providers(_=Depends(require_admin)):
-    return {"providers": tags.PROVIDERS}
-
-
-@app.post("/v1/providers")
-async def add_provider(payload: dict = Body(...), _=Depends(require_admin)):
-    name = (payload.get("name") or "").strip()
-    if not name:
-        return JSONResponse({"detail": "Ogiltigt namn."}, status_code=400)
-    if name not in tags.PROVIDERS:
-        database.add_provider(name)
-        tags.set_providers(database.load_providers())
-    return {"name": name, "providers": tags.PROVIDERS}
-
-
-@app.delete("/v1/providers/{name}")
-async def remove_provider(name: str, _=Depends(require_admin)):
-    if database.provider_in_use(name):
-        return JSONResponse({"detail": "Speditören används i en mappning."}, status_code=400)
-    database.remove_provider(name)
-    tags.set_providers(database.load_providers())
-    return {"name": name, "removed": True, "providers": tags.PROVIDERS}
-
-
-@app.post("/v1/tags/provider")
-async def set_tag_provider(payload: dict = Body(...), _=Depends(require_admin)):
-    label = (payload.get("label") or "").strip()
-    provider = (payload.get("provider") or "").strip()
-    if not label or provider not in tags.PROVIDERS:
-        return JSONResponse({"detail": "Ogiltig label eller speditör."}, status_code=400)
-    database.set_provider_map(label, provider)
-    tags.put_provider(label, provider)
-    return {"label": label, "provider": provider}
-
-
-@app.delete("/v1/tags/provider/{label:path}")
-async def del_tag_provider(label: str, _=Depends(require_admin)):
-    database.delete_provider_map(label)
-    tags.remove_provider(label)
-    return {"label": label, "removed": True, "provider": tags.effective_provider(label)}
 
 
 @app.get("/v1/stores", responses={200: {"model": schemas.StoresResponse}})

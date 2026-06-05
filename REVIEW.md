@@ -171,6 +171,13 @@ kost-filter, tillverkar-normalisering). Det har växt filerna igen och tillfört
 **A. (P1) `main.py` route-grupper är nu MER motiverat.** 1446 rader, ~70 routes. Bryt till `api/routes/`
 i små pass (admin/, products/, compare/, auth/) - lifespan/middleware/app-setup kvar i main. Görs FÖRE
 Steg 6 (som lägger på fler endpoints).
+- **Pass 1 ✅** (2026-06-05): vokabulär-/normaliseringsadmin (`/v1/admin/categories|manufacturers`,
+  `/v1/tags*`, `/v1/providers*`) utbruten till `api/routes/admin_vocab.py` (router utan prefix, fulla
+  paths -> byte-identiska URL:er, `require_admin` på router-nivå). main.py 1446 -> 1293 rader. Verifierat
+  via route-path-set-snapshot (90 routes, oförändrat) + utökat `test_auth` (probar nu `/v1/tags` +
+  `/v1/providers`). Helt självständig (rör bara `database`/`categories`/`manufacturers`/`tags`) - inget
+  `require_consumer`/STATE-beroende, så ingen cirkulär import. Nästa pass kräver att `require_consumer`
+  flyttas till `api/deps.py` innан konsument-routerna (products/compare/stores) kan brytas ut.
 
 **B. (P1) Testtäckning kraftigt utökad.** `tests/test_reads.py` (catalog_browse/price_changes/
 price_history/diet/manufacturers/origins), `tests/test_compare.py` (✅ `build_comparisons`: min_chains/
@@ -199,6 +206,7 @@ som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända dat
 
 ### Rekommenderad ordning härnäst
 1. ✅ (B) `build_comparisons`- + auth-tester GJORT (`test_compare.py` + `test_auth.py`).
-2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6). **Nästa.**
+2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6). **Pågår:** pass 1 (vokabulär-
+   admin) ✅ klart. Pass 2: flytta `require_consumer` -> `api/deps.py`, bryt sedan ut konsument-routerna.
 3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
 4. Resten (E/F/G) inom respektive feature / Steg 6.

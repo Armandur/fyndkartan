@@ -36,7 +36,8 @@ frontend anropar `/v1/...` same-origin. Splitten till två repon är billig sena
 
 ```
 api/                 # Python-paketet (importeras som `api`)
-  main.py            # FastAPI-app, lifespan, alla routes, custom openapi() (taggar /docs per prefix), serverar web/ statiskt
+  main.py            # FastAPI-app, lifespan, middleware, de flesta routes, custom openapi() (taggar /docs per prefix), serverar web/ statiskt
+  routes/            # utbrutna route-grupper (krymper main.py, REVIEW Fynd 2): admin_vocab.py = vokabulär-admin (categories/manufacturers/tags/providers). Router utan prefix, fulla paths -> identiska URL:er; main.py include_router:ar
   config.py          # env (valfria nycklar), CHAIN_META, Lidl-bounds, ORIGIN_COUNTRIES (babel), OWN_APIS (konsol-katalog, returns deriveras ur schemas)
   schemas.py         # Pydantic-responsmodeller - sanningskälla för API-kontraktet (document-only) + konsolens fält-doc (fields_doc)
   database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict, list_products() (produktsök/kategori)
