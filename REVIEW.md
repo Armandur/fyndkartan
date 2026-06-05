@@ -147,3 +147,58 @@ kärnfil. Påverkar INTE Steg 5:s datagrund.
 
 Alla genomförda fynd verifierade: import + `test_schemas` + `test_logic` gröna, uppstart (init_db) +
 EAN/kategori-warming utan fel, schemaläggare aktiva, healthz 200.
+
+---
+
+## Uppdatering 2026-06-05 - efter en stor feature-runda
+
+Sedan jun-3-översynen har mycket byggts (piggyback-product_info, partial-uppgradering, innehålls-
+historik, butiks-tagging av Coop/ICA-hyllpris, prisändrings-logg + produktmodaler i konsolen,
+kost-filter, tillverkar-normalisering). Det har växt filerna igen och tillfört ett par nya nyanser.
+
+### Nuläge (mätt 2026-06-05)
+| Fil | Rader (jun 3 -> nu) | Not |
+|-----|------|-----|
+| `web/admin.js` | (split-resultat) -> **1663** | många nya flikar/funktioner |
+| `web/app.js` | 1145 -> **1630** | modaler, grafer, filter |
+| `api/main.py` | 1138 -> **1446** | nya endpoints (manufacturers/partials/price-changes/admin-product) |
+| `api/database/offers.py` | ~517 -> **594** | origin_codes, _norm_eans, piggyback |
+| `api/catalog_crawl.py` | -> **538** | piggyback-hooks |
+| `api/details.py` | **517** | gränsfall (diet utbruten till `api/diet.py` lättade den) |
+
+### Nya fynd
+
+**A. (P1) `main.py` route-grupper är nu MER motiverat.** 1446 rader, ~70 routes. Bryt till `api/routes/`
+i små pass (admin/, products/, compare/, auth/) - lifespan/middleware/app-setup kvar i main. Görs FÖRE
+Steg 6 (som lägger på fler endpoints).
+
+**B. (P1) Testtäckning utökad men luckor kvar.** Ny `tests/test_reads.py` (beteende-invarianter för de
+NYA tunga läs-funktionerna: `catalog_browse` paginering/filter/sort, `catalog_price_changes`,
+`catalog_price_history`, diet-klassificering, tillverkar-normalisering, `split_origins`,
+`get_product_diets/origins`). Kvar otestat: `build_comparisons` (compare-grupperingen), auth-gating,
+`_ensure_offers`/sweep, catalog_crawl-parsers. (`test_logic.py` täcker normalize_ean/archive_offers/
+stores_with_offer/category_from_name/price_history_axfood sedan tidigare.)
+
+**C. (P1) Duplicerat batch-uppslag mot `product_info`.** `get_product_categories`, `get_product_origins`,
+`get_product_diets`, `product_info_fresh_set`, `partial_info_counts` gör snarlika `SELECT ...
+json_extract(data,...) FROM product_info`-frågor. En delad helper (loader per fält) minskar dubblering
++ ger en plats att optimera.
+
+**D. (P2) `get_product_diets()` klassificerar HELA product_info (~11k) per diet-filtrerad browse.**
+Ocachat, ~50-100ms/anrop. Cacha modulnivå (likt `_browse_groups`, invalidera vid product_info-ändring)
+om filtret används interaktivt.
+
+**E. (P2) `catalog_summary` (kategori-räknarna) speglar inte diet-filtret** (only_offers/favoriter gör).
+Inkonsekvent UX - finputs.
+
+**F. (P2) `catalog_price_observations` saknar `store`-kolumn.** Hyllpris-historiken är implicit enkel-
+butik. Inför Steg 6 (per-butik) behövs `store` här - planerat i Steg 6-datamodellen.
+
+**G. (noterat) Butiksscoping-täckningslucka:** Coop-produktinfo/bilder hårdkodade till 251300 (produkter
+som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända datakälle-fakta + Steg 6.
+
+### Rekommenderad ordning härnäst
+1. (B) `build_comparisons`- + auth-tester (mest regressions-risk, bygger på test_reads-mönstret).
+2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6).
+3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
+4. Resten (E/F/G) inom respektive feature / Steg 6.

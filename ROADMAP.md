@@ -894,10 +894,15 @@ jämförpris-ändring (+ baslinje vid första pris).
 2. **Query-grunden:** [x] indexerad `offer_eans`-tabell byggd (offer_id->ean, fylld vid
    `replace_store_offers`) -> snabba uppslag i `stores_with_offer`/`offers_for_eans`/`price_history`,
    ersätter `json_each`-scans. (EAN normaliseras nu vid skrivning, se "normalisera offers-EAN".)
-3. **Testtäckning:** [ ] fortfarande mest schema-drift-testet; lägg tester runt de tyngsta läs-funktionerna.
-4. **Övrigt:** [ ] döda/oanvända helpers, dubblerad logik, derive-at-read-drift, konsekvent felhantering.
+3. **Testtäckning:** [~] `tests/test_schemas.py` (shape) + `tests/test_logic.py` (normalize_ean/archive/
+   stores_with_offer/price_history) + NY `tests/test_reads.py` (beteende-invarianter för de nya tunga
+   läs-funktionerna: catalog_browse paginering/filter/sort, price_changes, price_history, diet,
+   tillverkar-normalisering, split_origins). [ ] Kvar: `build_comparisons` + auth-gating + sweep.
+4. **Övrigt:** [ ] döda/oanvända helpers, dubblerad logik (se REVIEW.md fynd C: batch-product_info),
+   derive-at-read-drift, konsekvent felhantering.
 
-Resterande (3-4) kan tas i en fokuserad städ-runda; de strukturella tunga lyften är redan inne.
+Fullständig genomlysning + rangordnade fynd i **REVIEW.md** (uppdaterad 2026-06-05). Resterande (3-4)
+tas i en fokuserad städ-runda; de strukturella tunga lyften är redan inne.
 
 
 ## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PLANERAT, ej påbörjat)
