@@ -232,8 +232,8 @@ async def product_store_prices(ean: str, _auth=Depends(require_consumer)):
     e = matching.normalize_ean(ean)
     if not e:
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
-    prices = database.store_prices_for_ean(e)
-    return {"ean": e, "count": len(prices), "prices": prices}
+    d = database.store_prices_for_ean(e)
+    return {"ean": e, "total_stores": d["total_stores"], "levels": d["levels"]}
 
 
 @router.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})

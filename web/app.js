@@ -443,25 +443,27 @@ async function openStorePricesModal(ean, chain, name) {
 }
 
 function renderStorePrices(d, chain) {
-  let prices = d.prices || [];
-  if (chain) prices = prices.filter((p) => p.chain === chain);
-  if (!prices.length) return '<div class="text-muted small p-2">Inga per-butik-priser har crawlats ännu.</div>';
-  const rows = prices.map((p) => {
-    const m = state.chains[p.chain] || {};
-    const cmp = p.comparison_value != null ? `${kr(p.comparison_value)} kr/${esc(p.comparison_unit || "")}` : "";
-    return `<tr>
-      <td><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || p.chain)}</span></td>
-      <td class="text-truncate" style="max-width:200px" title="${esc(p.name || p.store)}">${esc(p.name || p.store)}</td>
-      <td class="small text-muted">${esc(p.city || "")}</td>
-      <td class="text-end fw-semibold">${kr(p.price)} kr</td>
-      <td class="text-end small text-muted">${cmp}</td>
-    </tr>`;
+  let levels = d.levels || [];
+  if (chain) levels = levels.filter((l) => l.chain === chain);
+  if (!levels.length) return '<div class="text-muted small p-2">Inga per-butik-priser har crawlats ännu.</div>';
+  const min = levels[0].price, max = levels[levels.length - 1].price;
+  const totalStores = levels.reduce((a, l) => a + l.store_count, 0);
+  // Grupperat på pris -> kort lista; klick fäller ut butikerna på den nivån.
+  const rows = levels.map((l) => {
+    const m = state.chains[l.chain] || {};
+    const cmp = l.comparison_value != null ? ` <span class="text-muted">&middot; ${kr(l.comparison_value)} kr/${esc(l.comparison_unit || "")}</span>` : "";
+    const storesList = l.stores.map((s) => `${esc(s.name)}${s.city ? ` <span class="text-muted">(${esc(s.city)})</span>` : ""}`).join("<br>");
+    return `<div class="sp-level">
+      <div class="sp-level-head">
+        <span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || l.chain)}</span>
+        <span class="fw-semibold">${kr(l.price)} kr</span>${cmp}
+        <span class="ms-auto text-muted small text-nowrap">${fmtNum(l.store_count)} butik${l.store_count === 1 ? "" : "er"} <span class="sp-caret">&#9662;</span></span>
+      </div>
+      <div class="sp-level-stores small text-muted d-none">${storesList}</div>
+    </div>`;
   }).join("");
-  const min = prices[0].price, max = prices[prices.length - 1].price;
-  return `<div class="small text-muted mb-2">${fmtNum(prices.length)} butiker &middot; ${kr(min)}–${kr(max)} kr (billigast först). Butiksspecifikt hyllpris - varierar mellan butiker.</div>
-    <div style="max-height:60vh;overflow-y:auto"><table class="table table-sm small align-middle mb-0">
-    <thead><tr class="text-muted"><th>Kedja</th><th>Butik</th><th>Ort</th><th class="text-end">Pris</th><th class="text-end">Jämförpris</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+  return `<div class="small text-muted mb-2">${fmtNum(totalStores)} butiker &middot; ${kr(min)}–${kr(max)} kr, grupperat på pris (billigast först). Klicka en nivå för butikerna.</div>
+    <div style="max-height:62vh;overflow-y:auto">${rows}</div>`;
 }
 
 // Visar det AKTUELLA erbjudandet per kedja (offerns egna namn/pristext/förpackning) - avslöjar när rean
@@ -679,6 +681,10 @@ function renderProductInfo(d, chain) {
 function closeProductModal() { document.getElementById("productModal").classList.add("d-none"); }
 document.getElementById("productClose").addEventListener("click", closeProductModal);
 document.getElementById("productModal").addEventListener("click", (e) => { if (e.target.id === "productModal") closeProductModal(); });
+document.getElementById("productModalBody").addEventListener("click", (e) => {
+  const head = e.target.closest(".sp-level-head");  // per-butik-pris-modalen: fäll ut/in butikerna på nivån
+  if (head) head.parentElement.querySelector(".sp-level-stores").classList.toggle("d-none");
+});
 
 // Lightbox: klick på en produktbild visar den i full storlek (för att granska förpackningen).
 function openLightbox(src) {

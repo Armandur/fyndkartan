@@ -335,6 +335,12 @@ img.o-img { cursor: zoom-in; }
 }
 .o-map:hover { background: #eef1f4; }
 #productModalBody { max-height: 70vh; overflow: auto; }
+/* Per-butik-pris-modal (Steg 6): prisnivåer grupperade på pris, klickbara -> butikslista fälls ut. */
+.sp-level { border-bottom: 1px solid #eef1f4; }
+.sp-level-head { display: flex; align-items: center; gap: .4rem; padding: 6px 2px; cursor: pointer; flex-wrap: wrap; }
+.sp-level-head:hover { background: #f6f8fa; }
+.sp-level-stores { padding: 2px 6px 8px 6px; line-height: 1.5; }
+.sp-caret { font-size: .7rem; }
 
 /* Kartfilter-banner: flytande chip överst på kartan (visar aktiv produktfiltrering). */
 #productFilterBar {

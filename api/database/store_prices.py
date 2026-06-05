@@ -245,8 +245,10 @@ def recompute_store_aggregates(chain=None):
 
 
 def store_prices_for_ean(ean):
-    """Per-butik-priser för en EAN (för bläddra-vyns intervall-modal): alla butikers pris cross-chain,
-    berikat med butiksnamn/ort ur store_crawl, billigast först. Returnerar lista av dicts."""
+    """Per-butik-priser för en EAN, GRUPPERADE på (kedja, pris) - en populär vara i hundratals butiker
+    har oftast få distinkta prisnivåer (många delar exakt samma pris). Returnerar prisnivåer billigast
+    först: {chain, price, comparison_value, comparison_unit, store_count, stores:[{name,city}]}. Driver
+    bläddra-vyns intervall-modal (kort + smal lista). `total_stores` = antal butiker totalt."""
     conn = get_conn()
     rows = conn.execute(
         "SELECT sp.chain, sp.store, sp.price, sp.comparison_value, sp.comparison_unit, "
@@ -254,7 +256,19 @@ def store_prices_for_ean(ean):
         "LEFT JOIN store_crawl sc ON sc.chain=sp.chain AND sc.store=sp.store "
         "WHERE sp.ean=? AND sp.price IS NOT NULL ORDER BY sp.price", (str(ean),)).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    groups, total = {}, 0
+    for r in rows:
+        total += 1
+        key = (r["chain"], round(r["price"], 2))
+        g = groups.get(key)
+        if g is None:
+            g = {"chain": r["chain"], "price": round(r["price"], 2), "comparison_value": r["comparison_value"],
+                 "comparison_unit": r["comparison_unit"], "store_count": 0, "stores": []}
+            groups[key] = g
+        g["store_count"] += 1
+        g["stores"].append({"name": r["name"] or r["store"], "city": r["city"]})
+    out = sorted(groups.values(), key=lambda g: g["price"])
+    return {"levels": out, "total_stores": total}
 
 
 def store_name(chain, store):
