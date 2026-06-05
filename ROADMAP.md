@@ -1036,8 +1036,26 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
    även för småsortiment-butiker - ingen queryable-tröskel, urvalstabellen styr i stället.)
 2. ✅ **Admin butiksväljare KLAR** (2026-06-05): filterbar markera-flera-tabell (`enabled`-urval, per-rad-
    toggle + bulk "alla frågbara"), denormaliserat namn/ort (list ~2ms). `GET/POST /v1/admin/store-prices/stores`.
-3. **Per-butik-crawler (NÄSTA):** parametrisera butiken i `catalog_crawl`, rotations-kö (enabled + prio),
-   egen cadence, WAF-skydd, per-butik append-on-change-historik.
+3. ✅ **Per-butik-crawler KLAR** (2026-06-05): `store_crawl.py` crawlar enabled+frågbara butiker, **ICA**
+   (`*` + empirisk kategori-walk förbi 20k-cappen, ~95%) och **Coop** (department-rötter), parametriserade
+   på butik. Skriver catalog_store_prices + per-butik append-on-change-historik. **Adaptiv självtunande
+   parallellisering** (AIMD: rampar upp, halverar+cooldown vid WAF; tak = säkerhets-guardrail). Färskhets-
+   tröskel (`max_age_hours`, default 20 -> "lägg till + crawla" kör bara nya). Konsol-kort + kategori-flöde.
+   Återanvänder katalog-crawlens walk (extraherad). Triggerbar via API/konsol.
+
+   **KVAR I FAS 3 (cutover + parallellt) - beständig TODO (2026-06-05):**
+   - [ ] **ICA+Coop per-butik-crawl PARALLELLT.** Idag seriellt (en global `STORE_PRICE_STATE.running`).
+     Gör state per-kedja (två AIMD-styrningar, olika API:er -> ingen kontention) så ICA+Coop kör samtidigt;
+     konsol-kortet visar båda. Coop (~2h) göms då under ICA (~13h).
+   - [ ] **Pensionera ICA/Coop ur master-crawlen.** `crawl_all`/`_crawl_ica`/`_crawl_coop` ska bara köra de
+     NATIONELLA kedjorna (Willys/Hemköp/CG - samma pris oavsett butik, master = rätt modell för dem).
+     ICA/Coop:s sanningskälla är per-butik-crawlen. Peka om cron + ta bort/märk om ICA/Coop-crawl-knapparna.
+   - [ ] **Allmänt jämförpris = INTERVALL för ICA/Coop i bläddra-vyn.** Aggregera min/max/antal-butiker per
+     produkt ur catalog_store_prices -> `catalog_products.price_min/max/stores` (kolumnerna finns). Per-butik-
+     crawlen upsertar även catalog_products-METADATA (union, inget pris) så bläddra-vyn behåller produkterna.
+     `catalog_browse` visar "10-22 kr" för ICA/Coop; national-kedjor visar enkelt pris.
+   - [ ] **Per-butik-pris-modal.** Klick på intervallet -> modal med alla butikers priser + vilka butiker som
+     har vilket pris. Ny endpoint `GET /v1/products/{ean}/store-prices`.
 4. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
 5. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
 6. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
