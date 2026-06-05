@@ -36,8 +36,9 @@ frontend anropar `/v1/...` same-origin. Splitten till två repon är billig sena
 
 ```
 api/                 # Python-paketet (importeras som `api`)
-  main.py            # FastAPI-app, lifespan, middleware, de flesta routes, custom openapi() (taggar /docs per prefix), serverar web/ statiskt
-  routes/            # utbrutna route-grupper (krymper main.py, REVIEW Fynd 2): admin_vocab.py = vokabulär-admin (categories/manufacturers/tags/providers). Router utan prefix, fulla paths -> identiska URL:er; main.py include_router:ar
+  main.py            # FastAPI-app, lifespan, middleware, kvarvarande routes (auth/favoriter/konsol-drift/sync/sweep/crawl), custom openapi() (taggar /docs per prefix), serverar web/ statiskt
+  deps.py            # delade FastAPI-dependencies: require_consumer (gate konsument-data) + require_admin (re-export av auth.require_admin). Importeras härifrån av main + route-moduler, aldrig kopierade
+  routes/            # utbrutna route-grupper (krymper main.py, REVIEW Fynd 2). Routrar utan prefix, fulla paths -> identiska URL:er; main.py include_router:ar. admin_vocab.py = vokabulär-admin (categories/manufacturers/tags/providers, require_admin på router-nivå); stores.py = /v1/stores* (+ _query_stores); compare.py = /v1/compare* + /v1/favorites/offers (+ _compare_rows/_resolve_axfood_eans); products.py = /v1/products* + /v1/admin/products/{ean}/* + /v1/categories + /v1/chains (+ delade resolvers; OBS källordning: literaler före giriga /v1/products/{ean})
   config.py          # env (valfria nycklar), CHAIN_META, Lidl-bounds, ORIGIN_COUNTRIES (babel), OWN_APIS (konsol-katalog, returns deriveras ur schemas)
   schemas.py         # Pydantic-responsmodeller - sanningskälla för API-kontraktet (document-only) + konsolens fält-doc (fields_doc)
   database.py        # SQLite: stores/offers/ean_cache, init_db() (ALTER-guards), row<->dict, list_products() (produktsök/kategori)

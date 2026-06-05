@@ -9,7 +9,7 @@ värde/risk. **Åtgärderna beslutas efter att fynden lagts fram - inget är gen
 | Fil | Rader | Noteringar |
 |-----|------:|------------|
 | `api/database.py` | 1638 | 96 funktioner, 85 `get_conn()`-anrop, 6 `json_each` |
-| `api/main.py` | 1294 | 58 routes, 77 funktioner (app + alla routes + offers-helpers + sweep) |
+| `api/main.py` | 739 | app-setup + kvarvarande routes (auth/favoriter/konsol-drift/sync); konsument-routerna utbrutna till `api/routes/` (pass 1-3, 2026-06-05) |
 | `web/admin.html` | 1229 | en fil (konsol-UI + inline-script) |
 | `web/app.js` | 1145 | en fil (kart-app) |
 | `api/details.py` | 519 | gränsfall mot 400-500-regeln |
@@ -182,9 +182,20 @@ Steg 6 (som lägger på fler endpoints).
   (re-exporterar även `require_admin`). main.py importerar grinden därifrån; oanvänd `HTTPException`
   borttagen. Route-path-set oförändrat (90 routes), sviten grön, servern startar rent. Låser upp
   konsument-route-utbrytningen.
-- **Pass 3 (kvar):** bryt ut konsument-routerna (products/compare/stores/catalog). Kräver att de
-  delade resolver-helpersen (`_resolve_product_info`/`_resolve_product_image`, delas med admin-
-  spegelrouterna) + `STATE`/`get_conn`-beroenden hanteras - egen, mer hopflätad pass.
+- **Pass 3 ✅** (2026-06-05): konsument-routerna utbrutna i tre moduler - `stores.py` (/v1/stores* +
+  `_query_stores`/`_last_sync`), `compare.py` (/v1/compare* + /v1/favorites/offers + `_compare_rows`/
+  `_resolve_axfood_eans` + COMPARE-konstanter), `products.py` (/v1/products* + admin-speglarna +
+  /v1/categories|chains + `_resolve_product_info`/`_resolve_product_image`). Varje helper/konstant
+  användes bara inom sin grupp (grep-verifierat) -> ren partition, inga inter-modul-importer. De
+  delade resolvers + admin-speglar flyttade till products.py tillsammans. Plain APIRouter med per-
+  route gating verbatim (moduler med blandad consumer/admin-gating kan inte ha router-nivå-dep).
+  main.py 1293 -> 739 rader. **Path-param-shadowing hanterat:** källordning bevarad (literaler före
+  giriga /v1/products/{ean}), verifierat med explicit index-assertion utöver route-set-snapshot.
+  Sviten grön, servern startar rent, OpenAPI listar catalog + {ean} distinkt.
+- **Kvar i main.py** (medvetet): app-setup (lifespan/middleware/openapi), auth (/v1/auth*, /v1/console/
+  auth*), favorit-CRUD (/v1/favorites*), konsol-drift (overview/settings/calls/sources/api-keys/proxy),
+  sync/sweep/crawl/partial-triggers. Kan brytas ut vidare men har tätare app-state-koppling (STATE/
+  SWEEP_STATE/lifespan) - lägre värde/högre risk, gör vid behov.
 
 **B. (P1) Testtäckning kraftigt utökad.** `tests/test_reads.py` (catalog_browse/price_changes/
 price_history/diet/manufacturers/origins), `tests/test_compare.py` (✅ `build_comparisons`: min_chains/
@@ -213,8 +224,8 @@ som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända dat
 
 ### Rekommenderad ordning härnäst
 1. ✅ (B) `build_comparisons`- + auth-tester GJORT (`test_compare.py` + `test_auth.py`).
-2. (A) `main.py` -> `api/routes/` i små pass (sänker risk inför Steg 6). **Pågår:** pass 1 (vokabulär-
-   admin) ✅ + pass 2 (`require_consumer` -> `api/deps.py`) ✅. Pass 3: bryt ut konsument-routerna
-   (kräver att de delade resolver-helpersen + `STATE`/`get_conn` hanteras).
+2. ✅ (A) `main.py` -> `api/routes/` GJORT i fyra pass: pass 1 (vokabulär-admin), pass 2
+   (`require_consumer` -> `api/deps.py`), pass 3a/b/c (stores/compare/products). main.py 1446 -> 739
+   rader. Kvar i main = app-setup + auth/favoriter/konsol-drift/sync (tätare app-state-koppling).
 3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
 4. Resten (E/F/G) inom respektive feature / Steg 6.
