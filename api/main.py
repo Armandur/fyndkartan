@@ -718,9 +718,10 @@ async def trigger_store_price_crawl(chain: str = "ica", cap: int | None = None,
     `chain` (rotation, äldst först). `cap` = max butiker denna körning. Samtidigheten ADAPTIVT auto-tunad
     (AIMD; `concurrency` = valfri manuell sänkning av taket). `max_age_hours` (default 20) HOPPAR butiker
     crawlade nyligare än så -> 'lägg till + crawla' kör bara de nya; 0 = full om-crawl av alla valda.
-    `chain` = ica|coop. Skriver catalog_store_prices + per-butik-historik."""
-    if store_crawl.STORE_PRICE_STATE["running"]:
-        return {"status": "running", "detail": "En per-butik-crawl pågår redan."}
+    `chain` = ica|coop|both (both kör ICA+Coop PARALLELLT). Skriver catalog_store_prices + per-butik-historik."""
+    want = ["ica", "coop"] if chain == "both" else ([chain] if chain in ("ica", "coop") else [])
+    if want and all(store_crawl.STORE_PRICE_STATE["chains"].get(c, {}).get("running") for c in want):
+        return {"status": "running", "detail": "Pågår redan för den/de kedjorna."}
     asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap, concurrency=concurrency,
                                                        max_age_hours=max_age_hours))
     return {"status": "started", "chain": chain, "cap": cap, "max_age_hours": max_age_hours}

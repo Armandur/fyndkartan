@@ -1219,6 +1219,7 @@
             <span>${chip("coop")}</span>
             <button class="btn btn-sm btn-outline-dark spc-run" data-chain="coop" data-cap="5">Testa (5)</button>
             <button class="btn btn-sm btn-dark spc-run" data-chain="coop">Crawla valda Coop</button>
+            <button class="btn btn-sm btn-success spc-run" data-chain="both" title="ICA + Coop samtidigt (olika API:er)">Crawla båda (parallellt)</button>
           </div>
           <div id="spcProgress"></div>
         </div>
@@ -1434,6 +1435,9 @@
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       const ms = await (await api("/v1/admin/store-prices/measure/status")).json();
       const spc = await (await api("/v1/admin/store-prices/crawl/status")).json();
+      const _spcCh = spc.chains || {};
+      const spcRun = !!(_spcCh.ica && _spcCh.ica.running) || !!(_spcCh.coop && _spcCh.coop.running);
+      const spcStart = (_spcCh.ica && _spcCh.ica.started_at) || (_spcCh.coop && _spcCh.coop.started_at) || "";
       ensureCatalogSkeleton();
       // Feeden delas av crawl, EAN-resolvning OCH partial-uppgradering. Ny körning -> nollställ.
       const warm = d.ean_warm || {};
@@ -1441,7 +1445,7 @@
       const feedKey = d.running ? "c:" + d.started_at
         : warm.running ? "w:" + warm.started_at
         : pu.running ? "p:" + pu.started_at
-        : spc.running ? "s:" + spc.started_at : feedStartedAt;
+        : spcRun ? "s:" + spcStart : feedStartedAt;
       if (feedKey !== feedStartedAt) {
         feedStartedAt = feedKey;
         feedSeen = new Set(); feedQueue = [];
@@ -1451,8 +1455,8 @@
           inner.innerHTML = '<div class="feed-ph text-muted small">Starta en crawl, EAN-resolvning, partial-uppgradering eller per-butik-pris-crawl för att se det strömma in.</div>';
         }
       }
-      feedRunning = !!(d.running || warm.running || pu.running || spc.running);
-      enqueueFeed(d.running ? (d.recent || []) : warm.running ? (warm.recent || []) : pu.running ? (pu.recent || []) : spc.running ? (spc.recent || []) : []);
+      feedRunning = !!(d.running || warm.running || pu.running || spcRun);
+      enqueueFeed(d.running ? (d.recent || []) : warm.running ? (warm.recent || []) : pu.running ? (pu.recent || []) : spcRun ? (spc.recent || []) : []);
       const stats = d.stats || {};
       document.getElementById("catalogStatus").innerHTML = d.running
         ? '<span class="st-running">● crawlar…</span>'
@@ -1511,7 +1515,7 @@
         </div>`;
       }).join("");
       clearTimeout(catalogTimer);
-      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running || spc.running) && active === "catalog")
+      if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running || spcRun) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
     }
 
@@ -1617,24 +1621,34 @@
       } else { prog.innerHTML = ""; }
     }
 
-    function renderStorePriceCrawl(s, stats, otherRunning) {
+    function renderStorePriceCrawl(spc, stats, otherRunning) {
       const prog = document.getElementById("spcProgress"), status = document.getElementById("spcStatus");
       const statsEl = document.getElementById("spcStats");
       if (!prog) return;
-      const running = !!s.running;
-      document.querySelectorAll(".spc-run").forEach(b => { b.disabled = running || otherRunning; });
-      if (status) status.innerHTML = running ? `<span class="st-running">● crawlar ${esc(s.chain || "")}…</span>` : "";
+      const ch = spc.chains || {};
+      const isRun = (c) => !!(ch[c] && ch[c].running);
+      // Per-knapp-disable: bara kedjans egen körning (ICA+Coop kör parallellt) eller annat jobb.
+      document.querySelectorAll(".spc-run").forEach(b => {
+        const c = b.dataset.chain;
+        const busy = c === "both" ? (isRun("ica") && isRun("coop")) : isRun(c);
+        b.disabled = busy || otherRunning;
+      });
+      if (status) status.innerHTML = (isRun("ica") || isRun("coop")) ? '<span class="st-running">● crawlar…</span>' : "";
       const st = stats || {};
       if (statsEl) statsEl.innerHTML = ["ica", "coop"].map(c =>
         `${chip(c)} <strong>${((st[c] || {}).enabled || 0).toLocaleString("sv-SE")}</strong> valda`).join(" &nbsp;&middot;&nbsp; ");
-      if (running) {
-        const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-        const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
-        prog.innerHTML = `<div class="progress" style="height:6px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
-          <div class="small text-muted mt-1">${chip(s.chain)} ${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv samtidighet (AIMD)">mål ${s.target}, ${s.active} aktiva</span>${cd}${s.current ? ` &middot; ${esc(s.current)}` : ""}</div>`;
-      } else if (s.finished_at) {
-        prog.innerHTML = `<div class="small text-muted">Senast klar ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}</div>`;
-      } else { prog.innerHTML = ""; }
+      prog.innerHTML = ["ica", "coop"].map(c => {
+        const s = ch[c];
+        if (!s || (!s.running && !s.finished_at)) return "";
+        if (s.running) {
+          const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+          const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
+          return `<div class="small text-muted mt-1 d-flex align-items-center gap-2 flex-wrap">${chip(c)}
+            <div class="progress" style="height:6px;width:120px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
+            <span>${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}</span></div>`;
+        }
+        return `<div class="small text-muted mt-1">${chip(c)} senast ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}</div>`;
+      }).join("");
     }
 
     async function triggerStorePriceCrawl(chain, cap) {

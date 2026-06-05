@@ -26,13 +26,15 @@ _RAMP_AFTER = 4      # additiv ökning (+1 mål) efter så här många butiker i
 _WAF_COOLDOWN = 30   # sek paus efter WAF innan nya butiker startas
 _BREAKER = 8         # totalt antal WAF/fel i rad -> avbryt hela körningen
 
-STORE_PRICE_STATE = {
-    "running": False, "chain": None, "done": 0, "total": 0, "stores_ok": 0,
-    "rows": 0, "changed": 0, "errors": 0, "last_error": None, "current": None,
-    "target": 0, "active": 0, "cooldown": False,  # adaptiv samtidighet (synlig i konsolen)
-    "recent": [],  # kategori-flöde för konsolens visualisering (nyast först, capad)
-    "started_at": None, "finished_at": None,
-}
+def _blank_chain():
+    return {"running": False, "done": 0, "total": 0, "stores_ok": 0, "rows": 0, "changed": 0,
+            "errors": 0, "last_error": None, "current": None, "target": 0, "active": 0,
+            "cooldown": False, "started_at": None, "finished_at": None}
+
+
+# Per-kedja sub-state så ICA + Coop kan köra PARALLELLT (olika API:er -> ingen kontention). Delad
+# `recent`-feed (båda kedjornas kategori-poster interfolierade -> visar parallelliteten i konsolen).
+STORE_PRICE_STATE = {"recent": [], "chains": {"ica": _blank_chain(), "coop": _blank_chain()}}
 _FEED_CAP = 60
 
 
@@ -55,7 +57,7 @@ def _emit(chain, sname, cat_label, cat_total):
     STORE_PRICE_STATE["recent"] = ([item] + STORE_PRICE_STATE["recent"])[:_FEED_CAP]
 
 
-async def _crawl_one_ica(client, token, acct):
+async def _crawl_one_ica(client, token, acct, cs):
     """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter."""
     sname = database.store_name("ica", acct)
     total_rows, prev = 0, None  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
@@ -66,16 +68,16 @@ async def _crawl_one_ica(client, token, acct):
         if rows:
             _new, changed = database.upsert_store_prices("ica", acct, rows)
             total_rows += len(rows)
-            STORE_PRICE_STATE["rows"] += len(rows)
-            STORE_PRICE_STATE["changed"] += changed
-        STORE_PRICE_STATE["current"] = f"ICA {sname}: {total_rows}/{total}"
+            cs["rows"] += len(rows)
+            cs["changed"] += changed
+        cs["current"] = f"ICA {sname}: {total_rows}/{total}"
     if prev:
         _emit("ica", sname, prev[0], prev[1])
     database.mark_store_crawled("ica", acct, total_rows)
     return total_rows
 
 
-async def _crawl_one_coop(client, ledger):
+async def _crawl_one_coop(client, ledger, cs):
     """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal."""
     sname = database.store_name("coop", ledger)
     total_rows, prev = 0, None
@@ -86,81 +88,84 @@ async def _crawl_one_coop(client, ledger):
         if rows:
             _new, changed = database.upsert_store_prices("coop", ledger, rows)
             total_rows += len(rows)
-            STORE_PRICE_STATE["rows"] += len(rows)
-            STORE_PRICE_STATE["changed"] += changed
-        STORE_PRICE_STATE["current"] = f"Coop {sname}: {total_rows}"
+            cs["rows"] += len(rows)
+            cs["changed"] += changed
+        cs["current"] = f"Coop {sname}: {total_rows}"
     if prev:
         _emit("coop", sname, prev[0], prev[1])
     database.mark_store_crawled("coop", ledger, total_rows)
     return total_rows
 
 
-async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):
-    """Crawla per-butik-priser för enabled+frågbara butiker i `chain` (rotation, äldst crawlad först, cap).
-    Butiker körs parallellt med ADAPTIV samtidighet (AIMD): börjar lågt, +1 mål efter `_RAMP_AFTER` butiker
-    utan WAF, halverar målet + `_WAF_COOLDOWN`s paus vid WAF (429/403/503). Taket är en HÅRD säkerhetsgräns
-    (`_MAX_CONC`), inte en tuning-knapp - WAF-backoffen hittar den faktiska gränsen under den. `concurrency`
-    = valfri manuell SÄNKNING av taket (försiktighet). Inom en butik är pagineringen sekventiell. Global
-    circuit-breaker (`_BREAKER` WAF i rad -> avbryt). STEG 1: bara ICA. Bakgrund."""
-    if STORE_PRICE_STATE["running"]:
-        return {"status": "running"}
-    if chain not in ("ica", "coop"):
-        return {"status": "error", "detail": "Stödjer ica|coop."}
+async def _run_chain(client, chain, cap, concurrency, max_age_hours):
+    """Kör per-butik-crawlen för EN kedja med adaptiv samtidighet (AIMD), på dess egna sub-state. Delas
+    av den parallella wrappern - flera kedjor kör samtidigt med var sin AIMD-styrning mot sitt eget API."""
+    cs = STORE_PRICE_STATE["chains"][chain]
     queue = [a for _, a in database.stores_to_crawl(chain=chain, cap=cap, max_age_hours=max_age_hours)]
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
-    STORE_PRICE_STATE.update(running=True, chain=chain, done=0, total=len(queue), stores_ok=0,
-                             rows=0, changed=0, errors=0, last_error=None, current=None,
-                             target=min(2, ceiling), active=0, cooldown=False, recent=[],
-                             started_at=_now(), finished_at=None)
-    ctl = {"target": min(2, ceiling), "active": 0, "ok_streak": 0, "waf_streak": 0,
-           "cooldown_until": 0.0, "abort": False}
+    cs.update(running=True, done=0, total=len(queue), stores_ok=0, rows=0, changed=0, errors=0,
+              last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
+              started_at=_now(), finished_at=None)
+    ctl = {"ok_streak": 0, "waf_streak": 0, "cooldown_until": 0.0, "abort": False}
 
-    async def _run_one(client, acct):
-        ctl["active"] += 1
-        STORE_PRICE_STATE["active"] = ctl["active"]
+    async def _run_one(acct):
+        cs["active"] += 1
         try:
             if chain == "ica":
                 token = await ica_token.get_token(client)  # cachad + auto-förnyad
-                await _crawl_one_ica(client, token, acct)
+                await _crawl_one_ica(client, token, acct, cs)
             else:  # coop - nyckeln resolvas i _coop_post (cachad, re-key vid 401/403)
-                await _crawl_one_coop(client, acct)
-            STORE_PRICE_STATE["stores_ok"] += 1
+                await _crawl_one_coop(client, acct, cs)
+            cs["stores_ok"] += 1
             ctl["waf_streak"] = 0
             ctl["ok_streak"] += 1
-            if ctl["ok_streak"] >= _RAMP_AFTER and ctl["target"] < ceiling:  # additiv ökning
-                ctl["target"] += 1
+            if ctl["ok_streak"] >= _RAMP_AFTER and cs["target"] < ceiling:  # additiv ökning
+                cs["target"] += 1
                 ctl["ok_streak"] = 0
         except Exception as e:  # noqa: BLE001
-            STORE_PRICE_STATE["errors"] += 1
-            STORE_PRICE_STATE["last_error"] = str(e)[:200]
+            cs["errors"] += 1
+            cs["last_error"] = str(e)[:200]
             ctl["ok_streak"] = 0
             if _is_waf(e):
                 ctl["waf_streak"] += 1
-                ctl["target"] = max(_MIN_CONC, ctl["target"] // 2)  # multiplikativ minskning
+                cs["target"] = max(_MIN_CONC, cs["target"] // 2)  # multiplikativ minskning
                 ctl["cooldown_until"] = time.monotonic() + _WAF_COOLDOWN
                 if ctl["waf_streak"] >= _BREAKER:
                     ctl["abort"] = True
-                    log.warning("store_crawl: circuit-breaker (%d WAF i rad) - avbryter", _BREAKER)
+                    log.warning("store_crawl: %s circuit-breaker (%d WAF i rad) - avbryter", chain, _BREAKER)
         finally:
-            ctl["active"] -= 1
-            STORE_PRICE_STATE.update(done=STORE_PRICE_STATE["done"] + 1, active=ctl["active"],
-                                     target=ctl["target"])
+            cs["active"] -= 1
+            cs["done"] += 1
 
     try:
-        async with apilog.make_client(follow_redirects=True) as client:
-            tasks = set()
-            while (queue or tasks) and not ctl["abort"]:
-                now = time.monotonic()
-                cooling = now < ctl["cooldown_until"]
-                STORE_PRICE_STATE["cooldown"] = cooling
-                while queue and ctl["active"] < ctl["target"] and not cooling and not ctl["abort"]:
-                    tasks.add(asyncio.create_task(_run_one(client, queue.pop(0))))
-                if not tasks:
-                    await asyncio.sleep(0.5)  # i cooldown utan aktiva -> vänta ut den
-                    continue
-                _done, tasks = await asyncio.wait(tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)  # låt pågående bli klara
+        tasks = set()
+        while (queue or tasks) and not ctl["abort"]:
+            cooling = time.monotonic() < ctl["cooldown_until"]
+            cs["cooldown"] = cooling
+            while queue and cs["active"] < cs["target"] and not cooling and not ctl["abort"]:
+                tasks.add(asyncio.create_task(_run_one(queue.pop(0))))
+            if not tasks:
+                await asyncio.sleep(0.5)  # i cooldown utan aktiva -> vänta ut den
+                continue
+            _done, tasks = await asyncio.wait(tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
     finally:
-        STORE_PRICE_STATE.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False)
-    return {"status": "done", "stores_ok": STORE_PRICE_STATE["stores_ok"], "rows": STORE_PRICE_STATE["rows"]}
+        cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False)
+
+
+async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):
+    """Crawla per-butik-priser för enabled+frågbara butiker. `chain` = ica | coop | both (kör ICA och Coop
+    PARALLELLT - olika API:er, var sin adaptiva AIMD-styrning). Rotation äldst-först, `cap` per kedja,
+    `max_age_hours` hoppar nyligen crawlade. Adaptiv samtidighet (tak = säkerhets-guardrail; `concurrency`
+    = valfri manuell sänkning). Inom en butik sekventiell paginering. Bakgrund. Delad kategori-feed."""
+    chains = ["ica", "coop"] if chain == "both" else ([chain] if chain in ("ica", "coop") else None)
+    if chains is None:
+        return {"status": "error", "detail": "Stödjer ica|coop|both."}
+    to_run = [c for c in chains if not STORE_PRICE_STATE["chains"][c]["running"]]
+    if not to_run:
+        return {"status": "running"}
+    async with apilog.make_client(follow_redirects=True) as client:
+        await asyncio.gather(*(_run_chain(client, c, cap, concurrency, max_age_hours) for c in to_run))
+    return {"status": "done", "chains": {c: {"stores_ok": STORE_PRICE_STATE["chains"][c]["stores_ok"],
+                                             "rows": STORE_PRICE_STATE["chains"][c]["rows"]} for c in to_run}}
