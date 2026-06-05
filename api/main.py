@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, store_measure, tags
+from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, store_crawl, store_measure, tags
 from .routes import admin_vocab, compare as compare_routes, products as products_routes, stores as stores_routes
 from .database import (
     get_conn,
@@ -708,6 +708,22 @@ async def store_prices_list(chain: str | None = None, q: str | None = None,
     rows, total = database.list_store_crawl(chain=chain, q=q, queryable=queryable, enabled=enabled,
                                             limit=max(1, min(limit, 2000)), offset=max(0, offset))
     return {"stores": rows, "total": total, "stats": database.store_crawl_stats()}
+
+
+@app.post("/v1/admin/store-prices/crawl")
+async def trigger_store_price_crawl(chain: str = "ica", cap: int | None = None, _=Depends(require_admin)):
+    """Starta per-butik-pris-crawlen (Steg 6 Fas 3) i bakgrunden för de enabled+frågbara butikerna i
+    `chain` (rotation, äldst först). `cap` = max butiker denna körning. Skriver catalog_store_prices +
+    per-butik-historik. Steg 1: bara ICA."""
+    if store_crawl.STORE_PRICE_STATE["running"]:
+        return {"status": "running", "detail": "En per-butik-crawl pågår redan."}
+    asyncio.create_task(store_crawl.crawl_store_prices(chain=chain, cap=cap))
+    return {"status": "started", "chain": chain, "cap": cap}
+
+
+@app.get("/v1/admin/store-prices/crawl/status")
+async def store_price_crawl_status(_=Depends(require_admin)):
+    return store_crawl.STORE_PRICE_STATE
 
 
 @app.post("/v1/admin/store-prices/stores/enable")

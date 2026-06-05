@@ -200,6 +200,39 @@ def _ica_row(doc, acct):
             "category_raw": doc.get("mainCategoryName"), "store": acct}
 
 
+async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None):
+    """Async generator: paginerar en ICA-butiks katalog ('*' + offset) och yield:ar (rows, total, page)
+    per sida. rows = _ica_row-normaliserade, deduplicerade på gtin. DELAD walk - master-crawlen
+    (_crawl_ica -> catalog_products) och per-butik-crawlern (-> catalog_store_prices) ger samma walk
+    olika write-target. Höjer undantag vid HTTP-fel (konsumenten hanterar)."""
+    seen, offset, page, size = set(), 0, 0, config.CATALOG_CRAWL_PAGE
+    pace = config.CATALOG_CRAWL_PACE if pace is None else pace
+    while True:
+        r = await client.post(_ICA_URL, json={
+            "queryString": "*", "take": size, "offset": offset, "accountNumber": acct,
+            "searchDomain": "All", "sessionId": "catalog-crawl"},
+            headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json"}, timeout=30)
+        r.raise_for_status()
+        prods = r.json().get("products") or {}
+        docs = prods.get("documents") or []
+        total = (prods.get("stats") or {}).get("totalHits") or 0
+        if not docs:
+            break
+        rows = []
+        for d in docs:
+            pid = str(d.get("gtin") or "")
+            if pid and pid not in seen:
+                seen.add(pid)
+                rows.append(_ica_row(d, acct))
+        yield rows, total, page
+        offset += len(docs)
+        page += 1
+        await asyncio.sleep(pace)
+        if offset >= total or (limit_pages and page >= limit_pages):
+            break
+
+
 async def _crawl_ica(client, limit_pages):
     """ICA har inget kategoriträd som behövs - wildcard '*' + offset paginerar hela katalogen
     (~20k produkter). `limit_pages` (=limit_categories) cappar antal sidor för snabbtest."""
@@ -213,46 +246,22 @@ async def _crawl_ica(client, limit_pages):
     acct = (database.ica_resolve_accounts() or [None])[0]
     if not acct:
         st["status"] = "ok_med_fel"; st["last_errors"].append("ingen ICA-butiksprofil"); return
-    seen, offset, page, size = set(), 0, 0, config.CATALOG_CRAWL_PAGE
-    while True:
-        try:
-            r = await client.post(_ICA_URL, json={
-                "queryString": "*", "take": size, "offset": offset, "accountNumber": acct,
-                "searchDomain": "All", "sessionId": "catalog-crawl"},
-                headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
-                         "Content-Type": "application/json"}, timeout=30)
-            r.raise_for_status()
-            prods = r.json().get("products") or {}
-        except Exception as e:  # noqa: BLE001
-            st["errors"] += 1
-            if len(st["last_errors"]) < 8:
-                st["last_errors"].append(f"offset {offset}: {e}")
-            break
-        docs = prods.get("documents") or []
-        total = (prods.get("stats") or {}).get("totalHits") or 0
-        st["total"] = total
-        pages_full = max(1, -(-total // size))  # antal sidor för hela katalogen
-        st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
-        if not docs:
-            break
-        rows = []
-        for d in docs:
-            pid = str(d.get("gtin") or "")
-            if pid and pid not in seen:
-                seen.add(pid)
-                rows.append(_ica_row(d, acct))
-        if rows:
-            new, known, changed = database.catalog_upsert("ica", rows)
-            st["new"] += new; st["known"] += known; st["changed"] += changed
-            st["products"] += len(rows)
-            _feed("ica", rows)
-        offset += len(docs)
-        page += 1
-        st["categories_done"] = page
-        st["current_category"] = f"{st['products']} / {total} produkter"
-        await asyncio.sleep(config.CATALOG_CRAWL_PACE)
-        if offset >= total or (limit_pages and page >= limit_pages):
-            break
+    try:
+        async for rows, total, page in _ica_fetch_store(client, acct, token, limit_pages):
+            st["total"] = total
+            pages_full = max(1, -(-total // config.CATALOG_CRAWL_PAGE))  # antal sidor för hela katalogen
+            st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
+            if rows:
+                new, known, changed = database.catalog_upsert("ica", rows)
+                st["new"] += new; st["known"] += known; st["changed"] += changed
+                st["products"] += len(rows)
+                _feed("ica", rows)
+            st["categories_done"] = page + 1
+            st["current_category"] = f"{st['products']} / {total} produkter"
+    except Exception as e:  # noqa: BLE001
+        st["errors"] += 1
+        if len(st["last_errors"]) < 8:
+            st["last_errors"].append(str(e))
     st["current_category"] = None
     if not limit_pages:
         database.catalog_mark_unseen("ica", started)

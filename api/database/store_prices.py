@@ -128,6 +128,90 @@ def set_all_queryable_enabled(enabled, chain=None):
     return n
 
 
+def _pdiff(a, b):
+    """True om två priser skiljer sig (tål float-brus + None)."""
+    if a is None or b is None:
+        return a is not b
+    return abs(a - b) >= 0.005
+
+
+def stores_to_crawl(chain=None, cap=None):
+    """(chain, store)-par som ska per-butik-pris-crawlas: enabled=1 OCH queryable=1. Äldst crawlad först
+    (rättvis rotation; aldrig-crawlad = först). `chain` scopar, `cap` begränsar antal per körning."""
+    conn = get_conn()
+    sql = "SELECT chain, store FROM store_crawl WHERE enabled=1 AND queryable=1"
+    args = []
+    if chain:
+        sql += " AND chain=?"
+        args.append(chain)
+    sql += " ORDER BY (last_crawled IS NOT NULL), last_crawled"
+    if cap:
+        sql += f" LIMIT {int(cap)}"
+    rows = conn.execute(sql, args).fetchall()
+    conn.close()
+    return [(r["chain"], r["store"]) for r in rows]
+
+
+def mark_store_crawled(chain, store, product_count):
+    """Stämpla last_crawled=nu + product_count efter en per-butik-crawl."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conn = get_conn()
+    conn.execute("UPDATE store_crawl SET last_crawled=?, product_count=? WHERE chain=? AND store=?",
+                 (now, product_count, chain, str(store)))
+    conn.commit()
+    conn.close()
+
+
+def upsert_store_prices(chain, store, rows):
+    """Upserta per-butik-priser (`catalog_store_prices`, PK chain/product_id/store) + append-on-change-
+    historik (`catalog_price_observations` med `store`) NÄR pris/jämförvärde ändrats sedan förra crawlen.
+    `rows` = normaliserade katalog-rader (product_id/ean/price/comparison_value/comparison_unit). Batchat
+    (en SELECT + två executemany). Returnerar (nya, ändrade)."""
+    rows = [r for r in rows if r.get("product_id")]
+    if not rows:
+        return 0, 0
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    store = str(store)
+    conn = get_conn()
+    try:
+        ids = [str(r["product_id"]) for r in rows]
+        ph = ",".join("?" * len(ids))
+        existing = {r["product_id"]: (r["price"], r["comparison_value"]) for r in conn.execute(
+            f"SELECT product_id, price, comparison_value FROM catalog_store_prices "
+            f"WHERE chain=? AND store=? AND product_id IN ({ph})", (chain, store, *ids))}
+        new = changed = 0
+        obs = []  # (chain, product_id, store, ean, price, cv, cu, observed_at) vid nytt/ändrat pris
+        for r in rows:
+            pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
+            if pid not in existing:
+                new += 1
+                if price is not None:
+                    obs.append((chain, pid, store, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+            else:
+                op, ocv = existing[pid]
+                if price is not None and (_pdiff(op, price) or _pdiff(ocv, cv)):
+                    changed += 1
+                    obs.append((chain, pid, store, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+        conn.executemany(
+            "INSERT INTO catalog_store_prices (chain, product_id, store, ean, price, comparison_value, "
+            "comparison_unit, available, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,1,?,?) "
+            "ON CONFLICT(chain, product_id, store) DO UPDATE SET ean=excluded.ean, price=excluded.price, "
+            "comparison_value=excluded.comparison_value, comparison_unit=excluded.comparison_unit, "
+            "available=1, last_seen=excluded.last_seen",
+            [(chain, str(r["product_id"]), store, r.get("ean"), r.get("price"), r.get("comparison_value"),
+              r.get("comparison_unit"), now, now) for r in rows])
+        if obs:
+            conn.executemany(
+                "INSERT INTO catalog_price_observations (chain, product_id, store, ean, price, "
+                "comparison_value, comparison_unit, observed_at) VALUES (?,?,?,?,?,?,?,?)", obs)
+        conn.commit()
+    finally:
+        conn.close()
+    return new, changed
+
+
 def store_crawl_stats():
     """Översikt för admin/konsol: antal butiker (ledgers/accounts) i store_crawl per kedja, samt hur många
     som är frågbara (queryable=1), omätta (NULL), ej frågbara (0) och valda (enabled=1)."""
