@@ -18,6 +18,14 @@ _ANIMAL = re.compile(
 _PLANT_OK = ("kokosmjölk", "havremjölk", "sojamjölk", "mandelmjölk", "risdryck", "havredryck",
              "sojadryck", "äggplanta", "jordnötssmör", "mandelsmör", "kakaosmör", "sheasmör",
              "jordnötter", "frukost")
+# Fisk/skaldjur/rom som ofta står som SUFFIX i sammansättningar (skarpsill, regnbågslax, löjrom) -
+# där _MEAT:s \b-ordstart missar dem. Delsträngs-matchning (starka fisk-signaler, försumbar falsk-
+# positiv-risk i livsmedel). Generell fiskrom via "-rom" i ordslut, men `(?<![ak])` undantar
+# "arom"/"aromer" och "krom" (krommineral) - vanliga icke-fisk-ord på "-rom". Mellanslags-separerad fisk ("rökt lax") fångas redan
+# av _MEAT:s \blax/\bsill, så här krävs bara de sammansatta (ordslut/saknad ordstart) formerna.
+_FISH_EXTRA = re.compile(
+    r"skarpsill|matjessill|strömming|böckling|surströmming|gravlax|regnbågslax|kaviar|caviar|"
+    r"surimi|sardell|(?<![ak])rom\b", re.I)
 
 
 def classify_diet(ingredients):
@@ -28,7 +36,7 @@ def classify_diet(ingredients):
     s = ingredients.lower()
     for ok in _PLANT_OK:
         s = s.replace(ok, " ")
-    if _MEAT.search(s):
+    if _MEAT.search(s) or _FISH_EXTRA.search(s):
         return "none"
     if _ANIMAL.search(s):
         return "vegetarian"
