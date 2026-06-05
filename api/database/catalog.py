@@ -465,7 +465,8 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
                                "price_stores": None, "comparison_value": m["comparison_value"],
                                "comparison_unit": m["comparison_unit"], "comparison_derived": False,
                                "store": m.get("store")})  # representativt/nationellt
-        pv = [p["price"] for p in prices]
+        pv = [p["price"] for p in prices]  # per-kedje-MIN (intervallets nedre / nationellt pris)
+        pvmax = [p["price_max"] if p.get("price_max") is not None else p["price"] for p in prices]
         out.append({
             "ean": rep["ean"], "name": rep["name"], "brand": brand,
             "manufacturer": manufacturers.canonical(brand),  # normaliserad tillverkare (kanonisk)
@@ -474,7 +475,7 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
             "package_size": _cat_pick(g, "package_size"), "package_value": rep["package_value"],
             "package_unit": rep["package_unit"], "chains": sorted({m["chain"] for m in g}),
             "prices": sorted(prices, key=lambda p: p["price"]),
-            "price_min": min(pv) if pv else None, "price_max": max(pv) if pv else None,
+            "price_min": min(pv) if pv else None, "price_max": max(pvmax) if pvmax else None,
             "_ax": [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")],
         })
     if fav_stores:  # bara produkter med erbjudande hos användarens favoritbutiker (per-butik-exakt)

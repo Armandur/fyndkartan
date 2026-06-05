@@ -427,6 +427,43 @@ async function openProductModal(ean, chain, name) {
   }
 }
 
+// Per-butik-pris-modal (Steg 6): klick på ICA/Coop-intervallet -> alla butikers hyllpris.
+async function openStorePricesModal(ean, chain, name) {
+  const modal = document.getElementById("productModal");
+  document.getElementById("productModalTitle").textContent = `${name || "Produkt"} – priser per butik`;
+  const body = document.getElementById("productModalBody");
+  body.innerHTML = '<div class="text-muted small">Laddar butikspriser&hellip;</div>';
+  modal.classList.remove("d-none");
+  try {
+    const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/store-prices`)).json();
+    body.innerHTML = renderStorePrices(d, chain);
+  } catch (e) {
+    body.innerHTML = '<div class="text-danger small">Kunde inte hämta butikspriser.</div>';
+  }
+}
+
+function renderStorePrices(d, chain) {
+  let prices = d.prices || [];
+  if (chain) prices = prices.filter((p) => p.chain === chain);
+  if (!prices.length) return '<div class="text-muted small p-2">Inga per-butik-priser har crawlats ännu.</div>';
+  const rows = prices.map((p) => {
+    const m = state.chains[p.chain] || {};
+    const cmp = p.comparison_value != null ? `${kr(p.comparison_value)} kr/${esc(p.comparison_unit || "")}` : "";
+    return `<tr>
+      <td><span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || p.chain)}</span></td>
+      <td class="text-truncate" style="max-width:200px" title="${esc(p.name || p.store)}">${esc(p.name || p.store)}</td>
+      <td class="small text-muted">${esc(p.city || "")}</td>
+      <td class="text-end fw-semibold">${kr(p.price)} kr</td>
+      <td class="text-end small text-muted">${cmp}</td>
+    </tr>`;
+  }).join("");
+  const min = prices[0].price, max = prices[prices.length - 1].price;
+  return `<div class="small text-muted mb-2">${fmtNum(prices.length)} butiker &middot; ${kr(min)}–${kr(max)} kr (billigast först). Butiksspecifikt hyllpris - varierar mellan butiker.</div>
+    <div style="max-height:60vh;overflow-y:auto"><table class="table table-sm small align-middle mb-0">
+    <thead><tr class="text-muted"><th>Kedja</th><th>Butik</th><th>Ort</th><th class="text-end">Pris</th><th class="text-end">Jämförpris</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
 // Visar det AKTUELLA erbjudandet per kedja (offerns egna namn/pristext/förpackning) - avslöjar när rean
 // hör till en annan förpackning/multiköp som delar EAN med hyllvaran (rea högre än hyllpris-fallet).
 async function loadOfferDetail(ean, chain, name) {
@@ -1014,9 +1051,14 @@ function catalogCard(p) {
   const prices = (p.prices || []).map((pr) => {
     const m = state.chains[pr.chain] || {};
     const hasOffer = pr.offer_price != null;
-    // Coop/ICA-hyllpris är butiksspecifikt (varierar per butik) -> markera så det inte läses som nationellt.
-    const storeMark = pr.store ? `<span class="o-sc-store" title="Butiksspecifikt hyllpris - Coop/ICA varierar mellan butiker, detta är butik ${esc(pr.store)} (ej nationellt)">*</span>` : "";
-    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${kr(pr.price)} kr</s>${storeMark}` : `${kr(pr.price)} kr${storeMark}`) : "-";
+    // Steg 6: ICA/Coop-hyllpris varierar per butik -> visa INTERVALL (klickbart -> per-butik-pris-modal).
+    // Annars (nationellt, eller representativt fallback tills crawlat) enkelt pris; `*` markerar fallbacken.
+    const isRange = pr.price_min != null && pr.price_max != null && pr.price_max !== pr.price_min;
+    const storeMark = pr.store ? `<span class="o-sc-store" title="Representativt hyllpris (per-butik-data ej crawlad än) - Coop/ICA varierar mellan butiker">*</span>` : "";
+    const shelfBase = isRange
+      ? `<a class="o-sc-range" data-ean="${esc(p.ean || "")}" data-chain="${esc(pr.chain)}" data-name="${esc(p.name || "")}" title="${pr.price_stores} butiker - klicka för alla priser">${kr(pr.price_min)}–${kr(pr.price_max)} kr</a>`
+      : (pr.price != null ? `${kr(pr.price)} kr${storeMark}` : "-");
+    const shelf = pr.price != null ? (hasOffer ? `<s class="text-muted">${shelfBase}</s>` : shelfBase) : "-";
     // Rea-cellen klickbar -> aktuellt erbjudande. Flerköp visar det beräknade STYCKPRISET
     // (jämförbart med det strukna hyllpriset) + liten deal-text; vanlig rea visar "rea X kr".
     const qty = pr.offer_multibuy || 1;
@@ -1156,6 +1198,8 @@ document.getElementById("productsBack").addEventListener("click", () => {
   document.getElementById("productsPanel").classList.add("d-none");
 });
 document.getElementById("productsList").addEventListener("click", (e) => {
+  const range = e.target.closest(".o-sc-range");
+  if (range && range.dataset.ean) { e.preventDefault(); openStorePricesModal(range.dataset.ean, range.dataset.chain, range.dataset.name); return; }
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
   const mapBtn = e.target.closest(".o-map");
@@ -1465,6 +1509,12 @@ document.getElementById("browseCats").addEventListener("click", (e) => {
   browseGo(cat ? "sortiment/k/" + encodeURIComponent(cat) : "sortiment");
 });
 document.getElementById("browseGrid").addEventListener("click", (e) => {
+  const range = e.target.closest(".o-sc-range");  // klick på ICA/Coop-prisintervall -> per-butik-priser
+  if (range && range.dataset.ean) {
+    e.preventDefault();
+    openStorePricesModal(range.dataset.ean, range.dataset.chain, range.dataset.name);
+    return;
+  }
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
   const offer = e.target.closest(".o-offer-link");  // klick på en kedjas rea -> visa det AKTUELLA erbjudandet

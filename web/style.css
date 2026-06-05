@@ -292,6 +292,8 @@ img.o-img { cursor: zoom-in; }
 .o-offer-link:hover { text-decoration: underline; }
 .o-sc-deal { font-weight: 400; color: #8b95a4; font-size: .92em; }  /* liten deal-text efter styckpris */
 .o-sc-store { color: #b8860b; font-weight: 700; cursor: help; margin-left: 1px; }  /* butiksspecifikt hyllpris (Coop/ICA) */
+.o-sc-range { color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; white-space: nowrap; }  /* per-butik-prisintervall (Steg 6) -> modal */
+.o-sc-range:hover { text-decoration: underline; }
 /* "Aktuellt erbjudande"-sektionen i produktmodalen */
 .od-head { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #8b95a4; margin-bottom: .25rem; }
 .od-row { padding: .3rem .4rem; border-radius: 6px; margin-bottom: 3px; background: #f7f9fb; font-size: .82rem; }
