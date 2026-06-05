@@ -174,6 +174,11 @@ def init_db():
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_store_crawl_enabled ON store_crawl(enabled, priority)")
+    # Denormaliserat representativt butiksnamn/ort + antal fysiska butiker per ledger/account (fylls vid
+    # seeding ur stores) -> admin-urvalstabellen slipper en dyr json_extract-join mot stores.
+    _ensure_column(conn, "store_crawl", "name", "TEXT")
+    _ensure_column(conn, "store_crawl", "city", "TEXT")
+    _ensure_column(conn, "store_crawl", "store_count", "INTEGER")
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}

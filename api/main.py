@@ -697,6 +697,32 @@ async def store_measure_status(_=Depends(require_admin)):
     return {**store_measure.MEASURE_STATE, "stats": database.store_crawl_stats()}
 
 
+@app.get("/v1/admin/store-prices/stores")
+async def store_prices_list(chain: str | None = None, q: str | None = None,
+                            queryable: int | None = None, enabled: int | None = None,
+                            limit: int = 200, offset: int = 0, _=Depends(require_admin)):
+    """Urvalstabellen (Steg 6 Fas 2): store_crawl-rader (kedja/namn/ort/frågbar/vald/produktantal),
+    filtrerbar på chain/queryable/enabled/namn-sök. Seedar store_crawl om tomt (fresh deploy)."""
+    if not database.store_crawl_stats():
+        database.seed_store_crawl()
+    rows, total = database.list_store_crawl(chain=chain, q=q, queryable=queryable, enabled=enabled,
+                                            limit=max(1, min(limit, 2000)), offset=max(0, offset))
+    return {"stores": rows, "total": total, "stats": database.store_crawl_stats()}
+
+
+@app.post("/v1/admin/store-prices/stores/enable")
+async def store_prices_enable(payload: dict = Body(...), _=Depends(require_admin)):
+    """Sätt `enabled` (urval för crawl). Antingen `all_queryable=true` (bulk på alla frågbara, ev.
+    `chain`-scopat) eller en lista `stores` av "chain:store"-nycklar. `enabled` (bool) styr på/av."""
+    enabled = bool(payload.get("enabled"))
+    if payload.get("all_queryable"):
+        n = database.set_all_queryable_enabled(enabled, chain=payload.get("chain"))
+    else:
+        items = [tuple(s.split(":", 1)) for s in (payload.get("stores") or []) if ":" in s]
+        n = database.set_stores_enabled(items, enabled)
+    return {"changed": n, "enabled": enabled, "stats": database.store_crawl_stats()}
+
+
 @app.post("/v1/admin/catalog/crawl")
 async def trigger_catalog_crawl(limit_categories: int | None = None, chains: str | None = None,
                                 _=Depends(require_admin)):

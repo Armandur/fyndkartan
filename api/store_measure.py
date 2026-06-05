@@ -118,6 +118,7 @@ async def measure_queryability(chain=None, recheck=False, cap=None):
     if MEASURE_STATE["running"]:
         return {"status": "running"}
     MEASURE_STATE["running"] = True
+    database.seed_store_crawl()  # synka store_crawl med aktuella stores (idempotent) före mätning
     chains = [chain] if chain in ("coop", "ica") else ["coop", "ica"]
     try:
         async with apilog.make_client(follow_redirects=True) as client:
