@@ -1496,14 +1496,20 @@ document.getElementById("offersCategory").addEventListener("change", () => {
 document.getElementById("offersDeal").addEventListener("change", () => {
   renderOffers(document.getElementById("offersFilter").value.trim());
 });
-map.on("popupopen", (e) => {
-  const root = e.popup.getElement();
-  const s = e.popup._source && e.popup._source._store;
+// Koppla klick-handlers på en popups DOM. Stjärnans on-state bakas i popupHtml (vid render-tid),
+// så efter en favorit-toggle skrivs hela innehållet om (synkar både öppen popup + framtida öppningar)
+// och handlers kopplas på den nya DOM:en igen (setPopupContent ersätter elementen).
+function wirePopup(root, s) {
+  if (!root) return;
   const fav = root.querySelector(".pop-fav");
   if (fav && s) {
-    fav.addEventListener("click", () => {
-      toggleFav(s);
-      fav.classList.toggle("on", isFav(s));
+    fav.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      await toggleFav(s);  // uppdaterar state.favorites + listan (state sätts FÖRST efter fetch)
+      if (s._marker) {
+        s._marker.setPopupContent(popupHtml(s));  // ny stjärn-state, gäller även vid återöppning
+        wirePopup(s._marker.getPopup().getElement(), s);  // re-wire den omskrivna DOM:en
+      }
     });
   }
   const btn = root.querySelector(".pop-offers-btn");
@@ -1513,6 +1519,10 @@ map.on("popupopen", (e) => {
       map.closePopup();
     });
   }
+}
+
+map.on("popupopen", (e) => {
+  wirePopup(e.popup.getElement(), e.popup._source && e.popup._source._store);
 });
 
 // ---- Konton ----

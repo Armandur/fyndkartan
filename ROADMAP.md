@@ -372,10 +372,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
       i `web/app.js` (`map.fitBounds` till favoritbutikernas koordinater, symmetrisk padding/maxZoom 13).
       `showFavoriteOffers` zoomar till alla favoriter, `showCompareFavorites` till de jämförda (COMPARE_CHAINS-
       delmängden). No-op om inga favoriter har koordinater. Frontend ej browser-testad (syntax OK).
-    - [ ] **Bugg: kan inte avfavorisera via stjärnan i butikens kartpopup.** Att avklicka ★ i en butiks
-      popup tar inte bort favoriten (stjärnan i sidopanelens butikslista fungerar). Trolig orsak: popup-
-      stjärnan saknar/feltolkar toggle-handlern eller skickar inte DELETE `/v1/favorites/{chain}/{id}`.
-      Synka popup-stjärnan med samma `toggleFavorite`-väg som listan + uppdatera popupens visuella state.
+    - [x] **Bugg: avfavorisera via stjärnan i kartpopupen FIXAD** (2026-06-05). Popup-handlern läste
+      `isFav(s)` SYNKRONT efter ett oawaitat `toggleFav(s)` (som sätter `state.favorites` först efter
+      `await fetch`) -> visuellt fel + upprepade klick slog tillbaka (POST återskapade favoriten). Nu
+      `await toggleFav` + popup-innehållet skrivs om via `setPopupContent(popupHtml(s))` (rätt stjärn-
+      state även vid återöppning, då on-state bakas in vid render-tid) med re-wirad DOM. Popup-wiringen
+      utbruten till `wirePopup()`. Frontend ej browser-testad (node --check OK).
     - [x] **Aktuellt erbjudande i produktmodalen + erbjudandepris på kartan BYGGT.** En kedjas
       **rea-rad i katalogkortet är klickbar** -> öppnar produktmodalen med en "Aktuellt erbjudande"-
       sektion som visar erbjudandets EGNA namn/pristext/förpackning/deal-typ per kedja
