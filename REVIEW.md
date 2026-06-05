@@ -204,14 +204,16 @@ ingen DB), `tests/test_auth.py` (✅ gating: 11 gatade endpoints -> 401/403, öp
 X-API-Key avvisas). (`test_logic.py` täcker normalize_ean/archive/stores_with_offer/category_from_name/
 price_history_axfood.) **Kvar otestat:** `_ensure_offers`/sweep-cykeln, catalog_crawl per-kedje-parsers.
 
-**C. (P1) Duplicerat batch-uppslag mot `product_info`.** `get_product_categories`, `get_product_origins`,
-`get_product_diets`, `product_info_fresh_set`, `partial_info_counts` gör snarlika `SELECT ...
-json_extract(data,...) FROM product_info`-frågor. En delad helper (loader per fält) minskar dubblering
-+ ger en plats att optimera.
+**C. ✅ (P1) Duplicerat batch-uppslag mot `product_info`.** `get_product_categories`/`get_product_origins`/
+`product_info_fresh_set` gjorde snarlika `SELECT ean, json_extract(data,...) FROM product_info WHERE ean
+IN (...)`. **Fixat** (2026-06-05): delad `_product_info_fields(eans, select_exprs)` samlar EAN-normalisering,
+tom-koll, IN-klausul och conn-hantering; de tre funktionerna mappar bara raderna. (`partial_info_counts`/
+`sparse_partial_eans` är aggregat-COUNTs på partial-flaggan, inte EAN-scopade -> egen form, rörs ej.)
 
-**D. (P2) `get_product_diets()` klassificerar HELA product_info (~11k) per diet-filtrerad browse.**
-Ocachat, ~50-100ms/anrop. Cacha modulnivå (likt `_browse_groups`, invalidera vid product_info-ändring)
-om filtret används interaktivt.
+**D. ✅ (P2) `get_product_diets()` klassificerade HELA product_info (~11k) per diet-filtrerad browse.**
+**Fixat** (2026-06-05): modulnivå-cache (`_DIET_CACHE`) i `api/database/products.py`, nollas i
+`save_product_info` (enda product_info-skrivaren -> alla 6 anropare täcks). Repeat-anrop återanvänder
+kartan (samma objekt); diet-vokabulären är fast (ej admin-redigerbar) så ingen vokab-invalidering behövs.
 
 **E. (P2) `catalog_summary` (kategori-räknarna) speglar inte diet-filtret** (only_offers/favoriter gör).
 Inkonsekvent UX - finputs.
@@ -227,5 +229,5 @@ som bara finns i andra butiker saknar Coop-info/bild). Dokumenterat i Kända dat
 2. ✅ (A) `main.py` -> `api/routes/` GJORT i fyra pass: pass 1 (vokabulär-admin), pass 2
    (`require_consumer` -> `api/deps.py`), pass 3a/b/c (stores/compare/products). main.py 1446 -> 739
    rader. Kvar i main = app-setup + auth/favoriter/konsol-drift/sync (tätare app-state-koppling).
-3. (C/D) delad product_info-helper + cacha diet-mappen vid behov.
+3. ✅ (C/D) delad product_info-batch-loader + cachad diet-map GJORT (2026-06-05).
 4. Resten (E/F/G) inom respektive feature / Steg 6.

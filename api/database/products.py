@@ -49,20 +49,31 @@ def product_info_cached(ean):
     return True, data, row["fetched_at"]
 
 
-def get_product_categories(eans):
-    """{ean: kanonisk kategori} ur produktdetalj-cachen (rikare än offer-nivån).
-    Resolverar category_raw+source -> kanonisk; bara de som mappar."""
+def _product_info_fields(eans, select_exprs):
+    """Batchad läsning ur product_info för en EAN-mängd: `SELECT ean, <select_exprs> WHERE ean IN (...)`.
+    Delad loader för get_product_categories/origins + product_info_fresh_set (REVIEW Fynd C) - samlar
+    EAN-normalisering, tom-koll, IN-klausul och conn-hantering på ett ställe. Returnerar Row-lista
+    (tom om inga giltiga EAN)."""
     eans = [str(e) for e in eans if e]
     if not eans:
-        return {}
+        return []
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT ean, json_extract(data,'$.category_raw') AS raw, "
-        f"json_extract(data,'$.category_source') AS src FROM product_info "
+        f"SELECT ean, {', '.join(select_exprs)} FROM product_info "
         f"WHERE ean IN ({','.join('?' * len(eans))})",
         eans,
     ).fetchall()
     conn.close()
+    return rows
+
+
+def get_product_categories(eans):
+    """{ean: kanonisk kategori} ur produktdetalj-cachen (rikare än offer-nivån).
+    Resolverar category_raw+source -> kanonisk; bara de som mappar."""
+    rows = _product_info_fields(eans, [
+        "json_extract(data,'$.category_raw') AS raw",
+        "json_extract(data,'$.category_source') AS src",
+    ])
     out = {}
     for r in rows:
         canon = category_from_detail(r["src"], r["raw"]) if r["raw"] else None
@@ -71,10 +82,18 @@ def get_product_categories(eans):
     return out
 
 
+_DIET_CACHE = None  # {ean: diet}; modulnivå-cache, invalideras vid varje product_info-skrivning
+
+
 def get_product_diets():
     """{ean: diet} (vegan/vegetarian/none) härledd ur cachade ingredienser för bläddra-filtret.
     Derive-at-read (alltid aktuell vokabulär); bara EAN med ingredienslista. Hela mängden (~11k) -
-    catalog_browse anropar bara när diet-filtret är aktivt."""
+    catalog_browse anropar bara när diet-filtret är aktivt. Modulnivå-cachad (REVIEW Fynd D): hela
+    klassificeringen är ~50-100ms, så vid interaktiv filtrering återanvänds resultatet; cachen nollas
+    i save_product_info (enda product_info-skrivaren) när ingredienser kan ha ändrats."""
+    global _DIET_CACHE
+    if _DIET_CACHE is not None:
+        return _DIET_CACHE
     conn = get_conn()
     rows = conn.execute(
         "SELECT ean, json_extract(data,'$.ingredients') AS ing FROM product_info "
@@ -86,6 +105,7 @@ def get_product_diets():
         d = diet.classify_diet(r["ing"])
         if d:
             out[r["ean"]] = d
+    _DIET_CACHE = out
     return out
 
 
@@ -93,16 +113,7 @@ def get_product_origins(eans):
     """{ean: (origin-namn-lista, ISO-koder)} ur produktdetalj-cachen (Axfood/Coop/ICA-detalj).
     Rikare ursprung än offers brand-parsning (som bara fångar ICA/Coop). Bara EAN där minst
     ett land kunde resolvas; råname normaliseras till svenska via countries.split_origins."""
-    eans = [str(e) for e in eans if e]
-    if not eans:
-        return {}
-    conn = get_conn()
-    rows = conn.execute(
-        f"SELECT ean, json_extract(data,'$.origin') AS origin FROM product_info "
-        f"WHERE ean IN ({','.join('?' * len(eans))})",
-        eans,
-    ).fetchall()
-    conn.close()
+    rows = _product_info_fields(eans, ["json_extract(data,'$.origin') AS origin"])
     out = {}
     for r in rows:
         if not r["origin"]:
@@ -128,6 +139,8 @@ def save_product_info(ean, data, partial=False):
     )
     conn.commit()
     conn.close()
+    global _DIET_CACHE
+    _DIET_CACHE = None  # ingredienser kan ha ändrats -> bläddra-filtrets diet-karta byggs om vid nästa anrop
     return now
 
 
@@ -212,15 +225,7 @@ def partial_info_counts():
 def product_info_fresh_set(eans):
     """Mängd EAN som har en EJ utgången product_info-rad (full/partial/negativ). För piggyback-
     skrivningarnas skip-if-fresh - utgångna återfylls av nästa crawl/warm."""
-    eans = [str(e) for e in eans if e]
-    if not eans:
-        return set()
-    conn = get_conn()
-    rows = conn.execute(
-        f"SELECT ean, data, fetched_at FROM product_info WHERE ean IN ({','.join('?' * len(eans))})",
-        eans,
-    ).fetchall()
-    conn.close()
+    rows = _product_info_fields(eans, ["data", "fetched_at"])
     out = set()
     for r in rows:
         ttl = _NEG_TTL_DAYS if json.loads(r["data"]) is None else _POS_TTL_DAYS
