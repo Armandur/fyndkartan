@@ -283,6 +283,12 @@ def catalog_stats():
                          "missing_ean": r["missing_ean"] or 0, "last_crawl": r["last"]} for r in rows}
 
 
+# Icke-livsmedelskategorier som ändå kan bära ingredienslista (kosmetika/tvål, rengöring, djurmat)
+# -> exkluderas ur kost-filtret så de inte felklassas som "vegan". `barn` (kan vara barnmat) och
+# `ovrigt` (okänt) lämnas kvar för att inte tappa riktig mat.
+_NONFOOD_DIET = {"halsa_skonhet", "hem_hushall", "djur"}
+
+
 def catalog_summary(chain=None, only_offers=False, fav_stores=None, diet=None):
     """Översikt av den persisterade katalogen (available=1): antal distinkta produkter
     (EAN-grupperat cross-chain) per kanonisk kategori, totalsumma, samt råa produktantal
@@ -306,12 +312,12 @@ def catalog_summary(chain=None, only_offers=False, fav_stores=None, diet=None):
             continue
         if oset is not None and (members[0]["ean"] not in oset):  # gruppen delar en EAN
             continue
-        if dmap is not None and dmap.get(members[0]["ean"]) not in okdiet:  # okänt faller bort
-            continue
+        cat = _cat_canonical(members)
+        if dmap is not None and (dmap.get(members[0]["ean"]) not in okdiet or cat in _NONFOOD_DIET):
+            continue  # okänt diet eller icke-livsmedel faller bort
         total += 1
         for m in members:
             by_chain[m["chain"]] = by_chain.get(m["chain"], 0) + 1
-        cat = _cat_canonical(members)
         cats[cat] = cats.get(cat, 0) + 1
     return {"categories": cats, "total": total,
             "by_chain": dict(sorted(by_chain.items(), key=lambda kv: -kv[1]))}
@@ -414,7 +420,8 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
     if diet in ("vegan", "vegetarian"):  # härledd kost ur ingredienser; vegan ⊂ vegetarian
         dmap = get_product_diets()
         ok = {"vegan"} if diet == "vegan" else {"vegan", "vegetarian"}
-        out = [p for p in out if dmap.get(p["ean"]) in ok]  # okänt (ingen ingrediens) faller bort
+        # okänt (ingen ingrediens) + icke-livsmedel (kosmetika/rengöring/djurmat) faller bort
+        out = [p for p in out if dmap.get(p["ean"]) in ok and p["category"] not in _NONFOOD_DIET]
     # Besparings-sort / deal-typ-filter är OFFERS-koncept -> kräver offer-enrichment av HELA mängden
     # före paginering. Restrikterar då till produkter med aktuellt erbjudande och beräknar besparing
     # (max hyllpris-rea över kedjorna) + deal-typer per produkt.

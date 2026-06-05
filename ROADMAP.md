@@ -357,9 +357,12 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
         `/v1/products/catalog/summary` + frontend (`loadBrowseSummary` skickar diet, cachenyckel + listener
         uppdaterar räknarna). Verifierat: summary-kategori = browse-total per filter (frukt_gront 1024 ->
         vegan 45 / vegetarian 48).
-      - [ ] **Kvar/finputs:** (b) bara LIVSMEDEL - icke-livsmedel med ingredienslista kan bli falskt vegan,
-        exkludera via kanonisk kategori; (c) täckning växer med product_info-warmingen (idag ~11k av 35k
-        katalog-EAN har ingredienser).
+      - [x] **(b) Livsmedels-guard BYGGT** (2026-06-05). Icke-livsmedel med ingredienslista (kosmetika/tvål,
+        rengöring, djurmat) filtreras bort ur kost-filtret via kanonisk kategori (`_NONFOOD_DIET =
+        {halsa_skonhet, hem_hushall, djur}`) i `catalog_browse` + `catalog_summary`. `barn`/`ovrigt` lämnas
+        (kan vara mat). Verifierat: hem_hushall/halsa_skonhet/djur -> 0 under vegan, mat orörd; summary = browse.
+      - [ ] **Kvar/finputs:** (c) täckning växer med product_info-warmingen (idag ~11k av 35k katalog-EAN
+        har ingredienser).
     - [x] **Filtrera bläddra-vyn på "rea hos favoriter" BYGGT.** Toggle "★ Rea hos favoriter"
       (login-only) -> visar bara produkter som har ett ERBJUDANDE hos användarens specifika
       favoritbutiker (per-butik-exakt via `eans_on_offer_at_stores`, chunkat). Favoriterna hämtas
