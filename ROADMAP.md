@@ -885,6 +885,23 @@ Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:
 - `last_seen` < senaste fullständiga crawl-runda -> sätt `available=0` (utgången vara behålls för historik).
 - INGEN crawl vid uppstart (skonar kedjorna); trigga via konsol-knapp + schema, som sweepen.
 
+### Crawl-prestanda - hävstänger att undersöka framöver (TODO, mätt 2026-06-05)
+Tidsprofil uppmätt efter sidstorleks-höjningen (per butik, produktions-pace 0.35s/sida): **~2/3 nätverk
+(HTTP-rundtur + JSON-parse), ~1/3 pace**. ICA stor (44k) ~179 req ~180s; ICA liten (<20k) ~14-20 req ~15-20s;
+Coop (~12-15k) ~56 req ~59s. **De ~134 stora ICA-butikerna (>20k) = ~60% av ICA:s totaltid** (10% av butikerna).
+Full bägge-kedjor-crawl med AIMD-parallellism ~1-1,5h (ICA ~11h / Coop ~3,5h enkeltrådat). Dokumenterat i
+CLAUDE.md ("Per-butik-crawlens tidsprofil"). Hävstänger ej utvärderade i drift:
+  - [ ] **Sänk `_PAGE_PACE`** (0.35 -> 0.15-0.20s) -> ~15-20% kortare wall-tid. AIMD/circuit breaker fångar
+    WAF redan; mät faktisk block-frekvens vid lägre pace innan permanent sänkning.
+  - [ ] **Droppa breda termer (`_ICA_CATEGORIES`) på stora butiker** - med komplett kategori-union ger de nu
+    marginell extra täckning (~99,7% redan). ~20 requests/storbutik × 134 ≈ 2 700 färre requests. Mät täcknings-
+    tappet (om något) först.
+  - [ ] **Parallellisera kategori-hämtning INOM en storbutik** (idag sekventiellt, 179 req i rad = långpolen
+    på ~180s). Störst potential för storbutikerna, men ökar WAF-risken mest -> bunden parallellism + per-butik-AIMD.
+  - [ ] **Höj `_MAX_CONC`** (12 -> högre) - men det är en medveten säkerhetsgräns; AIMD hittar redan faktiska
+    gränsen under. Mät om kedjorna tål mer innan taket höjs.
+  - [ ] Mer `take` ger nu AVTAGANDE nytta (payloaden växer, ~0,65s/req även vid take=1000) - inte en hävstång.
+
 ### Läs-integration
 - Läs-funktioner i `database.py` som speglar `list_products` (EAN-gruppering cross-chain, kanonisk kategori
   via `category_map`, brand/origin-split): `catalog_browse(category, chain, q, limit)` + ev. `catalog_product(ean)`.
