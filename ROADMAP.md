@@ -1054,15 +1054,15 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
    **KVAR I FAS 3 (cutover + parallellt) - beständig TODO (2026-06-05):**
    - [x] **ICA+Coop per-butik-crawl PARALLELLT KLAR** (2026-06-05): per-kedja state (`chains.ica/coop`, var
      sin AIMD) + delad feed; `chain=both` kör samtidigt; konsol-kort visar båda + "Crawla båda"-knapp.
-   - [ ] **Pensionera ICA/Coop ur master-crawlen.** `crawl_all`/`_crawl_ica`/`_crawl_coop` ska bara köra de
-     NATIONELLA kedjorna (Willys/Hemköp/CG - samma pris oavsett butik, master = rätt modell för dem).
-     ICA/Coop:s sanningskälla är per-butik-crawlen. Peka om cron + ta bort/märk om ICA/Coop-crawl-knapparna.
-   - [ ] **Allmänt jämförpris = INTERVALL för ICA/Coop i bläddra-vyn.** Aggregera min/max/antal-butiker per
-     produkt ur catalog_store_prices -> `catalog_products.price_min/max/stores` (kolumnerna finns). Per-butik-
-     crawlen upsertar även catalog_products-METADATA (union, inget pris) så bläddra-vyn behåller produkterna.
-     `catalog_browse` visar "10-22 kr" för ICA/Coop; national-kedjor visar enkelt pris.
-   - [ ] **Per-butik-pris-modal.** Klick på intervallet -> modal med alla butikers priser + vilka butiker som
-     har vilket pris. Ny endpoint `GET /v1/products/{ean}/store-prices`.
+   - [x] **Pensionera ICA/Coop ur master-crawlen KLAR** (2026-06-05): `crawl_all` default = `_MASTER_CHAINS`
+     (citygross/willys/hemkop); cron + "crawla alla" rör inte ICA/Coop. `_CRAWLERS` kvar för explicit körning.
+     Konsol-kort visar bara nationella. OBS: `catalog_mark_unseen` körs ej längre för ICA/Coop.
+   - [x] **Allmänt jämförpris = INTERVALL för ICA/Coop KLAR** (2026-06-05): `recompute_store_aggregates` ->
+     `catalog_products.price_min/max/price_stores` (bumpar browse-cachen); `catalog_upsert_metadata` (union,
+     bevarar representativpris som FALLBACK tills crawlat); `catalog_browse` visar intervall för ICA/Coop,
+     national enkelt pris. Sök matchar grupp-vis (EAN) så omvänt-namngivna kedjor kommer med.
+   - [x] **Per-butik-pris-modal KLAR** (2026-06-05): klickbart intervall -> modal med butikspriser GRUPPERADE
+     på pris (kort + smal lista, utfällbar butikslista). `GET /v1/products/{ean}/store-prices` (levels/total).
 4. **Läs-API:** `/v1/products/{ean}/prices` (stores/near) + admin-status.
 5. **Kart-app:** favorit-scope:ad jämförelse + per-produkt "billigast hos favoriter".
 6. **Matkasse + geo:** `/v1/compare/basket`, prisvärmekarta.
