@@ -294,3 +294,34 @@ def store_crawl_stats():
     conn.close()
     return {r["chain"]: {k: r[k] for k in ("total", "queryable", "unmeasured", "not_queryable", "enabled")}
             for r in rows}
+
+
+def store_prices_stats():
+    """Steg 6-översikt för konsolen: per-butik-prisinsamlingens status per kedja - hur många butiker som
+    är valda/frågbara/crawlade, senaste crawl-tidpunkt, samt volym i catalog_store_prices (rader, distinkta
+    butiker och produkter med per-butik-pris)."""
+    conn = get_conn()
+    crawl = {r["chain"]: dict(r) for r in conn.execute(
+        "SELECT chain, COUNT(*) total, "
+        "SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) enabled, "
+        "SUM(CASE WHEN queryable=1 THEN 1 ELSE 0 END) queryable, "
+        "SUM(CASE WHEN last_crawled IS NOT NULL THEN 1 ELSE 0 END) crawled, "
+        "MAX(last_crawled) last_crawled "
+        "FROM store_crawl GROUP BY chain"
+    ).fetchall()}
+    prices = {r["chain"]: dict(r) for r in conn.execute(
+        "SELECT chain, COUNT(*) rows, COUNT(DISTINCT store) stores, COUNT(DISTINCT product_id) products "
+        "FROM catalog_store_prices GROUP BY chain"
+    ).fetchall()}
+    conn.close()
+    out = {}
+    for chain in sorted(set(crawl) | set(prices)):
+        c, p = crawl.get(chain, {}), prices.get(chain, {})
+        out[chain] = {
+            "total": c.get("total", 0), "enabled": c.get("enabled", 0),
+            "queryable": c.get("queryable", 0), "crawled": c.get("crawled", 0),
+            "last_crawled": c.get("last_crawled"),
+            "price_rows": p.get("rows", 0), "price_stores": p.get("stores", 0),
+            "price_products": p.get("products", 0),
+        }
+    return out

@@ -482,6 +482,10 @@ async def admin_overview(_=Depends(require_admin)):
         "scheduler": {"cron": settings.get("sync_cron"), "tz": settings.get("sync_tz"), "next_run": next_run},
         "catalog_crawl": {"cron": settings.get("catalog_crawl_cron"),
                           "next_run": _next_cron(settings.get("catalog_crawl_cron"))},
+        "store_prices": {  # steg 6: per-butik-prisinsamling (ICA/Coop)
+            "stats": database.store_prices_stats(),
+            "running": any(c.get("running") for c in store_crawl.STORE_PRICE_STATE["chains"].values()),
+        },
         "partial_upgrade": {
             **PARTIAL_UPGRADE_STATE,
             "cron": settings.get("partial_upgrade_cron"),
