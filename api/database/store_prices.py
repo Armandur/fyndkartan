@@ -239,6 +239,8 @@ def recompute_store_aggregates(chain=None):
     conn.commit()
     n = cur.rowcount
     conn.close()
+    from .catalog import bump_catalog_version  # lokal import (undvik cirkulär) - intervallen ska synas i browse
+    bump_catalog_version()
     return n
 
 

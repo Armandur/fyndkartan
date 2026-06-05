@@ -15,10 +15,18 @@ _CAT_COLS = ("product_id", "ean", "name", "brand", "image", "origin", "price",
              "package_unit", "category_raw")
 
 _BROWSE_SQL = ("SELECT chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
-               "comparison_unit, package_size, package_value, package_unit, category_raw, store "
+               "comparison_unit, package_size, package_value, package_unit, category_raw, store, "
+               "price_min, price_max, price_stores "  # Steg 6: per-butik-prisaggregat (ICA/Coop-intervall)
                "FROM catalog_products")
 _CATALOG_VER = 0                            # bumpas vid varje skrivning till catalog_products (crawl)
 _BROWSE_IDX = {"ver": -1, "groups": None}   # cachad EAN-/namn-gruppering (map-oberoende)
+
+
+def bump_catalog_version():
+    """Invalidera browse-/summary-cachen efter en extern catalog_products-skrivning (t.ex.
+    store_prices.recompute_store_aggregates som inte går via catalog_upsert)."""
+    global _CATALOG_VER
+    _CATALOG_VER += 1
 
 
 def _group_rows(rows):
@@ -258,6 +266,48 @@ def catalog_upsert(chain, rows):
     return new, len(ids) - new, changed
 
 
+def catalog_upsert_metadata(chain, rows):
+    """Upsert per-butik-crawlens produkt-METADATA till catalog_products (union: produkter som syns i
+    crawlade ICA/Coop-butiker -> bläddra-vyn behåller dem när master-crawlen pensioneras). Skriver INTE
+    pris/store/jämförvärde - de hör till per-butik-aggregatet (price_min/max). Vid konflikt uppdateras BARA
+    metadata; det befintliga representativpriset BEVARAS (fallback i browse tills ett intervall finns).
+    Inga prisobservationer. Returnerar antal nya rader."""
+    rows = [r for r in rows if r.get("product_id")]
+    if not rows:
+        return 0
+    now = _now()
+    conn = get_conn()
+    try:
+        ids = [str(r["product_id"]) for r in rows]
+        ph = ",".join("?" * len(ids))
+        existing = {r["product_id"] for r in conn.execute(
+            f"SELECT product_id FROM catalog_products WHERE chain=? AND product_id IN ({ph})", (chain, *ids))}
+        new = sum(1 for r in rows if str(r["product_id"]) not in existing)
+        params = [(
+            chain, str(r["product_id"]), r.get("ean"), r.get("name"), r.get("brand"), r.get("image"),
+            json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
+            r.get("package_size"), r.get("package_value"), r.get("package_unit"), r.get("category_raw"),
+            now, now, now,
+        ) for r in rows]
+        conn.executemany(
+            "INSERT INTO catalog_products "
+            "(chain, product_id, ean, name, brand, image, origin, package_size, package_value, "
+            "package_unit, category_raw, first_seen, last_seen, fetched_at, available) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) "
+            "ON CONFLICT(chain, product_id) DO UPDATE SET "
+            "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
+            "origin=excluded.origin, package_size=excluded.package_size, package_value=excluded.package_value, "
+            "package_unit=excluded.package_unit, category_raw=excluded.category_raw, "
+            "last_seen=excluded.last_seen, fetched_at=excluded.fetched_at, available=1",
+            params)
+        conn.commit()
+    finally:
+        conn.close()
+    global _CATALOG_VER
+    _CATALOG_VER += 1
+    return new
+
+
 def catalog_mark_unseen(chain, before):
     """Sätt available=0 för kedjans rader som inte setts sedan `before` (utgångna varor; behålls)."""
     conn = get_conn()
@@ -400,10 +450,21 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
         if mkey and manufacturers.manufacturer_key(brand) != mkey:
             continue
         rep = next((m for m in g if m.get("name")), g[0])
-        prices = [{"chain": m["chain"], "price": m["price"], "comparison_value": m["comparison_value"],
-                   "comparison_unit": m["comparison_unit"], "comparison_derived": False,
-                   "store": m.get("store")}  # butiksscopat hyllpris (Coop/ICA); NULL = nationellt
-                  for m in g if m["price"] is not None]
+        # Steg 6: ICA/Coop visar PER-BUTIK-INTERVALL (price_min/max ur aggregatet) när det finns; annars
+        # fallback till det lagrade representativpriset (master) tills per-butik-data crawlats. National-
+        # kedjor (Willys/Hemköp/CG) har enkelt nationellt pris.
+        prices = []
+        for m in g:
+            if m["chain"] in ("ica", "coop") and m["price_min"] is not None:
+                prices.append({"chain": m["chain"], "price": m["price_min"], "price_min": m["price_min"],
+                               "price_max": m["price_max"], "price_stores": m["price_stores"],
+                               "comparison_value": m["comparison_value"], "comparison_unit": m["comparison_unit"],
+                               "comparison_derived": False, "store": None})
+            elif m["price"] is not None:
+                prices.append({"chain": m["chain"], "price": m["price"], "price_min": None, "price_max": None,
+                               "price_stores": None, "comparison_value": m["comparison_value"],
+                               "comparison_unit": m["comparison_unit"], "comparison_derived": False,
+                               "store": m.get("store")})  # representativt/nationellt
         pv = [p["price"] for p in prices]
         out.append({
             "ean": rep["ean"], "name": rep["name"], "brand": brand,

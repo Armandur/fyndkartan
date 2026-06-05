@@ -67,6 +67,7 @@ async def _crawl_one_ica(client, token, acct, cs):
         prev = cat
         if rows:
             _new, changed = database.upsert_store_prices("ica", acct, rows)
+            database.catalog_upsert_metadata("ica", rows)  # union-metadata -> bläddra-vyn behåller produkten
             total_rows += len(rows)
             cs["rows"] += len(rows)
             cs["changed"] += changed
@@ -87,6 +88,7 @@ async def _crawl_one_coop(client, ledger, cs):
         prev = cat
         if rows:
             _new, changed = database.upsert_store_prices("coop", ledger, rows)
+            database.catalog_upsert_metadata("coop", rows)  # union-metadata -> bläddra-vyn behåller produkten
             total_rows += len(rows)
             cs["rows"] += len(rows)
             cs["changed"] += changed
