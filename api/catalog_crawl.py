@@ -223,7 +223,7 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
     Kategorinamnen HÄRLEDS empiriskt: '*'-walken samlar varje produkts `mainCategoryName` (ICA:s faktiska
     namn) -> exakt de kategorierna pagineras (∪ en hårdkodad lista som säkerhetsnät). DELAD walk - master-
     och per-butik-crawlern ger samma walk olika write-target. `store_total` = '*'-totalHits. Höjer vid HTTP-fel."""
-    seen, page, size = set(), 0, config.CATALOG_CRAWL_PAGE
+    seen, page, size = set(), 0, config.ICA_CRAWL_PAGE
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
     store_total = 0
     harvested = set()      # mainCategoryName-värden ur walken = ICA:s faktiska kategorinamn
@@ -289,7 +289,7 @@ async def _crawl_ica(client, limit_pages):
     try:
         async for rows, total, page, _cat in _ica_fetch_store(client, acct, token, limit_pages):
             st["total"] = total
-            pages_full = max(1, -(-total // config.CATALOG_CRAWL_PAGE))  # antal sidor för hela katalogen
+            pages_full = max(1, -(-total // config.ICA_CRAWL_PAGE))  # antal sidor för hela katalogen
             st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
             if rows:
                 new, known, changed = database.catalog_upsert("ica", rows)
