@@ -219,6 +219,42 @@ def upsert_store_prices(chain, store, rows):
     return new, changed
 
 
+def recompute_store_aggregates(chain=None):
+    """Materialisera per-butik-prisaggregatet: MIN/MAX/antal-distinkta-butiker per produkt ur
+    catalog_store_prices -> catalog_products.price_min/max/price_stores (för bläddra-vyns INTERVALL).
+    Korrelerad UPDATE (idx_csp_chain_product) över befintliga ICA/Coop-master-rader. `chain` scopar.
+    Returnerar antal uppdaterade rader. (Union-produkter som ännu saknas i master skapas vid cutover-flippen.)"""
+    conn = get_conn()
+    sub = ("(SELECT {agg} FROM catalog_store_prices sp WHERE sp.chain=cp.chain AND sp.product_id=cp.product_id)")
+    sql = (f"UPDATE catalog_products AS cp SET "
+           f"price_min={sub.format(agg='MIN(price)')}, "
+           f"price_max={sub.format(agg='MAX(price)')}, "
+           f"price_stores={sub.format(agg='COUNT(DISTINCT store)')} "
+           f"WHERE cp.chain IN ('ica','coop')")
+    args = []
+    if chain:
+        sql += " AND cp.chain=?"
+        args.append(chain)
+    cur = conn.execute(sql, args)
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return n
+
+
+def store_prices_for_ean(ean):
+    """Per-butik-priser för en EAN (för bläddra-vyns intervall-modal): alla butikers pris cross-chain,
+    berikat med butiksnamn/ort ur store_crawl, billigast först. Returnerar lista av dicts."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT sp.chain, sp.store, sp.price, sp.comparison_value, sp.comparison_unit, "
+        "sc.name, sc.city FROM catalog_store_prices sp "
+        "LEFT JOIN store_crawl sc ON sc.chain=sp.chain AND sc.store=sp.store "
+        "WHERE sp.ean=? AND sp.price IS NOT NULL ORDER BY sp.price", (str(ean),)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def store_name(chain, store):
     """Denormaliserat butiksnamn ur store_crawl (för crawl-feeden), annars store-id:t."""
     conn = get_conn()

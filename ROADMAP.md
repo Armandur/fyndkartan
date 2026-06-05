@@ -492,6 +492,14 @@ Detaljerade endpoints finns i minnesfilerna `ica-offers-data-source` och
   taggar: översikt (kedjor/cacher/schemaläggare), **API-anrop** (logg + statistik per
   källa via httpx-hook i `apilog.py`), datakällor per kedja, och tagg-underhållet
   (mappa omappade råetiketter mot vokabulären).
+  - [ ] **TODO (2026-06-05): se över ALLA kort + tabeller på Översikt-fliken (#overview).** Stämmer de
+    fortfarande efter all ny funktionalitet (Steg 5 katalog, Steg 6 per-butik-priser m.m.)? Saknas
+    nya stats (catalog_store_prices-volym, per-butik-crawl-status, queryability), visar något stale
+    siffror? Inventera kort-för-kort + tabellerna och uppdatera/lägg till det som fattas.
+  - [ ] **TODO (2026-06-05): "Uppgradera alla glesa" kör bara 300 i taget trots att fler finns.**
+    `trigger_partial_upgrade` utan cap faller till `config.PARTIAL_UPGRADE_CAP` (=300), så "alla"-knappen
+    cappas ändå. Antingen ska "alla" loopa batchar tills inga glesa kvar (cap = rate-limit PER batch, inte
+    totalt), eller skicka cap=0/obegränsat från knappen. Förtydliga semantiken + fixa.
   - [x] **API-konsol med separat admin-auth BYGGT.** Admin/drift är skild från
     kartappen: `web/admin.html` på `/admin` heter "API-konsol" och har egen
     inloggningsruta (`/v1/console/auth/*`). Konsol-admins ligger i egen tabell
@@ -1044,9 +1052,8 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
    Återanvänder katalog-crawlens walk (extraherad). Triggerbar via API/konsol.
 
    **KVAR I FAS 3 (cutover + parallellt) - beständig TODO (2026-06-05):**
-   - [ ] **ICA+Coop per-butik-crawl PARALLELLT.** Idag seriellt (en global `STORE_PRICE_STATE.running`).
-     Gör state per-kedja (två AIMD-styrningar, olika API:er -> ingen kontention) så ICA+Coop kör samtidigt;
-     konsol-kortet visar båda. Coop (~2h) göms då under ICA (~13h).
+   - [x] **ICA+Coop per-butik-crawl PARALLELLT KLAR** (2026-06-05): per-kedja state (`chains.ica/coop`, var
+     sin AIMD) + delad feed; `chain=both` kör samtidigt; konsol-kort visar båda + "Crawla båda"-knapp.
    - [ ] **Pensionera ICA/Coop ur master-crawlen.** `crawl_all`/`_crawl_ica`/`_crawl_coop` ska bara köra de
      NATIONELLA kedjorna (Willys/Hemköp/CG - samma pris oavsett butik, master = rätt modell för dem).
      ICA/Coop:s sanningskälla är per-butik-crawlen. Peka om cron + ta bort/märk om ICA/Coop-crawl-knapparna.

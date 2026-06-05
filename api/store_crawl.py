@@ -150,6 +150,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             _done, tasks = await asyncio.wait(tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        database.recompute_store_aggregates(chain)  # materialisera intervall-aggregatet (price_min/max/stores)
     finally:
         cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False)
 

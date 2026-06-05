@@ -224,6 +224,18 @@ async def product_stores(ean: str, _auth=Depends(require_consumer)):
     return {"ean": e, "count": len(stores), "stores": stores}
 
 
+@router.get("/v1/products/{ean}/store-prices")
+async def product_store_prices(ean: str, _auth=Depends(require_consumer)):
+    """Per-butik-HYLLPRISER för en EAN (Steg 6): ICA/Coop varierar per butik -> alla crawlade butikers
+    pris + namn/ort, billigast först. Driver bläddra-vyns intervall-modal. Tom för nationellt prissatta
+    kedjor (Willys/Hemköp/CG) som inte har per-butik-data."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    prices = database.store_prices_for_ean(e)
+    return {"ean": e, "count": len(prices), "prices": prices}
+
+
 @router.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})
 async def categories_list(_auth=Depends(require_consumer)):
     """Kanonisk kategori-vokabulär (för filtrering i erbjudande-vyer)."""
