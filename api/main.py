@@ -7,12 +7,13 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, details, images, manufacturers, matching, schemas, settings, tags
+from . import apilog, auth, brands, catalog, catalog_crawl, categories, config, database, deps, details, images, manufacturers, matching, schemas, settings, tags
+from .deps import require_consumer
 from .routes import admin_vocab
 from .adapters import axfood_offers
 from .database import (
@@ -240,15 +241,6 @@ async def api_key_gate(request, call_next):
     return await call_next(request)
 
 
-def require_consumer(request: Request, user=Depends(auth.current_user)):
-    """Gatar /v1-dataendpoints: kräver inloggad app-användare (session/bearer), giltig
-    API-nyckel (X-API-Key) ELLER inloggad konsol-admin (betrodd, t.ex. API-testaren).
-    Inget är öppet anonymt externt."""
-    if user or getattr(request.state, "api_key", None) or auth.current_admin(request):
-        return user
-    raise HTTPException(status_code=401, detail="Autentisering krävs: logga in eller skicka en API-nyckel.")
-
-
 def _last_sync():
     times = [c["last_sync"] for c in STATE["chains"].values() if c["last_sync"]]
     return max(times) if times else None
@@ -430,7 +422,7 @@ async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
 
 
 # ---- API-konsol (egen admin-auth, skild från app-konton) ----
-require_admin = auth.require_admin  # bor i auth.py; alias för befintliga Depends nedan
+require_admin = deps.require_admin  # bor i auth.py, re-exporteras via deps; alias för befintliga Depends nedan
 
 
 @app.get("/admin", response_class=HTMLResponse)
