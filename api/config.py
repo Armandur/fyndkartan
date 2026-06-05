@@ -67,6 +67,9 @@ CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkte
 ICA_CRAWL_PAGE = int(os.getenv("ICA_CRAWL_PAGE", "1000"))
 # Coops by-attribute cappar take vid ~400-499 (take<=400 OK, 500 ger tomt 200-svar) -> 300 = säker 3x.
 COOP_CRAWL_PAGE = int(os.getenv("COOP_CRAWL_PAGE", "300"))
+# City Gross Loop54 har INGET take-cap (verifierat take=5000 ger hela kategorin) -> 1000 = 10x färre
+# requests. (Axfood /c/<slug> cappar däremot HÅRT vid size=100 - ingen vinst där, lämnas på 100.)
+CG_CRAWL_PAGE = int(os.getenv("CG_CRAWL_PAGE", "1000"))
 CATALOG_CRAWL_PACE = float(os.getenv("CATALOG_CRAWL_PACE", "0.3"))   # paus mellan sidor (s)
 CATALOG_CRAWL_RETRIES = int(os.getenv("CATALOG_CRAWL_RETRIES", "3"))
 CATALOG_CRAWL_BACKOFF = float(os.getenv("CATALOG_CRAWL_BACKOFF", "1.5"))

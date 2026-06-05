@@ -871,6 +871,10 @@ upserta i `catalog_products`. Per kedja (endpoints dokumenterade i "Kända datak
   Olika prefix per sajt (Willys `/axfood/rest/v1`, Hemköp bart) + eget träd/koder per sajt. EAN ej inline ->
   slås upp gratis ur `ean_cache` (NULL annars, fylls av `warm_axfood_eans` över tid). category_raw faller till
   avdelningens titel (`/c/` saknar googleAnalyticsCategory). Recon-vägen knäcktes via Claude Chrome.
+- [x] **City Gross- + Axfood-sidstorlek utvärderad (2026-06-05).** **City Gross:** Loop54 har inget take-
+  cap (verifierat take=5000 = hela kategorin) eller skip-cap -> `CG_CRAWL_PAGE` (default 1000) = ~10x färre
+  requests. **Axfood (Willys/Hemköp):** `/c/<slug>` cappar size HÅRT vid 100 (size=500/1000/2000 ger alla
+  100) -> ingen sidstorleks-vinst, lämnas på 100. Ingen page-cap (täckning komplett). Dokumenterat i CLAUDE.md.
 
 ### Cadence + rate-limiting (återanvänd run_scheduler + sweep-mönstret)
 Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:

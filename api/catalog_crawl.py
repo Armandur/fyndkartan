@@ -144,7 +144,7 @@ async def _cg_crawl_category(client, cid, st, seen):
     skip = 0
     while True:
         j = await _get_json(client, f"{_CG_BASE}/Loop54/category/{cid}/products",
-                            {"skip": skip, "take": config.CATALOG_CRAWL_PAGE})
+                            {"skip": skip, "take": config.CG_CRAWL_PAGE})
         items = j.get("items") or []
         total = j.get("totalCount") or 0
         if not items:

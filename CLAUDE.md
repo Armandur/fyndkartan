@@ -281,6 +281,15 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   (default 300) i st.f. delade 100 - Coops take cappar vid ~400-499 (take<=400 OK, 500 ger tomt 200-svar),
   så 3x färre requests. Full crawl av en butik = ~12,7k distinkta EAN (summa departement-counts ~13,8k,
   ~8% överlapp dedupas på EAN). Delad av master- och per-butik-crawlern.
+- **City Gross- + Axfood-crawlens sidstorlek (nationella, en crawl):** **City Gross** (Loop54
+  `category/{id}/products`, skip/take) har INGET take-cap (verifierat take=5000 ger hela kategorin i ett
+  svar) och inget skip-cap -> `CG_CRAWL_PAGE` (default 1000) = ~10x färre requests. 35 "kategorier" (flera
+  är kampanj-/tvärsnitt: Veckans erbjudanden, Kolla priset... som överlappar departementen; dedup på
+  produkt-id gör räknaren distinkt). **Axfood (Willys/Hemköp)** `/c/<slug>` (page/size) cappar däremot
+  size HÅRT vid 100 (verifierat: size=500/1000/2000 ger alla 100, numberOfPages oförändrat) -> INGEN
+  sidstorleks-vinst, lämnas på `CATALOG_CRAWL_PAGE`=100. Ingen page-cap (täckning komplett till
+  numberOfPages); 19 topp-avdelningar, summa ~12,5k. Obs: Axfoods `/search/campaigns` tar size=1000, men
+  katalog-browse-endpointen `/c/<slug>` gör det inte.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och
