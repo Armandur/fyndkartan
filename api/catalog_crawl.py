@@ -215,13 +215,19 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
     """Async generator: paginerar en ICA-butiks katalog och yield:ar (rows, store_total, page) per sida.
     rows = _ica_row-normaliserade, deduplicerade på gtin ÖVER hela walken. `deep=True` walkar '*' + varje
     huvudkategori (förbi 20000-offset-cappen, ~hela sortimentet); `deep=False` bara '*' (snabbt, max 20k).
-    DELAD walk - master-crawlen (-> catalog_products) och per-butik-crawlern (-> catalog_store_prices) ger
-    samma walk olika write-target. `store_total` = '*'-totalHits (progress-nämnare). Höjer vid HTTP-fel."""
+    Kategorinamnen HÄRLEDS empiriskt: '*'-walken samlar varje produkts `mainCategoryName` (ICA:s faktiska
+    namn) -> exakt de kategorierna pagineras (∪ en hårdkodad lista som säkerhetsnät). DELAD walk - master-
+    och per-butik-crawlern ger samma walk olika write-target. `store_total` = '*'-totalHits. Höjer vid HTTP-fel."""
     seen, page, size = set(), 0, config.CATALOG_CRAWL_PAGE
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
     store_total = 0
-    queries = ["*"] + (list(_ICA_CATEGORIES) if deep else [])
-    for qs in queries:
+    harvested = set()      # mainCategoryName-värden ur walken = ICA:s faktiska kategorinamn
+    done_q, queue = set(), ["*"]
+    while queue:
+        qs = queue.pop(0)
+        if qs in done_q:
+            continue
+        done_q.add(qs)
         offset = 0
         while True:
             r = await client.post(_ICA_URL, json={
@@ -239,6 +245,9 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
                 break
             rows = []
             for d in docs:
+                mc = d.get("mainCategoryName")
+                if mc:
+                    harvested.add(mc)
                 pid = str(d.get("gtin") or "")
                 if pid and pid not in seen:
                     seen.add(pid)
@@ -249,6 +258,11 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
             await asyncio.sleep(pace)
             if offset >= qtotal or (limit_pages and page >= limit_pages):
                 break
+        # Efter '*': köa de empiriskt härledda kategorierna (+ hårdkodat säkerhetsnät) som ej körts.
+        if qs == "*" and deep:
+            for c in sorted(harvested | set(_ICA_CATEGORIES)):
+                if c not in done_q:
+                    queue.append(c)
         if limit_pages and page >= limit_pages:
             break
 
