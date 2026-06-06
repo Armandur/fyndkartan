@@ -2,6 +2,8 @@
 Crawlen (api/catalog_crawl.py) upsertar hit; `catalog_browse` läser EAN-grupperat cross-chain."""
 import json
 
+from sqlalchemy import bindparam, text
+
 from ._conn import _now, get_conn
 from .ean import get_axfood_origins
 from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, offers_for_eans, on_offer_eans
@@ -36,8 +38,10 @@ def record_ica_categories(names):
     if not names:
         return
     conn = get_conn()
-    conn.executemany("INSERT OR REPLACE INTO ica_walk_categories (name, last_seen) VALUES (?, ?)",
-                     [(n, _now()) for n in names])
+    conn.executemany(
+        text("INSERT INTO ica_walk_categories (name, last_seen) VALUES (:name, :last_seen) "
+             "ON CONFLICT (name) DO UPDATE SET last_seen=excluded.last_seen"),
+        [{"name": n, "last_seen": _now()} for n in names])
     conn.commit()
     conn.close()
 
@@ -45,7 +49,7 @@ def record_ica_categories(names):
 def ica_walk_category_list():
     """Hela den ackumulerade ICA-kategori-unionen (term-lista för stora butikers kategori-walk)."""
     conn = get_conn()
-    out = {r["name"] for r in conn.execute("SELECT name FROM ica_walk_categories")}
+    out = {r["name"] for r in conn.execute(text("SELECT name FROM ica_walk_categories"))}
     conn.close()
     return out
 
@@ -71,7 +75,7 @@ def _browse_groups():
     global _BROWSE_IDX
     if _BROWSE_IDX["ver"] != _CATALOG_VER:
         conn = get_conn()
-        rows = [dict(r) for r in conn.execute(_BROWSE_SQL + " WHERE available=1")]
+        rows = [dict(r) for r in conn.execute(text(_BROWSE_SQL + " WHERE available=1"))]
         conn.close()
         _BROWSE_IDX = {"ver": _CATALOG_VER, "groups": _group_rows(rows)}
     return _BROWSE_IDX["groups"]
@@ -88,10 +92,10 @@ def catalog_names_for_codes(chain, codes):
     if not codes:
         return {}
     conn = get_conn()
-    ph = ",".join("?" * len(codes))
     rows = conn.execute(
-        f"SELECT product_id, name FROM catalog_products WHERE chain=? AND product_id IN ({ph})",
-        (chain, *codes)).fetchall()
+        text("SELECT product_id, name FROM catalog_products WHERE chain=:chain AND product_id IN :codes")
+        .bindparams(bindparam("codes", expanding=True)),
+        {"chain": chain, "codes": list(codes)}).fetchall()
     conn.close()
     return {r["product_id"]: r["name"] for r in rows}
 
@@ -111,8 +115,9 @@ def catalog_price_history(ean):
     Axfood/CG nationellt. För konsument-modalens graf, sammanslagen med offer-historiken."""
     conn = get_conn()
     rows = conn.execute(
-        "SELECT chain, price, comparison_value, comparison_unit, observed_at "
-        "FROM catalog_price_observations WHERE ean=? ORDER BY chain, observed_at", (str(ean),)).fetchall()
+        text("SELECT chain, price, comparison_value, comparison_unit, observed_at "
+             "FROM catalog_price_observations WHERE ean=:ean ORDER BY chain, observed_at"),
+        {"ean": str(ean)}).fetchall()
     conn.close()
     by_chain = {}
     for r in rows:
@@ -136,18 +141,18 @@ def catalog_price_changes(chain=None, q=None, sort="recent", limit=500):
     Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`),
     sorterbar (`sort`: recent/abs_desc/abs_asc/inc/dec). Bara faktiska ändringar (föregående
     observation finns, annat pris). LAG-fönster för föregående pris (ett pass, sorterbart på diffen)."""
-    where, params = [], []
+    where, params = [], {"limit": int(limit)}
     if chain:
-        where.append("o.chain=?")
-        params.append(chain)
+        where.append("o.chain=:chain")
+        params["chain"] = chain
     if q and len(q.strip()) >= 2:
-        where.append("cp.name LIKE ?")
-        params.append(f"%{q.strip()}%")
+        where.append("cp.name LIKE :q")
+        params["q"] = f"%{q.strip()}%"
     cond = (" WHERE " + " AND ".join(where)) if where else ""
     order = _PC_SORT.get(sort, _PC_SORT["recent"])
     conn = get_conn()
     rows = conn.execute(
-        f"""SELECT chain, product_id, ean, name, prev_price, price, comparison_value, comparison_unit, observed_at
+        text(f"""SELECT chain, product_id, ean, name, prev_price, price, comparison_value, comparison_unit, observed_at
             FROM (
               SELECT o.id, o.chain, o.product_id, o.ean, o.price, o.comparison_value, o.comparison_unit,
                      o.observed_at, cp.name,
@@ -155,10 +160,10 @@ def catalog_price_changes(chain=None, q=None, sort="recent", limit=500):
               FROM catalog_price_observations o
               LEFT JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
               {cond}
-            )
+            ) sub
             WHERE prev_price IS NOT NULL AND prev_price != price
-            ORDER BY {order} LIMIT ?""",
-        (*params, int(limit))).fetchall()
+            ORDER BY {order} LIMIT :limit"""),
+        params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -170,8 +175,9 @@ def catalog_names_for_eans(eans):
         return {}
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT ean, name FROM catalog_products WHERE ean IN ({','.join('?' * len(eans))})",
-        eans).fetchall()
+        text("SELECT ean, name FROM catalog_products WHERE ean IN :eans").bindparams(
+            bindparam("eans", expanding=True)),
+        {"eans": eans}).fetchall()
     conn.close()
     out = {}
     for r in rows:
@@ -185,8 +191,8 @@ def catalog_axfood_codes_missing_ean():
     out = {}
     for chain in ("willys", "hemkop"):
         codes = [r["product_id"] for r in conn.execute(
-            "SELECT DISTINCT product_id FROM catalog_products WHERE chain=? AND available=1 "
-            "AND (ean IS NULL OR ean='')", (chain,))]
+            text("SELECT DISTINCT product_id FROM catalog_products WHERE chain=:chain AND available=1 "
+                 "AND (ean IS NULL OR ean='')"), {"chain": chain})]
         if codes:
             out[chain] = codes
     conn.close()
@@ -198,14 +204,17 @@ def backfill_catalog_eans():
     NORMALISERAT (`normalize_ean`) så strängen matchar övriga kedjors form -> cross-chain-merge.
     Bumpar katalog-versionen (browse-cachen byggs om). Returnerar antal uppdaterade rader."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT cp.chain, cp.product_id, ec.ean FROM catalog_products cp "
         "JOIN ean_cache ec ON ec.code = cp.product_id "
         "WHERE cp.chain IN ('willys','hemkop') AND (cp.ean IS NULL OR cp.ean='') "
-        "AND ec.ean IS NOT NULL AND ec.ean != ''").fetchall()
-    updates = [(e, r["chain"], r["product_id"]) for r in rows if (e := normalize_ean(r["ean"]))]
+        "AND ec.ean IS NOT NULL AND ec.ean != ''")).fetchall()
+    updates = [{"ean": e, "chain": r["chain"], "product_id": r["product_id"]}
+               for r in rows if (e := normalize_ean(r["ean"]))]
     if updates:
-        conn.executemany("UPDATE catalog_products SET ean=? WHERE chain=? AND product_id=?", updates)
+        conn.executemany(
+            text("UPDATE catalog_products SET ean=:ean WHERE chain=:chain AND product_id=:product_id"),
+            updates)
         conn.commit()
     conn.close()
     global _CATALOG_VER
@@ -233,52 +242,58 @@ def catalog_upsert(chain, rows):
     conn = get_conn()
     try:
         ids = [str(r["product_id"]) for r in rows]
-        ph = ",".join("?" * len(ids))
         existing = {r["product_id"]: (r["price"], r["comparison_value"]) for r in conn.execute(
-            f"SELECT product_id, price, comparison_value FROM catalog_products "
-            f"WHERE chain=? AND product_id IN ({ph})", (chain, *ids))}
+            text("SELECT product_id, price, comparison_value FROM catalog_products "
+                 "WHERE chain=:chain AND product_id IN :ids").bindparams(
+                bindparam("ids", expanding=True)), {"chain": chain, "ids": ids})}
         new = changed = 0
         obs = []  # hyllpris-observationer: nya (första pris) + prisändringar
         for r in rows:
             pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
+            o = {"chain": chain, "product_id": pid, "ean": r.get("ean"), "price": price,
+                 "comparison_value": cv, "comparison_unit": r.get("comparison_unit"), "observed_at": now}
             if pid not in existing:
                 new += 1
                 if price is not None:
-                    obs.append((chain, pid, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+                    obs.append(o)
             else:
                 op, ocv = existing[pid]
                 if price is not None and (_diff(op, price) or _diff(ocv, cv)):
                     changed += 1
-                    obs.append((chain, pid, r.get("ean"), price, cv, r.get("comparison_unit"), now))
-        params = []
-        for r in rows:
-            params.append((
-                chain, str(r["product_id"]), r.get("ean"), r.get("name"), r.get("brand"),
-                r.get("image"), json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
-                r.get("price"), r.get("comparison_value"), r.get("comparison_unit"),
-                r.get("package_size"), r.get("package_value"), r.get("package_unit"),
-                r.get("category_raw"), r.get("store"), now, now, now,
-            ))
+                    obs.append(o)
+        params = [{
+            "chain": chain, "product_id": str(r["product_id"]), "ean": r.get("ean"), "name": r.get("name"),
+            "brand": r.get("brand"), "image": r.get("image"),
+            "origin": json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
+            "price": r.get("price"), "comparison_value": r.get("comparison_value"),
+            "comparison_unit": r.get("comparison_unit"), "package_size": r.get("package_size"),
+            "package_value": r.get("package_value"), "package_unit": r.get("package_unit"),
+            "category_raw": r.get("category_raw"), "store": r.get("store"),
+            "first_seen": now, "last_seen": now, "fetched_at": now,
+        } for r in rows]
         conn.executemany(
-            "INSERT INTO catalog_products "
-            "(chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
-            "comparison_unit, package_size, package_value, package_unit, category_raw, store, "
-            "first_seen, last_seen, fetched_at, available) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) "
-            "ON CONFLICT(chain, product_id) DO UPDATE SET "
-            "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
-            "origin=excluded.origin, price=excluded.price, comparison_value=excluded.comparison_value, "
-            "comparison_unit=excluded.comparison_unit, package_size=excluded.package_size, "
-            "package_value=excluded.package_value, package_unit=excluded.package_unit, "
-            "category_raw=excluded.category_raw, store=excluded.store, last_seen=excluded.last_seen, "
-            "fetched_at=excluded.fetched_at, available=1",
+            text("INSERT INTO catalog_products "
+                 "(chain, product_id, ean, name, brand, image, origin, price, comparison_value, "
+                 "comparison_unit, package_size, package_value, package_unit, category_raw, store, "
+                 "first_seen, last_seen, fetched_at, available) "
+                 "VALUES (:chain, :product_id, :ean, :name, :brand, :image, :origin, :price, "
+                 ":comparison_value, :comparison_unit, :package_size, :package_value, :package_unit, "
+                 ":category_raw, :store, :first_seen, :last_seen, :fetched_at, 1) "
+                 "ON CONFLICT (chain, product_id) DO UPDATE SET "
+                 "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
+                 "origin=excluded.origin, price=excluded.price, comparison_value=excluded.comparison_value, "
+                 "comparison_unit=excluded.comparison_unit, package_size=excluded.package_size, "
+                 "package_value=excluded.package_value, package_unit=excluded.package_unit, "
+                 "category_raw=excluded.category_raw, store=excluded.store, last_seen=excluded.last_seen, "
+                 "fetched_at=excluded.fetched_at, available=1"),
             params,
         )
         if obs:
             conn.executemany(
-                "INSERT INTO catalog_price_observations "
-                "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
-                "VALUES (?,?,?,?,?,?,?)", obs)
+                text("INSERT INTO catalog_price_observations "
+                     "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
+                     "VALUES (:chain, :product_id, :ean, :price, :comparison_value, :comparison_unit, "
+                     ":observed_at)"), obs)
         conn.commit()
     finally:
         conn.close()
@@ -300,26 +315,29 @@ def catalog_upsert_metadata(chain, rows):
     conn = get_conn()
     try:
         ids = [str(r["product_id"]) for r in rows]
-        ph = ",".join("?" * len(ids))
         existing = {r["product_id"] for r in conn.execute(
-            f"SELECT product_id FROM catalog_products WHERE chain=? AND product_id IN ({ph})", (chain, *ids))}
+            text("SELECT product_id FROM catalog_products WHERE chain=:chain AND product_id IN :ids")
+            .bindparams(bindparam("ids", expanding=True)), {"chain": chain, "ids": ids})}
         new = sum(1 for r in rows if str(r["product_id"]) not in existing)
-        params = [(
-            chain, str(r["product_id"]), r.get("ean"), r.get("name"), r.get("brand"), r.get("image"),
-            json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
-            r.get("package_size"), r.get("package_value"), r.get("package_unit"), r.get("category_raw"),
-            now, now, now,
-        ) for r in rows]
+        params = [{
+            "chain": chain, "product_id": str(r["product_id"]), "ean": r.get("ean"), "name": r.get("name"),
+            "brand": r.get("brand"), "image": r.get("image"),
+            "origin": json.dumps(r.get("origin") or None, ensure_ascii=False) if r.get("origin") else None,
+            "package_size": r.get("package_size"), "package_value": r.get("package_value"),
+            "package_unit": r.get("package_unit"), "category_raw": r.get("category_raw"),
+            "first_seen": now, "last_seen": now, "fetched_at": now,
+        } for r in rows]
         conn.executemany(
-            "INSERT INTO catalog_products "
-            "(chain, product_id, ean, name, brand, image, origin, package_size, package_value, "
-            "package_unit, category_raw, first_seen, last_seen, fetched_at, available) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1) "
-            "ON CONFLICT(chain, product_id) DO UPDATE SET "
-            "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
-            "origin=excluded.origin, package_size=excluded.package_size, package_value=excluded.package_value, "
-            "package_unit=excluded.package_unit, category_raw=excluded.category_raw, "
-            "last_seen=excluded.last_seen, fetched_at=excluded.fetched_at, available=1",
+            text("INSERT INTO catalog_products "
+                 "(chain, product_id, ean, name, brand, image, origin, package_size, package_value, "
+                 "package_unit, category_raw, first_seen, last_seen, fetched_at, available) "
+                 "VALUES (:chain, :product_id, :ean, :name, :brand, :image, :origin, :package_size, "
+                 ":package_value, :package_unit, :category_raw, :first_seen, :last_seen, :fetched_at, 1) "
+                 "ON CONFLICT (chain, product_id) DO UPDATE SET "
+                 "ean=excluded.ean, name=excluded.name, brand=excluded.brand, image=excluded.image, "
+                 "origin=excluded.origin, package_size=excluded.package_size, package_value=excluded.package_value, "
+                 "package_unit=excluded.package_unit, category_raw=excluded.category_raw, "
+                 "last_seen=excluded.last_seen, fetched_at=excluded.fetched_at, available=1"),
             params)
         conn.commit()
     finally:
@@ -332,8 +350,8 @@ def catalog_upsert_metadata(chain, rows):
 def catalog_mark_unseen(chain, before):
     """Sätt available=0 för kedjans rader som inte setts sedan `before` (utgångna varor; behålls)."""
     conn = get_conn()
-    conn.execute("UPDATE catalog_products SET available=0 WHERE chain=? AND last_seen < ?",
-                 (chain, before))
+    conn.execute(text("UPDATE catalog_products SET available=0 WHERE chain=:chain AND last_seen < :before"),
+                 {"chain": chain, "before": before})
     conn.commit()
     conn.close()
     global _CATALOG_VER
@@ -344,11 +362,11 @@ def catalog_stats():
     """Per kedja: antal produkter, varav tillgängliga, distinkta EAN, hur många som SAKNAR EAN
     (tillgängliga rader utan EAN -> kan ej slås ihop cross-chain), senaste crawl (fetched_at)."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT chain, COUNT(*) total, SUM(available) avail, COUNT(DISTINCT ean) eans, "
         "SUM(CASE WHEN available=1 AND (ean IS NULL OR ean='') THEN 1 ELSE 0 END) missing_ean, "
         "MAX(fetched_at) last FROM catalog_products GROUP BY chain"
-    ).fetchall()
+    )).fetchall()
     conn.close()
     return {r["chain"]: {"total": r["total"], "available": r["avail"] or 0, "eans": r["eans"],
                          "missing_ean": r["missing_ean"] or 0, "last_crawl": r["last"]} for r in rows}
@@ -448,19 +466,18 @@ def catalog_browse(q=None, category=None, chain=None, limit=60, offset=0, only_o
         # Filtrerad delmängd: q SQL-snabbt (LIKE narrowar), chain ~en kedja -> läs direkt, ej cache.
         conn = get_conn()
         sql = _BROWSE_SQL + " WHERE available=1"
-        params = []
+        params = {}
         if chain:
-            sql += " AND chain=?"
-            params.append(chain)
+            sql += " AND chain=:chain"
+            params["chain"] = chain
         if ql:
             # GRUPP-vis namnmatchning: inkludera ALLA kedjors rader för en produkt vars NÅGON kedja matchar
             # namnet (ICA/Coop har ofta annan ordordning, "Havredryck Choklad" vs "Choklad Havredryck") ->
             # annars saknas de matchande produkternas ICA/Coop-pris/intervall i sökträffen.
-            like = f"%{ql}%"
-            sql += (" AND (name LIKE ? OR (ean IS NOT NULL AND ean IN "
-                    "(SELECT ean FROM catalog_products WHERE available=1 AND ean IS NOT NULL AND name LIKE ?)))")
-            params += [like, like]
-        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+            params["like"] = f"%{ql}%"
+            sql += (" AND (name LIKE :like OR (ean IS NOT NULL AND ean IN "
+                    "(SELECT ean FROM catalog_products WHERE available=1 AND ean IS NOT NULL AND name LIKE :like)))")
+        rows = [dict(r) for r in conn.execute(text(sql), params).fetchall()]
         conn.close()
         groups = _group_rows(rows).values()
     else:
