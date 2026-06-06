@@ -150,6 +150,22 @@ def test_product_prices_scoped_matches_model():
     return len(near)
 
 
+def test_zone_browse_matches_model():
+    """catalog_zone_browse-svar (geo-first zon-browse) ska validera mot ZoneBrowseResponse. Använder
+    en butiks koordinater som zon-mitt. Tom om inga per-butik-priser crawlats -> validerar ändå skalet."""
+    conn = database.get_conn()
+    from sqlalchemy import text
+    s = conn.execute(text("SELECT lat, lng FROM stores WHERE chain IN ('ica','coop') "
+                          "AND lat IS NOT NULL AND lat!=0 LIMIT 1")).fetchone()
+    conn.close()
+    if not s:
+        return 0
+    page, total, cats, zone = database.catalog_zone_browse(lat=s["lat"], lng=s["lng"], radius_km=20, limit=30)
+    schemas.ZoneBrowseResponse.model_validate(
+        {"zone": zone, "count": len(page), "total": total, "categories": cats, "products": page})
+    return total
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
@@ -159,3 +175,4 @@ if __name__ == "__main__":
     print(f"OK: {test_product_stores_matches_model()} EAN validerade mot ProductStoresResponse")
     print(f"OK: {test_catalog_manufacturers_matches_model()} tillverkare validerade mot CatalogManufacturersResponse")
     print(f"OK: {test_product_prices_scoped_matches_model()} butiker validerade mot ProductPricesScopedResponse")
+    print(f"OK: {test_zone_browse_matches_model()} zon-varor validerade mot ZoneBrowseResponse")

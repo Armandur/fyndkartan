@@ -350,6 +350,16 @@ OWN_APIS = [
                 {"name": "category", "desc": "Kanonisk kategori-nyckel"}, _P_CHAIN, _P_LIMIT,
                 {"name": "manufacturer", "desc": "Tillverkar-nyckel (se /catalog/manufacturers); tål fritt namn"}],
      "returns": schemas.fields_doc(schemas.CatalogSearchResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/zone?lat=59.33&lng=18.06&radius=10",
+     "desc": "GEO-FIRST: bläddra sortimentet inom en geografisk zon (punkt + radie). Union av varor i "
+             "zonens butiker, per vara billigast-i-zonen + intervall + antal butiker. ICA/Coop per-butik, "
+             "Willys/Hemköp/CG nationellt (vid zon-närvaro), Lidl saknar pris.",
+     "params": [{"name": "lat", "desc": "Zonens mitt, latitud"}, {"name": "lng", "desc": "Zonens mitt, longitud"},
+                {"name": "radius", "desc": "Radie i km (cappas till 50)"},
+                {"name": "q", "desc": "Namn-filter (min 2 tecken)"},
+                {"name": "category", "desc": "Kanonisk kategori-nyckel"},
+                {"name": "sort", "desc": "price | spread | name"}, _P_LIMIT],
+     "returns": schemas.fields_doc(schemas.ZoneBrowseResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/manufacturers",
      "desc": "Tillverkar-aggregat ur den persisterade katalogen: distinkta produkter per normaliserad "
              "tillverkare (key matar /catalog/browse?manufacturer=, name = display-namn), flest först.",

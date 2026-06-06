@@ -104,6 +104,32 @@ async def products_catalog_browse(
     return {"query": q or category or "", "count": len(products), "total": total, "products": products}
 
 
+@router.get("/v1/products/catalog/zone", responses={200: {"model": schemas.ZoneBrowseResponse}})
+async def products_catalog_zone(
+    lat: float = Query(..., description="Zonens mittpunkt, latitud"),
+    lng: float = Query(..., description="Zonens mittpunkt, longitud"),
+    radius: float = Query(10.0, description="Radie i km (cappas serverside till 50)"),
+    q: str | None = Query(None, min_length=2, description="Namn-filter (min 2 tecken)"),
+    category: str | None = None,
+    manufacturer: str | None = Query(None, description="Tillverkar-nyckel (se /catalog/manufacturers)"),
+    diet: str | None = Query(None, description="vegan|vegetarian - härledd kost (vegan ⊂ vegetarian)"),
+    sort: str | None = Query(None, description="price|spread|name (annars default-ordning)"),
+    limit: int = 60,
+    offset: int = 0,
+    _auth=Depends(require_consumer),
+):
+    """GEO-FIRST bläddring: sortimentet inom en geografisk zon (punkt + radie). Union av varor i zonens
+    butiker, per vara billigast-i-zonen + intervall + antal butiker. ICA/Coop ger butiksspecifikt pris
+    (zon-aggregat); Willys/Hemköp/City Gross nationellt pris om en sådan butik finns i zonen; Lidl saknar
+    prisdata. Aktuella erbjudanden överlagras. `categories` = räknare per kategori (filter-chips)."""
+    products, total, categories, zone = database.catalog_zone_browse(
+        lat=lat, lng=lng, radius_km=radius, q=q, category=category, manufacturer=manufacturer,
+        diet=diet, sort=sort, limit=max(1, min(limit, 100)), offset=max(0, offset))
+    catalog._enrich_with_offers(products)  # överlagra aktuella erbjudanden (samma som bläddra-vyn)
+    return {"zone": zone, "count": len(products), "total": total,
+            "categories": categories, "products": products}
+
+
 @router.get("/v1/products/catalog/summary")
 async def products_catalog_summary(chain: str | None = None, only_offers: bool = False,
                                    favorites: bool = False, diet: str | None = None,

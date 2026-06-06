@@ -87,6 +87,36 @@ class CatalogSearchResponse(BaseModel):
     products: list[CatalogProduct] = Field(..., description="Produkter (hela sortimentet, hyllpris)")
 
 
+class ZoneStore(BaseModel):
+    chain: str = Field(..., description="Kedja")
+    store_id: str = Field(..., description="Butikens id (kedjans)")
+    name: str | None = Field(None, description="Butiksnamn")
+    city: str | None = Field(None, description="Ort")
+    lat: float | None = Field(None, description="Latitud")
+    lng: float | None = Field(None, description="Longitud")
+    distance_km: float = Field(..., description="Avstånd till zonens mitt i km")
+
+
+class ZoneMeta(BaseModel):
+    lat: float = Field(..., description="Zonens mittpunkt, latitud")
+    lng: float = Field(..., description="Zonens mittpunkt, longitud")
+    radius_km: float = Field(..., description="Zonens radie i km (cappad serverside)")
+    store_count: int = Field(..., description="Antal butiker i zonen (alla kedjor)")
+    chains_priced: list[str] = Field(..., description="Kedjor med pris i zonen (ICA/Coop per-butik, Willys/Hemköp/CG nationellt)")
+    lidl_in_zone: bool = Field(..., description="Om Lidl finns i zonen (saknar prisdata -> ej i sortimentet)")
+    stores: list[ZoneStore] = Field(..., description="Zonens butiker, närmast först")
+
+
+class ZoneBrowseResponse(BaseModel):
+    """Geo-first zon-browse: sortimentet inom en geografisk zon (punkt + radie), per vara billigast-i-zonen."""
+
+    zone: ZoneMeta = Field(..., description="Zonens metadata (butiker, kedjor, radie)")
+    count: int = Field(..., description="Antal produkter på sidan")
+    total: int = Field(..., description="Totalt antal varor i zonen (efter filter, före paginering)")
+    categories: dict[str, int] = Field(..., description="Antal varor per kanonisk kategori i zonen (filter-chips)")
+    products: list[CatalogProduct] = Field(..., description="Zonens varor (zon-scopat pris), sorterade")
+
+
 class CatalogManufacturer(BaseModel):
     key: str = Field(..., description="Normaliserad tillverkar-nyckel (stabil; matar /catalog/browse?manufacturer=)")
     name: str | None = Field(None, description="Kanoniskt display-namn (legal-suffix-städat + admin-merges)")
