@@ -913,8 +913,12 @@ Inget i API-konsolen (`/admin`) ska göra att hela UI:t hänger sig (webbläsare
     länken verifierad via direkt `invalidate_stats()`-anrop; full crawl-cykel ej körd (hooken är kod-placerad
     vid record_crawl_run/warm-slut). **Per-process** (in-process scheduler, single-worker) - bryts vid
     `uvicorn --workers>1`.
-  - [ ] **`/v1/admin/private-products` ~3,5s** (Märkesvaror). `_products` skannar offers per kedja för
-    private-label-produkter. Fix: rendera flikens skal direkt + ladda listan lazy (ev. paginerat).
+  - [x] **Märkesvaror-fliken skal-först KLAR (2026-06-06).** `loadMarques` byggde hela DOM:en EFTER
+    `private-products`-fetchen (~3,5s) -> fliken kändes hängd. Nu `ensureMarquesSkeleton()` (renderar
+    layout + hjälpruta + tom kedje-select SYNKRONT, spinner i `#mqList`, `dataset.ready` = bygg en gång)
+    + async-fyllning av listan efteråt; `loadMqGroups` parallellt. Kedjefiltret behålls över omladdning.
+    (Backend-skannen `_products` ~3,5s kvar - kan cachas på `stats_version` senare, gynnar även
+    match-suggestions; ej gjort, listan är inte längre blockerande.)
   - OK (snabba, <0,15s, inget behov): sources, categories, manufacturers, settings. Skal-först redan:
     calls, tags, keys, catalog.
 

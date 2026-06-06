@@ -511,12 +511,13 @@
     const detailChain = (p) => (p.chains || []).find(c => c === "willys" || c === "hemkop") || (p.chains || [])[0];
     const findProduct = (ean) => marq.products.find(p => p.ean === ean) || marq.catalog.find(p => p.ean === ean);
 
-    async function loadMarques() {
-      const d = await (await api("/v1/admin/private-products")).json();
-      marq.products = d.products; marq.selected = null; marq.picks.clear();
-      const cs = [...new Set(marq.products.flatMap(p => p.chains))];
-      const opts = `<option value="">Alla kedjor</option>` + cs.map(c => `<option value="${c}">${c}</option>`).join("");
-      document.getElementById("marques").innerHTML = `
+    // Skelettet renderas SYNKRONT (designbeslut: konsol-flik får aldrig blockera UI:t) - den tunga
+    // private-products-listan (~3,5s) fylls i efterhand. dataset.ready -> bygg bara en gång.
+    function ensureMarquesSkeleton() {
+      const el = document.getElementById("marques");
+      if (el.dataset.ready) return;
+      el.dataset.ready = "1";
+      el.innerHTML = `
         <details class="alert alert-light border small mb-3" open>
           <summary class="fw-semibold" style="cursor:pointer">Vad gör jag här? (märkesvaru-paring)</summary>
           <p class="mb-1 mt-2">Egna märkesvaror (ICA, Garant, Coop, X-tra, City Gross…) har kedjeinterna
@@ -545,14 +546,14 @@
         <div class="row g-3">
           <div class="col-lg-6"><div class="card p-3">
             <div class="d-flex gap-2 mb-2 align-items-center">
-              <select id="mqChain" class="form-select form-select-sm" style="width:auto">${opts}</select>
+              <select id="mqChain" class="form-select form-select-sm" style="width:auto"><option value="">Alla kedjor</option></select>
               <input id="mqSearch" class="form-control form-control-sm" placeholder="Sök produkt…">
               <div class="form-check form-switch small ms-auto" style="white-space:nowrap">
                 <input class="form-check-input" type="checkbox" id="mqUnmatched" checked>
                 <label class="form-check-label" for="mqUnmatched">Omappade</label></div>
             </div>
             <div id="mqCount" class="small text-muted mb-1"></div>
-            <div id="mqList" class="marq-list"></div>
+            <div id="mqList" class="marq-list"><div class="text-muted p-3"><span class="spinner-border spinner-border-sm me-2"></span>Laddar produkter…</div></div>
           </div></div>
           <div class="col-lg-6">
             <div id="mqPair" class="card p-3"><div class="text-muted small">Välj en produkt till vänster för att para ihop.</div></div>
@@ -565,8 +566,19 @@
         renderMqList();  // direkt lokal filtrering
         clearTimeout(mqt); mqt = setTimeout(() => mqCatalogSearch(e.target.value.trim()), 350);  // + katalog
       });
+    }
+
+    async function loadMarques() {
+      ensureMarquesSkeleton();  // layout DIREKT -> ingen hängd skärm under den tunga listladdningen
+      loadMqGroups();           // oberoende, parallellt
+      const d = await (await api("/v1/admin/private-products")).json();
+      marq.products = d.products; marq.selected = null; marq.picks.clear();
+      const cs = [...new Set(marq.products.flatMap(p => p.chains))];
+      const sel = document.getElementById("mqChain");
+      const cur = sel.value;  // behåll ev. valt kedjefilter över omladdning
+      sel.innerHTML = `<option value="">Alla kedjor</option>` + cs.map(c => `<option value="${c}">${c}</option>`).join("");
+      sel.value = cur;
       renderMqList();
-      loadMqGroups();
     }
 
     // Sök även i kedjornas katalog (private-label-varor utan aktuellt erbjudande) och merga in
