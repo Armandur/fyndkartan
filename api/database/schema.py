@@ -193,6 +193,13 @@ def init_db():
     conn.execute(
         "CREATE TABLE IF NOT EXISTS ica_walk_categories (name TEXT PRIMARY KEY, last_seen TEXT)"
     )
+    # Materialiserat radantal i catalog_store_prices per kedja. catalog_store_prices växer mot ~17M rader
+    # -> COUNT(*) tar ~6s och blir värre; overview får inte räkna den per laddning. Uppdateras i stället
+    # EN gång per crawl (recompute_store_aggregates). store_prices_stats läser härifrån (cheap).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS store_price_volume (chain TEXT PRIMARY KEY, price_rows INTEGER, "
+        "price_stores INTEGER, updated TEXT)"
+    )
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}

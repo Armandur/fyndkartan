@@ -902,6 +902,16 @@ CLAUDE.md ("Per-butik-crawlens tidsprofil"). Hävstänger ej utvärderade i drif
     gränsen under. Mät om kedjorna tål mer innan taket höjs.
   - [ ] Mer `take` ger nu AVTAGANDE nytta (payloaden växer, ~0,65s/req även vid take=1000) - inte en hävstång.
 
+### Crawl-historik/observabilitet - persistera per-körning (TODO, 2026-06-05)
+  - [ ] **Spara jobb-/fel-/körningsinfo per crawl och kedja** så man kan gå tillbaka och se vad som hände.
+    Motiveras direkt av 22:12-incidenten: massfelet (PoolTimeout på alla butiker) lämnade INGET beständigt
+    spår - all state (`CRAWL_STATE`, `STORE_PRICE_STATE`) ligger i minnet och nollställs vid omstart. Förslag:
+    EN tabell `crawl_runs(chain, run_ts, started, finished, stores_ok, errors, rows, changed, last_error,
+    duration)` (ev. + `crawl_run_errors` för fler fel/körning). Skrivs vid körningens slut (och löpande för
+    pågående). Driver: (a) historik-vy i konsolen, (b) DURABLE "ändringar sedan senaste körningen" som
+    överlever omstart - vilket Steg-6-kortens `changed` annars tappar (se Ask 3, dagens unify). En tabell
+    täcker både master-crawl (nationella) och per-butik-crawl (ICA/Coop).
+
 ### Läs-integration
 - Läs-funktioner i `database.py` som speglar `list_products` (EAN-gruppering cross-chain, kanonisk kategori
   via `category_map`, brand/origin-split): `catalog_browse(category, chain, q, limit)` + ev. `catalog_product(ean)`.

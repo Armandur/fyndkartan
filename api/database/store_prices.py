@@ -3,7 +3,7 @@
 med `store` satt). Fas 1: seeding ur stores + admin-läsning; rotations-crawlern fyller resten."""
 import json
 
-from ._conn import get_conn
+from ._conn import _now, get_conn
 
 
 def seed_store_crawl():
@@ -236,8 +236,17 @@ def recompute_store_aggregates(chain=None):
         sql += " AND cp.chain=?"
         args.append(chain)
     cur = conn.execute(sql, args)
-    conn.commit()
     n = cur.rowcount
+    # Materialisera radantalet (catalog_store_prices är för stor för COUNT(*) per overview-laddning).
+    # Här (slutet av en crawl) är COUNT:en försumbar mot resten av jobbet. Scopar på chain om satt.
+    vol_sql = "SELECT chain, COUNT(*) rows, COUNT(DISTINCT store) stores FROM catalog_store_prices"
+    if chain:
+        vol_sql += " WHERE chain=?"
+    vol_sql += " GROUP BY chain"
+    for r in conn.execute(vol_sql, args).fetchall():
+        conn.execute("INSERT OR REPLACE INTO store_price_volume (chain, price_rows, price_stores, updated) "
+                     "VALUES (?,?,?,?)", (r["chain"], r["rows"], r["stores"], _now()))
+    conn.commit()
     conn.close()
     from .catalog import bump_catalog_version  # lokal import (undvik cirkulär) - intervallen ska synas i browse
     bump_catalog_version()
@@ -297,9 +306,10 @@ def store_crawl_stats():
 
 
 def store_prices_stats():
-    """Steg 6-översikt för konsolen: per-butik-prisinsamlingens status per kedja - hur många butiker som
-    är valda/frågbara/crawlade, senaste crawl-tidpunkt, samt volym i catalog_store_prices (rader, distinkta
-    butiker och produkter med per-butik-pris)."""
+    """Steg 6-översikt för konsolen: per-butik-prisinsamlingens status per kedja - valda/frågbara/crawlade
+    butiker + senaste crawl (ur store_crawl, litet) samt MATERIALISERAT radantal (store_price_volume,
+    uppdaterat per crawl). Räknar INTE catalog_store_prices vid läsning - den tabellen växer mot ~17M rader
+    (COUNT(*) ~6s och stigande) och får inte ligga i overview-laddningen."""
     conn = get_conn()
     crawl = {r["chain"]: dict(r) for r in conn.execute(
         "SELECT chain, COUNT(*) total, "
@@ -309,19 +319,17 @@ def store_prices_stats():
         "MAX(last_crawled) last_crawled "
         "FROM store_crawl GROUP BY chain"
     ).fetchall()}
-    prices = {r["chain"]: dict(r) for r in conn.execute(
-        "SELECT chain, COUNT(*) rows, COUNT(DISTINCT store) stores, COUNT(DISTINCT product_id) products "
-        "FROM catalog_store_prices GROUP BY chain"
+    vol = {r["chain"]: dict(r) for r in conn.execute(
+        "SELECT chain, price_rows, price_stores FROM store_price_volume"
     ).fetchall()}
     conn.close()
     out = {}
-    for chain in sorted(set(crawl) | set(prices)):
-        c, p = crawl.get(chain, {}), prices.get(chain, {})
+    for chain in sorted(set(crawl) | set(vol)):
+        c, v = crawl.get(chain, {}), vol.get(chain, {})
         out[chain] = {
             "total": c.get("total", 0), "enabled": c.get("enabled", 0),
             "queryable": c.get("queryable", 0), "crawled": c.get("crawled", 0),
             "last_crawled": c.get("last_crawled"),
-            "price_rows": p.get("rows", 0), "price_stores": p.get("stores", 0),
-            "price_products": p.get("products", 0),
+            "price_rows": v.get("price_rows", 0), "price_stores": v.get("price_stores", 0),
         }
     return out

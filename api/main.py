@@ -426,8 +426,19 @@ async def console_change_password(payload: dict = Body(...), admin=Depends(auth.
     return {"ok": True}
 
 
-@app.get("/v1/admin/overview")
-async def admin_overview(_=Depends(require_admin)):
+# Tunga DB-/filsystem-stats i overview (ean_stats ~3s UNION-distinct, catalog_stats, storage-scan m.m.)
+# cachas kort - de ändras långsamt och behöver inte räknas om varje laddning (Kedjor-/Sweep-flikarna
+# pollar samma endpoint). Live in-memory-state (synk-status, crawl/sweep-räknare) läggs på FÄRSK utanför.
+_OVERVIEW_CACHE = {"data": None, "ts": 0.0}
+_OVERVIEW_TTL = 30.0
+
+
+def _overview_stats():
+    """Cachad bundle av de dyra stats-queries:na (TTL `_OVERVIEW_TTL`). store_prices_stats är numera
+    cheap (materialiserad), men ean_stats m.fl. är fortf. sekunder -> cache så overview blir snabb."""
+    now = time.monotonic()
+    if _OVERVIEW_CACHE["data"] is not None and now - _OVERVIEW_CACHE["ts"] < _OVERVIEW_TTL:
+        return _OVERVIEW_CACHE["data"]
     conn = get_conn()
     store_counts = {
         r["chain"]: r["c"] for r in conn.execute("SELECT chain, COUNT(*) c FROM stores GROUP BY chain")
@@ -437,8 +448,6 @@ async def admin_overview(_=Depends(require_admin)):
         "SELECT COUNT(*) c FROM (SELECT 1 FROM offers GROUP BY chain, store_id)"
     ).fetchone()["c"]
     conn.close()
-    ean_stats = database.ean_stats()
-    next_run = _next_cron(settings.get("sync_cron"))
 
     def _file_size(p):
         try:
@@ -454,13 +463,28 @@ async def admin_overview(_=Depends(require_admin)):
             if f.is_file():
                 img_bytes += _file_size(f)
                 img_count += 1
-    storage = {
-        "db_bytes": db_bytes,
-        "image_bytes": img_bytes,
-        "image_count": img_count,
-        "total_bytes": db_bytes + img_bytes,
+    data = {
+        "store_counts": store_counts,
+        "offers": {"rows": offers_rows, "stores_cached": offers_stores},
+        "catalog": database.catalog_stats(),  # fulla sortiment per kedja (steg 5)
+        "ean_stats": database.ean_stats(),
+        "price_history": database.offer_observations_stats(),
+        "info_history": database.product_info_observations_stats(),
+        "store_prices_stats": database.store_prices_stats(),
+        "partial_counts": database.partial_info_counts(),
+        "offers_coverage": database.offers_coverage(),
+        "storage": {"db_bytes": db_bytes, "image_bytes": img_bytes,
+                    "image_count": img_count, "total_bytes": db_bytes + img_bytes},
     }
+    _OVERVIEW_CACHE.update(data=data, ts=now)
+    return data
 
+
+@app.get("/v1/admin/overview")
+async def admin_overview(_=Depends(require_admin)):
+    s = _overview_stats()  # cachade tunga stats
+    store_counts = s["store_counts"]
+    next_run = _next_cron(settings.get("sync_cron"))
     return {
         "chains": [
             {
@@ -472,32 +496,32 @@ async def admin_overview(_=Depends(require_admin)):
             }
             for c in config.CHAINS
         ],
-        "offers": {"rows": offers_rows, "stores_cached": offers_stores},
-        "catalog": database.catalog_stats(),  # fulla sortiment per kedja (steg 5)
-        "storage": storage,
-        "ean_stats": ean_stats,
-        "price_history": database.offer_observations_stats(),
-        "info_history": database.product_info_observations_stats(),
+        "offers": s["offers"],
+        "catalog": s["catalog"],  # fulla sortiment per kedja (steg 5)
+        "storage": s["storage"],
+        "ean_stats": s["ean_stats"],
+        "price_history": s["price_history"],
+        "info_history": s["info_history"],
         "syncing": STATE["running"],
         "scheduler": {"cron": settings.get("sync_cron"), "tz": settings.get("sync_tz"), "next_run": next_run},
         "catalog_crawl": {"cron": settings.get("catalog_crawl_cron"),
                           "next_run": _next_cron(settings.get("catalog_crawl_cron"))},
-        "store_prices": {  # steg 6: per-butik-prisinsamling (ICA/Coop)
-            "stats": database.store_prices_stats(),
+        "store_prices": {  # steg 6: per-butik-prisinsamling (ICA/Coop) - stats cachade, running live
+            "stats": s["store_prices_stats"],
             "running": any(c.get("running") for c in store_crawl.STORE_PRICE_STATE["chains"].values()),
         },
         "partial_upgrade": {
-            **PARTIAL_UPGRADE_STATE,
+            **PARTIAL_UPGRADE_STATE,  # live in-memory (pågående jobb)
             "cron": settings.get("partial_upgrade_cron"),
             "next_run": _next_cron(settings.get("partial_upgrade_cron")),
-            "counts": database.partial_info_counts(),  # {partial, sparse}
+            "counts": s["partial_counts"],  # {partial, sparse} (cachad)
         },
         "offers_sweep": {
-            **SWEEP_STATE,
+            **SWEEP_STATE,  # live in-memory (pågående sweep)
             "cron": settings.get("offers_sweep_cron"),
             "next_run": _next_cron(settings.get("offers_sweep_cron")),
             "supported_chains": list(SUPPORTED_OFFER_CHAINS),
-            "coverage": database.offers_coverage(),  # nuvarande cachade erbjudanden per kedja
+            "coverage": s["offers_coverage"],  # nuvarande cachade erbjudanden per kedja (cachad)
             "store_counts": {c: store_counts.get(c, 0) for c in SUPPORTED_OFFER_CHAINS},
         },
     }
