@@ -1142,11 +1142,34 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   (b) geo-frågor "billigast nära mig" -> **PostGIS** är överlägset, (c) tunga analytiska frågor (statistik-
   appen) -> Postgres query-planner/partitionering starkare, (d) **api/app/admin-splitten** (uttalat mål):
   separata processer/containrar delar inte gärna en SQLite-FIL -> en DB-server (Postgres) är då naturlig.
-- **Rekommendation:** migrera INTE preemptivt. **Triggers** (vilken som helst räcker): per-butter-skalan
-  visar kontention/perf-problem ELLER geo/PostGIS behövs ELLER statistik-appen kräver tung analys ELLER
-  api/app/admin splittas till separata tjänster. Förbered genom att gå via **SQLAlchemy ORM** (projektets
-  egen eskaleringsväg "när det växer") som mellansteg - då blir SQLite->Postgres ett dialekt-byte, inte en
-  omskrivning. Migrationer fortsatt utan Alembic (ALTER-guards) tills ORM införs.
+- **MÄTSPIKE zon-browse-query (2026-06-06, vid 4,34M ICA-rader / 326 crawlade butiker):** den live-
+  aggregerade zon-frågan (`catalog_store_prices` filtrerat till zonens butiker, MIN/MAX/COUNT GROUP BY
+  product_id) är **index-känslig och planerar-bräcklig på SQLite**:
+  - Med BEFINTLIGA index: planeraren väljer `idx_csp_chain_product` och **fullskannar hela kedjans 4,34M
+    rader** (store-filtret som efter-filter) -> **~17-20s oavsett zon-storlek** (5 butiker = 326 butiker).
+  - Med täckande index `(chain, store, product_id, price)` TVINGAT (`INDEXED BY`): seeker bara zonens
+    rader -> **5 butiker 163ms, 20 → 449ms, 50 → 850ms, 100 → 1448ms**. Skalar med ZON-storlek, INTE
+    total tabell -> bör hålla även vid ~20M (seek per butik är O(log n)). Realistisk 15km-stadszon
+    (~10-40 butiker) ≈ 300-700ms.
+  - MEN planeraren är opålitlig: efter `ANALYZE` valde den index för små zoner (5-20 = ~115-455ms) men
+    **flippade tillbaka till 21s-fullskann vid 50-100 butiker**. Dvs SQLite KAN serva frågan snabbt, men
+    bara om vi TVINGAR indexet (`INDEXED BY`) - annars är värsta fallet 21s. + fett index (~18s bygge,
+    skriv-amplifiering vid varje crawl-upsert).
+- **Rekommendation (uppdaterad efter spiken):** zon-browse är exakt den analytiska, index-känsliga,
+  samtidiga-last-fråga där SQLite blir BRÄCKLIG (hint-beroende, planerar-footgun med 21s värsta fall,
+  fett index) och Postgres tjänar in sig (pålitlig planerare + bitmap-index på IN-listan utan hint,
+  parallell aggregering, ingen en-skrivare-lås under tung crawl+serve, framtida PostGIS för geo). Givet
+  att (a) spiken visar bräcklighet snarare än ren omöjlighet, (b) datan är liten och användarlös NU
+  (billigaste migrations-läget), och (c) den uttalade api/app/admin-splitten ändå pekar mot en DB-server
+  -> **lutar beslutet mot Postgres för det här steget.** Migrera medan det är billigt.
+- [ ] **TODO: refaktorera datalagret till SQLAlchemy Core (DB-OBEROENDE brygga) - förutsättning för Postgres.**
+  Idag är `api/database/` rå `sqlite3` med SQLite-specifik SQL överallt (`INSERT OR REPLACE`, `json_each`,
+  `json_extract`, `PRAGMA`, `lastrowid`) -> INTE portabelt. SQLAlchemy **Core** (SQL-uttryckslagret, inte
+  nödvändigtvis hela ORM:en) kompilerar frågor till måldialekten -> SQLite↔Postgres blir i princip ett
+  connection-URL-byte. CAVEAT: dialekt-specifika bitar måste hanteras medvetet (SQLite `json_each`/`json_extract`
+  vs Postgres `jsonb`-operatorer; `INSERT OR REPLACE` vs `ON CONFLICT`; lös typning) - SQLAlchemy ger
+  dialekt-konstruktioner men de skrivs avsiktligt. Stor men avgränsad refaktor; gör den FÖRE Postgres-bytet
+  (annars är bytet en omskrivning, inte ett dialekt-byte). Migrationer fortsatt utan Alembic tills dess.
 
 ### Faser (resumerbart)
 1. ✅ **Datamodell + mät-sweep KLAR** (2026-06-05): `catalog_store_prices` + `store` i observationer +
