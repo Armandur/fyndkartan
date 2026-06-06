@@ -1139,8 +1139,14 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   först. `database.store_prices_geo` mappar fysisk butik (`stores`.lat/lng + native) -> ledger/account ->
   catalog_store_prices (haversine-filter). Verifierat live: 3 ICA-butiker inom 30km, 33,95 vs 34,96 kr.
   `ProductPricesScopedResponse` + OWN_APIS. (Frontend-wiring i kart-appen = nästa steg.)
-- [ ] `GET /v1/compare/basket?stores=&eans=` - matkasse-jämförelse: summa per butik för en varukorg
-  (PRO-undersöknings-caset). Markerar saknade varor per butik.
+- [x] **Matkasse-jämförelse BYGGD (2026-06-06).** Namngivna server-side-matkassar (`baskets`+`basket_items`,
+  CRUD `/v1/baskets*`); jämförelse `GET /v1/baskets/{id}/compare` (`database.basket_compare` i zone.py) med
+  geo-zon ELLER favorit-scope (`?favorites=true`). Per butik: hyllpris-total + erbjudande-överlagrad total
+  (multibuy styckpris-normaliserat) + täckning; full täckning rankas först. ICA/Coop per fysisk butik
+  (dedup per ledger), Willys/Hemköp/CG som ETT kort per kedja (nationellt pris, butikerna listade). Private-
+  label-substitution per paringsgrupp (per-vara exact-opt-out). Frontend: header-korg, namngivna kassar,
+  "lägg i kassen" i alla vyer, panel-zonväljare + favorit-knapp (bbox-zoom), coverage-filter, scrollbar
+  lista, "visa på kartan" per butik. Kvar/ev.: prisvärmekarta, cacha Python-loopen om trög.
 - [ ] Utöka `catalog_browse`/`compare` med butiks-scope (`stores=`) -> hyllpris filtrerat till favoriter.
 - Admin: `store_crawl`-status + per-butik-trigger + queryability-karta (likt partial/EAN-warm-korten).
 

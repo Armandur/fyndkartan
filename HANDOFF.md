@@ -8,10 +8,12 @@ Senast uppdaterad: 2026-06-06.
 ## Var vi är nu
 
 Steg 6 (per-butik-pris för ICA/Coop, "var är varan/matkassen billigast nära mig / hos mina favoriter")
-är **insamling + konsument-läsväg + GEO-FIRST UI BYGGT**. **Databas-omtaget (SQLite -> Postgres) KLART +
-cutover gjord** (dev kör mot PG). **Zon-browse (Fas C) BYGGT** (2026-06-06): `GET /v1/products/catalog/zone`
-(`api/database/zone.py`) + kart-nål/radie-väljare i sidopanelen + bläddra-vyn i zon-läge + grupperad jämför-
-vy med multibuy-styckpris-normalisering. Nästa: matkasse-jämförelse, prisvärmekarta, perf-städ (se nedan).
+är **insamling + konsument-läsväg + GEO-FIRST UI + MATKASSE-JÄMFÖRELSE BYGGT**. **Databas-omtaget
+(SQLite -> Postgres) KLART + cutover gjord** (dev kör mot PG). **Zon-browse (Fas C)** + **matkasse-
+jämförelse** byggt (2026-06-06): `GET /v1/products/catalog/zone` + `GET /v1/baskets/{id}/compare`
+(`api/database/zone.py`). Namngivna matkassar (`baskets`+`basket_items`), geo/favorit-scope, private-label-
+substitution, nationella kedjor grupperade per kort, scrollbar lista + visa-på-kartan. Nästa: prisvärmekarta,
+analys-/statistik-app, perf-städ (zon-Python-loopen ~2-3s). Se ROADMAP "Kart-appen".
 
 Beslut som styr allt (bekräftat med Rasmus): **vi spårar pris i ALLA frågbara ICA/Coop-butiker** (ICA
 100%, Coop ~43% - resten ej e-handelsindexerade). Det gamla "per butik = ogenomförbart"-antagandet är
