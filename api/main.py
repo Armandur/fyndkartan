@@ -757,7 +757,18 @@ async def trigger_store_price_crawl(chain: str = "ica", cap: int | None = None,
 
 @app.get("/v1/admin/store-prices/crawl/status")
 async def store_price_crawl_status(_=Depends(require_admin)):
-    return store_crawl.STORE_PRICE_STATE
+    # + DURABLE last_runs ur crawl_runs så korten visar "ändringar sedan senaste" även efter omstart
+    # (in-memory STORE_PRICE_STATE nollställs då).
+    runs = database.last_crawl_runs(kind="store_prices")
+    return {**store_crawl.STORE_PRICE_STATE,
+            "last_runs": {c: runs.get(("store_prices", c)) for c in ("ica", "coop")}}
+
+
+@app.get("/v1/admin/crawl-history")
+async def crawl_history(kind: str | None = None, chain: str | None = None, limit: int = 50,
+                        _=Depends(require_admin)):
+    """Beständig crawl-körningshistorik (alla kedjor, båda systemen). Nyast först."""
+    return {"runs": database.recent_crawl_runs(limit=min(limit, 200), kind=kind, chain=chain)}
 
 
 @app.post("/v1/admin/store-prices/stores/enable")

@@ -9,6 +9,7 @@
     const gate = document.getElementById("loginGate");
     const consoleEl = document.getElementById("console");
     let active = "overview", callsTimer = null, syncTimer = null, catalogTimer = null, sweepTimer = null;
+    let _crawlRunningPrev = false;  // för att uppdatera crawl-historiken när en körning just avslutats
     let callsData = null, callsFilter = { source: "", status: "" };
 
     // Alla konsol-anrop går via api(): 403 => sessionen är borta, visa login.
@@ -1241,6 +1242,14 @@
           </div>
         </div>
         <div class="card p-3 mt-3">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h6 class="mb-0">Crawl-historik</h6>
+            <span class="small text-muted">beständig körnings-logg per kedja (överlever omstart)</span>
+            <button id="crawlHistReload" class="btn btn-sm btn-outline-secondary ms-auto py-0">Uppdatera</button>
+          </div>
+          <div id="crawlHistory" class="small text-muted">Laddar…</div>
+        </div>
+        <div class="card p-3 mt-3">
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
             <h6 class="mb-0">Prisändringar (hyllpris)</h6>
             <span id="pcCount" class="small text-muted"></span>
@@ -1282,6 +1291,8 @@
         if (row && row.dataset.ean) openProductModal(row.dataset.ean, row.dataset.name);
       });
       loadPriceChanges();  // initial fyllning (beständig data, oberoende av crawl-status)
+      document.getElementById("crawlHistReload").addEventListener("click", loadCrawlHistory);
+      loadCrawlHistory();  // beständig crawl-historik (oberoende av crawl-status)
       // Butiksurval (Steg 6): filter, bulk + per-rad-toggle (kryssruta = enabled direkt).
       const ssReload = () => loadStoreSelect(0);
       ["ssChain", "ssQueryable", "ssEnabled"].forEach(id => document.getElementById(id).addEventListener("change", ssReload));
@@ -1439,6 +1450,32 @@
       return P.join("");
     }
 
+    async function loadCrawlHistory() {
+      const el = document.getElementById("crawlHistory");
+      if (!el) return;
+      const dur = (a, b) => (a && b) ? fmtDur(Math.max(0, (Date.parse(b) - Date.parse(a)) / 1000)) : "";
+      const stCls = (s) => (s === "avbruten" || s === "fel") ? "text-danger" : s === "ok_med_fel" ? "text-warning" : "text-success";
+      try {
+        const d = await (await api("/v1/admin/crawl-history?limit=40")).json();
+        const runs = d.runs || [];
+        if (!runs.length) { el.innerHTML = '<span class="text-muted">Inga körningar loggade än.</span>'; return; }
+        el.innerHTML = `<table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Tid</th><th>Kedja</th><th>Typ</th><th class="text-end">Rader</th><th class="text-end">Prisändr.</th><th class="text-end">Fel</th><th>Längd</th><th>Status</th></tr></thead>
+          <tbody>${runs.map(r => `<tr>
+            <td class="mono">${esc(fmtTs(r.finished || r.started))}</td>
+            <td>${chip(r.chain)}</td>
+            <td class="text-muted">${r.kind === "store_prices" ? "per butik" : "katalog"}</td>
+            <td class="text-end">${(r.rows || 0).toLocaleString("sv-SE")}${r.stores_total ? `<span class="text-muted"> &middot; ${r.stores_ok || 0}/${r.stores_total} but.</span>` : ""}</td>
+            <td class="text-end">${r.changed ? `<span style="color:#b8860b">${r.changed.toLocaleString("sv-SE")}</span>` : "-"}</td>
+            <td class="text-end ${r.errors ? "text-danger" : "text-muted"}">${r.errors || 0}</td>
+            <td class="text-muted">${esc(dur(r.started, r.finished))}</td>
+            <td class="${stCls(r.status)}">${esc(r.status || "-")}${r.last_error ? ` <span class="text-danger" title="${esc(r.last_error)}">&#9888;</span>` : ""}</td>
+          </tr>`).join("")}</tbody></table>`;
+      } catch (e) {
+        el.innerHTML = '<span class="text-danger">Kunde inte ladda historik.</span>';
+      }
+    }
+
     async function loadCatalog() {
       const d = await (await api("/v1/admin/catalog/crawl/status")).json();
       const ms = await (await api("/v1/admin/store-prices/measure/status")).json();
@@ -1521,7 +1558,10 @@
             (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc(fmtTs(st.last_crawl))}` : ""}</div>
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
-      }).join("") + ["ica", "coop"].map(c => storePriceCard(c, (spc.chains || {})[c])).join("");
+      }).join("") + ["ica", "coop"].map(c => storePriceCard(c, (spc.chains || {})[c], (spc.last_runs || {})[c])).join("");
+      const anyCrawlRunning = !!(d.running || spcRun);  // crawl just klar -> uppdatera historik-loggen
+      if (_crawlRunningPrev && !anyCrawlRunning) loadCrawlHistory();
+      _crawlRunningPrev = anyCrawlRunning;
       clearTimeout(catalogTimer);
       if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running || spcRun) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
@@ -1630,31 +1670,44 @@
     }
 
     // ICA/Coop (per-butik-crawl, Steg 6) renderade med SAMMA kort-mall som nationella kedjorna -> samma
-    // "X produkter denna körning (Y prisändringar)" + status. Per-butik-info (butiker, AIMD) som underrad
-    // (funktionen är lite annorlunda men visas likadant). Datan ur STORE_PRICE_STATE (spc.chains[c]).
-    function storePriceCard(c, s) {
-      if (!s || (!s.running && !s.finished_at)) {
+    // "X rader denna körning (Y prisändringar)" + status. Per-butik-info (butiker, AIMD) som underrad
+    // (funktionen är lite annorlunda men visas likadant). `s` = live STORE_PRICE_STATE; `lastRun` =
+    // beständig crawl_runs-rad -> visas när minnes-staten är blank (efter omstart) så "ändringar sedan
+    // senaste" överlever.
+    function storePriceCard(c, s, lastRun) {
+      const live = s && (s.running || s.finished_at);
+      const r = live
+        ? { running: !!s.running, done: s.done, total: s.total, stores_ok: s.stores_ok, rows: s.rows,
+            changed: s.changed, errors: s.errors, target: s.target, active: s.active, cooldown: s.cooldown,
+            finished: s.finished_at, last_error: s.last_error,
+            status: s.errors ? "ok_med_fel" : "ok" }
+        : (lastRun
+          ? { running: false, done: lastRun.stores_ok, total: lastRun.stores_total, stores_ok: lastRun.stores_ok,
+              rows: lastRun.rows, changed: lastRun.changed, errors: lastRun.errors, finished: lastRun.finished,
+              last_error: lastRun.last_error, status: lastRun.status }
+          : null);
+      if (!r) {
         return `<div class="card p-3 mb-2"><div class="d-flex align-items-center">${chip(c)}
           <span class="ms-2 small text-muted">per-butik-priser &middot; ingen körning än</span>
           <span class="ms-auto st-ok">väntar</span></div></div>`;
       }
-      const running = !!s.running;
-      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-      const statusClass = running ? "running" : s.errors ? "error" : "ok";
-      const statusTxt = running ? "crawlar" : (s.errors ? "klar (med fel)" : "klar");
-      const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
-      const bar = (running || s.total)
-        ? `<div class="progress" style="height:6px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>` : "";
-      const sub = `<div class="small text-muted mt-1">${s.done || 0}/${s.total || 0} butiker${s.stores_ok ? ` &middot; ${s.stores_ok} ok` : ""}`
-        + (running ? ` &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}` : (s.finished_at ? ` &middot; senast ${esc(fmtTs(s.finished_at))}` : "")) + `</div>`;
+      const running = r.running;
+      const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
+      const statusClass = running ? "running" : r.errors ? "error" : (r.status === "avbruten" ? "error" : "ok");
+      const statusTxt = running ? "crawlar" : (r.status === "avbruten" ? "avbruten" : (r.errors ? "klar (med fel)" : "klar"));
+      const cd = r.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
+      const bar = (running || r.total)
+        ? `<div class="progress" style="height:6px"><div class="progress-bar ${r.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>` : "";
+      const sub = `<div class="small text-muted mt-1">${r.done || 0}/${r.total || 0} butiker${r.stores_ok ? ` &middot; ${r.stores_ok} ok` : ""}`
+        + (running ? ` &middot; <span title="adaptiv AIMD">mål ${r.target}, ${r.active} aktiva</span>${cd}` : (r.finished ? ` &middot; senast ${esc(fmtTs(r.finished))}` : "")) + `</div>`;
       return `<div class="card p-3 mb-2">
         <div class="d-flex align-items-center mb-1">${chip(c)}
-          <span class="ms-2 stat" style="font-size:1.2rem">${(s.rows || 0).toLocaleString("sv-SE")}</span>
-          <span class="ms-2 small text-muted">rader denna körning${s.changed ? `, <span class="fw-semibold" style="color:#b8860b">${s.changed} prisändringar</span>` : ""}</span>
-          <span class="ms-auto st-${statusClass}">${running ? "● " : ""}${statusTxt}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
+          <span class="ms-2 stat" style="font-size:1.2rem">${(r.rows || 0).toLocaleString("sv-SE")}</span>
+          <span class="ms-2 small text-muted">rader ${live ? "denna körning" : "senaste körningen"}${r.changed ? `, <span class="fw-semibold" style="color:#b8860b">${r.changed} prisändringar</span>` : ""}</span>
+          <span class="ms-auto st-${statusClass}">${running ? "● " : ""}${statusTxt}${r.errors ? ` &middot; ${r.errors} fel` : ""}</span>
         </div>
         ${bar}${sub}
-        ${s.last_error ? `<div class="small text-danger mt-1">senaste fel: ${esc(s.last_error)}</div>` : ""}
+        ${r.last_error ? `<div class="small text-danger mt-1">senaste fel: ${esc(r.last_error)}</div>` : ""}
       </div>`;
     }
 

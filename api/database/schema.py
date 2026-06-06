@@ -200,6 +200,20 @@ def init_db():
         "CREATE TABLE IF NOT EXISTS store_price_volume (chain TEXT PRIMARY KEY, price_rows INTEGER, "
         "price_stores INTEGER, updated TEXT)"
     )
+    # Beständig körnings-historik per crawl och kedja (motiveras av 22:12-incidenten: massfelet lämnade
+    # inget spår - all state låg i minnet). Täcker BÅDA systemen: kind='store_prices' (per-butik ICA/Coop)
+    # och kind='catalog' (master nationella). Skrivs vid körningens slut. Driver historik-vy + DURABLE
+    # "ändringar sedan senaste" (överlever omstart, till skillnad från CRAWL_STATE/STORE_PRICE_STATE).
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS crawl_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL, chain TEXT NOT NULL,
+            started TEXT, finished TEXT, status TEXT,
+            rows INTEGER DEFAULT 0, changed INTEGER DEFAULT 0, errors INTEGER DEFAULT 0,
+            stores_ok INTEGER, stores_total INTEGER, last_error TEXT
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_crawl_runs_chain ON crawl_runs(kind, chain, id)")
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}

@@ -643,6 +643,13 @@ async def crawl_all(limit_categories=None, chains=None):
             await asyncio.gather(*(_CRAWLERS[c](client, limit_categories) for c in targets))
     finally:
         CRAWL_STATE.update(running=False, finished_at=_now())
+        for c in targets:  # beständig körnings-historik (kind='catalog') - en rad per kedja
+            cs = CRAWL_STATE["chains"][c]
+            database.record_crawl_run("catalog", c, started=cs.get("started_at"),
+                                      finished=cs.get("finished_at"), status=cs.get("status"),
+                                      rows=cs.get("products", 0), changed=cs.get("changed", 0),
+                                      errors=cs.get("errors", 0),
+                                      last_error=(cs.get("last_errors") or [None])[0])
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
              for k in ("products", "new", "known", "changed", "errors")} for c in targets})
     return CRAWL_STATE

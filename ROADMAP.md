@@ -906,14 +906,14 @@ CLAUDE.md ("Per-butik-crawlens tidsprofil"). Hävstänger ej utvärderade i drif
     Materialisera EAN-unionen (counter vid insert) eller warma cachen i bakgrunden vid uppstart/timer.
 
 ### Crawl-historik/observabilitet - persistera per-körning (TODO, 2026-06-05)
-  - [ ] **Spara jobb-/fel-/körningsinfo per crawl och kedja** så man kan gå tillbaka och se vad som hände.
-    Motiveras direkt av 22:12-incidenten: massfelet (PoolTimeout på alla butiker) lämnade INGET beständigt
-    spår - all state (`CRAWL_STATE`, `STORE_PRICE_STATE`) ligger i minnet och nollställs vid omstart. Förslag:
-    EN tabell `crawl_runs(chain, run_ts, started, finished, stores_ok, errors, rows, changed, last_error,
-    duration)` (ev. + `crawl_run_errors` för fler fel/körning). Skrivs vid körningens slut (och löpande för
-    pågående). Driver: (a) historik-vy i konsolen, (b) DURABLE "ändringar sedan senaste körningen" som
-    överlever omstart - vilket Steg-6-kortens `changed` annars tappar (se Ask 3, dagens unify). En tabell
-    täcker både master-crawl (nationella) och per-butik-crawl (ICA/Coop).
+  - [x] **Crawl-körningshistorik BYGGT (2026-06-06).** Tabell `crawl_runs(kind, chain, started, finished,
+    status, rows, changed, errors, stores_ok, stores_total, last_error)` (`api/database/crawl_runs.py`),
+    skrivs vid varje körnings slut: per-butik (`store_crawl._run_chain` finally, kind='store_prices') och
+    master (`catalog_crawl.crawl_all` finally, kind='catalog'). `GET /v1/admin/crawl-history` + historik-vy
+    i Sortiment-fliken (tid/kedja/typ/rader/prisändringar/fel/längd/status). DURABLE "ändringar sedan senaste":
+    `last_crawl_runs()` exponeras i crawl/status -> Steg-6-korten visar senaste körningen även efter omstart
+    (in-memory-staten nollställs då). Motiverades av 22:12-incidenten som inte lämnade spår. (Möjlig
+    utbyggnad: löpande skrivning för pågående körning + `crawl_run_errors` för fler fel/körning.)
 
 ### Läs-integration
 - Läs-funktioner i `database.py` som speglar `list_products` (EAN-gruppering cross-chain, kanonisk kategori

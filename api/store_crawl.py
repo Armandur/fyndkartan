@@ -162,6 +162,11 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         database.recompute_store_aggregates(chain)  # materialisera intervall-aggregatet (price_min/max/stores)
     finally:
         cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False)
+        status = "avbruten" if ctl["abort"] else ("ok_med_fel" if cs["errors"] else "ok")
+        database.record_crawl_run("store_prices", chain, started=cs["started_at"],
+                                  finished=cs["finished_at"], status=status, rows=cs["rows"],
+                                  changed=cs["changed"], errors=cs["errors"], stores_ok=cs["stores_ok"],
+                                  stores_total=cs["total"], last_error=cs["last_error"])
 
 
 async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):
