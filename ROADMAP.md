@@ -1116,6 +1116,15 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   den geografiska zonen. Flippar flödet: plats/zon -> produkter+pris, i st.f. produkt -> pris-nära.
   Kräver ev. ny läs-endpoint (katalog scopad till en geo-zon, dvs union av butikerna inom radien) eller
   att `catalog_browse` tar `near=lat,lng&radius=`. Den nuvarande modal-vyn kan finnas kvar som komplement.
+  **Semantik för "zonens sortiment" (BEKRÄFTAT 2026-06-06):** varor som finns i MINST EN butik i zonen
+  (union - brett och mest användbart, ej "finns i alla zon-butiker" som blir för smalt). Per vara:
+  BILLIGAST i zonen + prisintervall + antal zon-butiker som har varan; sorterbart på billigast / störst
+  prisspridning. **Implementations-not:** zonens aggregat (billigast/intervall) kan INTE använda de
+  globalt materialiserade `catalog_products.price_min/max` - de gäller alla butiker - utan måste
+  LIVE-aggregeras ur `catalog_store_prices` filtrerat till zonens ledgers/accounts (härleds via samma
+  fysisk-butik -> native-mappning som `store_prices_geo`). Den live-aggregeringen är den tunga,
+  skala-känsliga frågan -> mät den (spike) FÖRE kart-cirkeln; den siffran avgör också SQLite-vs-Postgres
+  (se "Databasval" nedan: serverings-tabellen är bunden ~20M, bara observations-historiken växer fritt).
 - **Butiksval/favoriter som jämförelse-scope:** "jämför sortiment bara mot mina favoritbutiker"
   (infran finns - favoriter används redan för offers "rea hos favoriter"; utöka till katalog/hyllpris).
 - **Per produkt:** "billigast hos dina favoriter" / "billigast nära dig" + en liten butikslista med pris.
