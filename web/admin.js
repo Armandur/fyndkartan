@@ -1459,15 +1459,21 @@
         const d = await (await api("/v1/admin/crawl-history?limit=40")).json();
         const runs = d.runs || [];
         if (!runs.length) { el.innerHTML = '<span class="text-muted">Inga körningar loggade än.</span>'; return; }
+        const errCell = (r) => {
+          if (!r.errors) return '<span class="text-muted">0</span>';
+          const parts = Object.entries(r.errors_by_type || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ×${v.toLocaleString("sv-SE")}`);
+          const inline = parts.length ? `<div class="text-muted" style="font-size:.72rem">${esc(parts.slice(0, 3).join(", "))}${parts.length > 3 ? " …" : ""}</div>` : "";
+          return `<span class="text-danger fw-semibold" title="${esc(parts.join("\n") || r.last_error || "")}">${r.errors.toLocaleString("sv-SE")}</span>${inline}`;
+        };
         el.innerHTML = `<table class="table table-sm align-middle mb-0">
-          <thead><tr><th>Tid</th><th>Kedja</th><th>Typ</th><th class="text-end">Rader</th><th class="text-end">Prisändr.</th><th class="text-end">Fel</th><th>Längd</th><th>Status</th></tr></thead>
+          <thead><tr><th>Tid</th><th>Kedja</th><th>Typ</th><th class="text-end">Rader</th><th class="text-end">Prisändr.</th><th class="text-end">Fel (per typ)</th><th>Längd</th><th>Status</th></tr></thead>
           <tbody>${runs.map(r => `<tr>
             <td class="mono">${esc(fmtTs(r.finished || r.started))}</td>
             <td>${chip(r.chain)}</td>
             <td class="text-muted">${r.kind === "store_prices" ? "per butik" : "katalog"}</td>
             <td class="text-end">${(r.rows || 0).toLocaleString("sv-SE")}${r.stores_total ? `<span class="text-muted"> &middot; ${r.stores_ok || 0}/${r.stores_total} but.</span>` : ""}</td>
             <td class="text-end">${r.changed ? `<span style="color:#b8860b">${r.changed.toLocaleString("sv-SE")}</span>` : "-"}</td>
-            <td class="text-end ${r.errors ? "text-danger" : "text-muted"}">${r.errors || 0}</td>
+            <td class="text-end">${errCell(r)}</td>
             <td class="text-muted">${esc(dur(r.started, r.finished))}</td>
             <td class="${stCls(r.status)}">${esc(r.status || "-")}${r.last_error ? ` <span class="text-danger" title="${esc(r.last_error)}">&#9888;</span>` : ""}</td>
           </tr>`).join("")}</tbody></table>`;

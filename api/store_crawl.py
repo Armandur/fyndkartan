@@ -49,6 +49,14 @@ def _is_waf(e):
     return isinstance(e, httpx.TransportError)
 
 
+def _err_key(e):
+    """Normaliserad fel-bucket för fördelnings-statistik (grupperar per typ, inte per butiks-URL):
+    'HTTP 401', 'PoolTimeout', 'ReadError'..."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return f"HTTP {e.response.status_code}"
+    return type(e).__name__
+
+
 def _now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -113,6 +121,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
               last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
               started_at=_now(), finished_at=None)
     ctl = {"ok_streak": 0, "waf_streak": 0, "cooldown_until": 0.0, "abort": False}
+    err_counts = {}  # fel-fördelning {feltyp: antal} -> beständig i crawl_runs (se vad som gick fel)
 
     async def _run_one(acct):
         cs["active"] += 1
@@ -131,6 +140,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         except Exception as e:  # noqa: BLE001
             cs["errors"] += 1
             cs["last_error"] = f"{type(e).__name__}: {e}"[:200]  # transport-fel har tom str(e) -> ta med typen
+            err_counts[_err_key(e)] = err_counts.get(_err_key(e), 0) + 1  # fördelning per feltyp
             ctl["ok_streak"] = 0
             if _is_waf(e):
                 ctl["waf_streak"] += 1
@@ -166,7 +176,8 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         database.record_crawl_run("store_prices", chain, started=cs["started_at"],
                                   finished=cs["finished_at"], status=status, rows=cs["rows"],
                                   changed=cs["changed"], errors=cs["errors"], stores_ok=cs["stores_ok"],
-                                  stores_total=cs["total"], last_error=cs["last_error"])
+                                  stores_total=cs["total"], last_error=cs["last_error"],
+                                  error_summary=err_counts or None)
 
 
 async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):

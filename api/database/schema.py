@@ -214,6 +214,7 @@ def init_db():
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_crawl_runs_chain ON crawl_runs(kind, chain, id)")
+    _ensure_column(conn, "crawl_runs", "error_summary", "TEXT")  # JSON {feltyp: antal} - fel-fördelning/körning
 
     # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
     _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
