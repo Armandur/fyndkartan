@@ -380,6 +380,10 @@ img.o-img { cursor: zoom-in; }
 .cmp-big { font-weight: 800; font-size: .82rem; color: #1c2530; text-align: right; }
 .cmp-row.cmp-best .cmp-big { color: #137a4d; }
 .cmp-sub { grid-column: 2 / -1; font-size: .68rem; color: #8b95a4; }
+/* Grupperad rad (flera butiker med samma deal): kompakt butikslista under rubriken */
+.cmp-row--grp { align-items: start; }
+.cmp-stores { grid-column: 2 / -1; margin-top: 2px; display: flex; flex-direction: column; gap: 1px; }
+.cmp-store { font-size: .68rem; color: #46505c; }
 .cmp-variants {
   font-size: .62rem; font-weight: 700; background: #eef1f4; color: #46505c;
   padding: 0 5px; border-radius: 4px; cursor: help;
@@ -455,3 +459,15 @@ body.browse-mode .sidebar { display: none; }
 #browseMore { max-width: 1200px; margin: 1rem auto; }
 .browse-progress { font-size: .8rem; color: #8b95a4; padding: .3rem 0; }
 .browse-progress span { font-weight: 600; color: #46505c; }
+
+/* ---- Geo-first zon-browse: väljare i sidopanelen (#zoneStart + #zonePicker) + zon-info ---- */
+/* Väljaren är inline i sidopanelen; bara nålen + radie-cirkeln ritas på kartan (Leaflet-lager). */
+.zone-picker { background: #f6f8fa; border: 1px solid #e1e6ea; border-radius: 8px; padding: .55rem .6rem; }
+/* Zon-info i bläddra-vyn */
+.zone-bar { max-width: 900px; margin: 0 auto .6rem; text-align: center; }
+.zone-bar-row { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  background: #f0fbf4; border: 1px solid #b9e6cc; border-radius: 18px; padding: .25rem .85rem;
+  font-size: .82rem; color: #1c7a4d; }
+/* I zon-läget gäller inte kedje-/erbjudande-/favorit-filtren (zonen spänner över kedjor) -> göm dem */
+.zone-browse #browseChain, .zone-browse #browseDeal,
+.zone-browse .browse-head label { display: none; }

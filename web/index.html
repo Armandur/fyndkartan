@@ -82,14 +82,17 @@
           <input class="form-check-input" type="checkbox" id="onlyFavorites">
           <label class="form-check-label" for="onlyFavorites">&#9733; Bara favoriter</label>
         </div>
-        <div class="d-flex gap-2 mt-2">
-          <button id="compareBtn" class="btn btn-sm btn-dark flex-grow-1">Prisjämför här</button>
-          <select id="compareRadius" class="form-select form-select-sm" style="width:auto">
-            <option value="3">3 km</option>
-            <option value="5" selected>5 km</option>
-            <option value="10">10 km</option>
-            <option value="20">20 km</option>
-          </select>
+        <button id="zoneStart" class="btn btn-sm btn-dark w-100 mt-2">&#128205; Här i närheten</button>
+        <!-- Geo-first zon-väljare (inline i sidopanelen); nål + radie-cirkel ritas på kartan -->
+        <div id="zonePicker" class="zone-picker d-none mt-2">
+          <div class="small text-muted mb-2">Dra nålen på kartan för att välja plats, justera radien.</div>
+          <label class="small d-block mb-1">Radie: <span id="zoneRadiusVal">10</span> km</label>
+          <input id="zoneRadius" type="range" min="2" max="50" step="1" value="10" class="form-range mb-2">
+          <div class="d-flex gap-2 mb-2">
+            <button id="zoneCompare" class="btn btn-sm btn-dark flex-grow-1">Prisjämför här</button>
+            <button id="zoneBrowse" class="btn btn-sm btn-dark flex-grow-1">Bläddra sortimentet</button>
+          </div>
+          <button id="zoneCancel" class="btn btn-sm btn-outline-secondary w-100">Avbryt</button>
         </div>
         <button id="favOffersBtn" class="btn btn-sm btn-outline-dark w-100 mt-2 fav-only">&#9733; Mina favoriters erbjudanden</button>
         <button id="compareFavBtn" class="btn btn-sm btn-outline-dark w-100 mt-2 fav-only">&#9733; Jämför mina favoriter</button>
@@ -185,6 +188,7 @@
     </aside>
 
     <main id="map"></main>
+
     <section id="browseView" class="d-none">
       <div class="browse-head">
         <input id="browseSearch" type="search" class="form-control form-control-sm" placeholder="Sök i hela sortimentet&hellip;">
@@ -209,6 +213,7 @@
           <input id="browseFav" type="checkbox"> &#9733; Rea hos favoriter
         </label>
       </div>
+      <div id="zoneBar" class="zone-bar d-none"></div>
       <div id="browseCats" class="browse-cats"></div>
       <div id="browseSummary" class="browse-summary text-muted small"></div>
       <div id="browseTitle" class="browse-title"></div>

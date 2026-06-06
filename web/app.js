@@ -894,17 +894,37 @@ function compareCard(p) {
   const anyDerived = p.compare_by === "unit_price" && p.offers.some(o => o.comparison_derived);
   const spreadLabel = p.compare_by === "unit_price"
     ? `${anyDerived ? "≈ " : ""}${kr(p.spread)} kr/${esc(p.unit)}` : `${kr(p.spread)} kr`;
-  const rows = p.offers.map((o, i) => {
+  // Det jämförbara värdet per butik: enhetspris (kr/kg) eller, i råpris-läge, STYCKPRIS
+  // (multibuy: price_per_item) så '3 för 100' visas som 33,33 kr/st - inte 100 kr.
+  const cmpBig = (o) => p.compare_by === "unit_price"
+    ? (o.comparison_value != null ? `${o.comparison_derived ? "≈ " : ""}${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")}` : "–")
+    : (o.multibuy_qty > 1 && o.price_per_item != null ? `${kr(o.price_per_item)} kr/st` : (o.price != null ? `${kr(o.price)} kr` : "–"));
+  // Gruppera identiska deals inom samma kedja (samma jämförvärde + text + medlemspris) -> EN rad
+  // med "N butiker" + kompakt butikslista (man ser fortfarande vilka, utan 6 likadana rader).
+  const grpVal = (o) => p.compare_by === "unit_price" ? o.comparison_value : o.price_per_item;
+  const grpMap = new Map();
+  p.offers.forEach((o) => {
+    const k = `${o.chain}|${grpVal(o)}|${o.price_text || ""}|${o.member_price ? 1 : 0}`;
+    if (!grpMap.has(k)) grpMap.set(k, []);
+    grpMap.get(k).push(o);
+  });
+  const rows = [...grpMap.values()].map((grp, i) => {
+    const o = grp[0];
     const meta = state.chains[o.chain] || {};
-    const big = p.compare_by === "unit_price"
-      ? (o.comparison_value != null ? `${o.comparison_derived ? "≈ " : ""}${kr(o.comparison_value)} kr/${esc(o.comparison_unit || "")}` : "–")
-      : (o.price != null ? `${kr(o.price)} kr` : "–");
     const member = o.member_price ? `<span class="o-member">Klubbpris</span>` : "";
-    return `<div class="cmp-row${i === 0 ? " cmp-best" : ""}">
-      <span class="dot" style="background:${meta.color || "#666"}"></span>
+    const head = `<span class="dot" style="background:${meta.color || "#666"}"></span>
       <span class="cmp-chain">${esc(meta.label || o.chain)}</span>
-      <span class="cmp-big">${big}</span>${member}${dealBadge(o)}
-      <div class="cmp-sub">${esc(o.price_text || "")} &middot; ${esc(o.store_name || "")}${o.distance_km != null ? " " + o.distance_km + "km" : ""}</div>
+      <span class="cmp-big">${cmpBig(o)}</span>${member}${dealBadge(o)}`;
+    if (grp.length === 1) {
+      return `<div class="cmp-row${i === 0 ? " cmp-best" : ""}">${head}
+        <div class="cmp-sub">${esc(o.price_text || "")}${o.price_text ? " &middot; " : ""}${esc(o.store_name || "")}${o.distance_km != null ? " " + o.distance_km + "km" : ""}</div>
+      </div>`;
+    }
+    const list = grp.slice().sort((a, b) => (a.distance_km ?? 1e9) - (b.distance_km ?? 1e9))
+      .map((s) => `<div class="cmp-store">${esc(s.store_name || "")}${s.distance_km != null ? ` <span class="text-muted">${s.distance_km} km</span>` : ""}</div>`).join("");
+    return `<div class="cmp-row cmp-row--grp${i === 0 ? " cmp-best" : ""}">${head}
+      <div class="cmp-sub">${esc(o.price_text || "")}${o.price_text ? " &middot; " : ""}<strong>${grp.length} butiker</strong></div>
+      <div class="cmp-stores">${list}</div>
     </div>`;
   }).join("");
   const actions = p.ean
@@ -935,10 +955,11 @@ function renderCompare(filterText) {
     : `<div class="text-muted small p-2">Inga produkter på erbjudande hos flera kedjor här.</div>`;
 }
 
+// Prisjämför erbjudanden i zonen (nålen + radien från zon-väljaren, inte fönstrets mitt).
 async function showCompare() {
+  if (zoneState.lat == null) return;
   compareRender = renderCompare;
-  const c = map.getCenter();
-  const radius = document.getElementById("compareRadius").value;
+  const lat = zoneState.lat, lng = zoneState.lng, radius = zoneState.radius;
   const panel = document.getElementById("comparePanel");
   document.getElementById("compareTitle").textContent = "Jämför…";
   document.getElementById("compareFilter").value = "";
@@ -949,7 +970,7 @@ async function showCompare() {
   openNav();
   try {
     const r = await fetch(
-      `/v1/compare/near?lat=${c.lat.toFixed(5)}&lng=${c.lng.toFixed(5)}&radius_km=${radius}&min_chains=2`);
+      `/v1/compare/near?lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}&radius_km=${radius}&min_chains=2`);
     const d = await r.json();
     currentCompare = d.products || [];
     document.getElementById("compareTitle").textContent =
@@ -994,7 +1015,6 @@ async function showCompareFavorites() {
   }
 }
 
-document.getElementById("compareBtn").addEventListener("click", showCompare);
 let favOffersData = null;
 let compareRender = renderCompare;
 
@@ -1275,7 +1295,7 @@ document.getElementById("productsList").addEventListener("click", (e) => {
 
 // ---- Bläddra-vy: kategori-navigering + produktrutnät (alternativ till kartan) ----
 // Hash-driven: #sortiment[/k/<kategori>|/s/<sök>]. Kedje-/erbjudande-filter är transient UI-state.
-const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "", deal: "", favorites: false, vegan: false, vegetarian: false };
+const browseState = { q: "", category: "", chain: "", onlyOffers: false, sort: "", deal: "", favorites: false, vegan: false, vegetarian: false, zoneMode: false, zone: null };
 // Kost är ett TVÄRGÅENDE filter (kombineras med vanlig kategori), exponerat som två chips.
 // Båda kan vara på; vegetariskt ⊃ veganskt -> vegetarisk dominerar (superset) när båda valda.
 function browseDietParam() { return browseState.vegetarian ? "vegetarian" : (browseState.vegan ? "vegan" : ""); }
@@ -1300,6 +1320,7 @@ function showMapUI() {
 function applyBrowseHash() {
   const h = location.hash.slice(1);
   if (h.startsWith("produkt/")) {  // delbart kartfilter: #produkt/<ean>[/<chain>]
+    setBrowseZoneMode(false);
     if (document.body.classList.contains("browse-mode")) showMapUI();
     const parts = h.slice("produkt/".length).split("/");
     const ean = decodeURIComponent(parts[0] || "");
@@ -1307,11 +1328,25 @@ function applyBrowseHash() {
     if (ean) filterMapByProduct(ean, null, fchain);
     return;
   }
+  if (h.startsWith("zon")) {  // geo-first zon-browse: #zon/<lat>/<lng>/<radie>
+    showBrowseUI();
+    const parts = h.split("/");
+    const lat = parseFloat(parts[1]), lng = parseFloat(parts[2]), radius = parseFloat(parts[3]) || 10;
+    zoneState.lat = lat; zoneState.lng = lng; zoneState.radius = radius;
+    browseState.zone = (!isNaN(lat) && !isNaN(lng)) ? { lat, lng, radius } : null;
+    browseState.category = ""; browseState.q = "";
+    document.getElementById("browseSearch").value = "";
+    setBrowseZoneMode(true);
+    loadBrowse();
+    return;
+  }
   if (!h.startsWith("sortiment")) {
+    setBrowseZoneMode(false);
     if (document.body.classList.contains("browse-mode")) showMapUI();
     if (state.productFilter) clearProductFilter();  // lämnade produktfiltret -> rensa
     return;
   }
+  setBrowseZoneMode(false);
   showBrowseUI();
   const rest = h.slice("sortiment".length).replace(/^\//, "");
   browseState.category = rest.startsWith("k/") ? decodeURIComponent(rest.slice(2)) : "";
@@ -1362,6 +1397,7 @@ function populateBrowseChain() {
 
 let browseSummary = null, _summaryChain = " ";  // sentinel: ingen summary hämtad än
 async function loadBrowseSummary() {
+  if (browseState.zoneMode) return;  // zon-läget tar kategori-räknarna ur zon-svaret (i loadBrowse)
   // Kategori-siffrorna speglar samma filter som bläddra-vyn (kedja + bara erbjudanden + favoriter + kost).
   const key = `${browseState.chain}|${browseState.onlyOffers ? 1 : 0}|${browseState.favorites ? 1 : 0}|${browseDietParam()}`;
   if (_summaryChain === key && browseSummary) { renderBrowseCats(); renderBrowseSummary(); return; }
@@ -1428,9 +1464,11 @@ function updateBrowseTitle() {
 function renderBrowseGrid() {  // full omrendering (kategori-/filterbyte) - infinite scroll appendar separat
   const grid = document.getElementById("browseGrid");
   updateBrowseTitle();
-  grid.innerHTML = browseProducts.length
-    ? browseCardsHtml(browseProducts)
-    : `<div class="text-muted p-3">${browseState.onlyOffers ? "Inga produkter med erbjudande i den här kategorin." : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom)."}</div>`;
+  const empty = browseState.zoneMode
+    ? "Inga varor i zonen (prova en större radie eller flytta nålen)."
+    : (browseState.onlyOffers ? "Inga produkter med erbjudande i den här kategorin."
+       : "Inga produkter i sortiment-katalogen (kör en crawl i konsolen om den är tom).");
+  grid.innerHTML = browseProducts.length ? browseCardsHtml(browseProducts) : `<div class="text-muted p-3">${empty}</div>`;
   renderBrowseProgress();
 }
 
@@ -1460,7 +1498,7 @@ function appendBrowseCards(batch) {
 async function loadBrowse() {
   const grid = document.getElementById("browseGrid");
   const more = document.getElementById("browseMore");
-  if (!browseState.q && !browseState.category) {
+  if (!browseState.zoneMode && !browseState.q && !browseState.category) {
     browseProducts = []; browseHasMore = false;
     document.getElementById("browseTitle").textContent = "";
     grid.innerHTML = `<div class="text-muted p-3">Välj en kategori ovan eller sök för att bläddra hela sortimentet.</div>`;
@@ -1472,11 +1510,16 @@ async function loadBrowse() {
   const token = ++browseToken;  // race-guard: bara senaste laddningen renderar
   browseLoadingMore = true;     // blockera infinite scroll medan första sidan laddas
   try {
-    const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(0)}`)).json();
+    const d = await (await fetch(browseUrl(0))).json();
     if (token !== browseToken) return;  // en nyare laddning tog över (snabb växling)
     browseProducts = d.products || [];
     browseTotalCount = d.total ?? null;
     browseHasMore = browseProducts.length === BROWSE_PAGE;
+    if (browseState.zoneMode) {  // zon-svaret bär kategori-räknare + zon-meta (ingen separat /summary)
+      browseSummary = { categories: d.categories || {}, total: d.total || 0, by_chain: {} };
+      renderZoneBar(d.zone);
+      renderBrowseCats();
+    }
     browseLoadingMore = false;  // första sidan klar -> innan render (annars visar progressen "Laddar fler…")
     renderBrowseGrid();
     setupBrowseObserver();
@@ -1501,6 +1544,19 @@ function browseQS(offset) {
   return p;
 }
 
+// Full URL för en bläddra-sida: zon-läget anropar /catalog/zone (geo-scopat), annars /catalog/browse.
+function browseUrl(offset) {
+  if (browseState.zoneMode && browseState.zone) {
+    const z = browseState.zone;
+    const p = new URLSearchParams({ lat: z.lat, lng: z.lng, radius: z.radius, limit: BROWSE_PAGE, offset });
+    if (browseState.q) p.set("q", browseState.q);
+    if (browseState.category) p.set("category", browseState.category);
+    if (browseState.sort) p.set("sort", browseState.sort);
+    return `/v1/products/catalog/zone?${p}`;
+  }
+  return `/v1/products/catalog/browse?${browseQS(offset)}`;
+}
+
 async function loadMoreBrowse() {
   if (browseLoadingMore || !browseHasMore) return;
   browseLoadingMore = true;
@@ -1508,7 +1564,7 @@ async function loadMoreBrowse() {
   const more = document.getElementById("browseMore");
   renderBrowseProgress();  // "Laddar fler… (X av Y)"
   try {
-    const d = await (await fetch(`/v1/products/catalog/browse?${browseQS(browseProducts.length)}`)).json();
+    const d = await (await fetch(browseUrl(browseProducts.length))).json();
     if (token !== browseToken) return;  // kategori bytt under hämtningen
     const batch = d.products || [];
     browseProducts = browseProducts.concat(batch);
@@ -1536,6 +1592,10 @@ function setupBrowseObserver() {
 document.getElementById("browseSearch").addEventListener("input", (e) => {
   const q = e.target.value.trim();
   clearTimeout(browseTimer);
+  if (browseState.zoneMode) {  // stanna kvar i zon-läget, filtrera bara
+    browseTimer = setTimeout(() => { browseState.q = q.length >= 2 ? q : ""; loadBrowse(); }, 250);
+    return;
+  }
   browseTimer = setTimeout(() =>
     browseGo(q.length >= 2 ? "sortiment/s/" + encodeURIComponent(q) : "sortiment"), 250);
 });
@@ -1573,6 +1633,10 @@ document.getElementById("browseCats").addEventListener("click", (e) => {
     return;
   }
   const cat = browseState.category === c.dataset.cat ? "" : c.dataset.cat;
+  if (browseState.zoneMode) {  // stanna kvar i zon-läget, filtrera på kategori
+    browseState.category = cat; renderBrowseCats(); loadBrowse();
+    return;
+  }
   browseGo(cat ? "sortiment/k/" + encodeURIComponent(cat) : "sortiment");
 });
 document.getElementById("browseGrid").addEventListener("click", (e) => {
@@ -1592,6 +1656,97 @@ document.getElementById("browseGrid").addEventListener("click", (e) => {
   }
   const mapBtn = e.target.closest(".o-map");
   if (mapBtn) goProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
+});
+
+// ---- Geo-first zon-browse: markera plats + radie på kartan -> bläddra zonens sortiment ----
+const zoneState = { lat: null, lng: null, radius: 10, marker: null, circle: null };
+
+function setBrowseZoneMode(on) {
+  browseState.zoneMode = on;
+  document.body.classList.toggle("zone-browse", on);
+  if (!on) {
+    const bar = document.getElementById("zoneBar");
+    if (bar) { bar.innerHTML = ""; bar.classList.add("d-none"); }
+  }
+}
+
+function renderZoneBar(zone) {
+  const el = document.getElementById("zoneBar");
+  if (!el) return;
+  if (!browseState.zoneMode || !zone) { el.innerHTML = ""; el.classList.add("d-none"); return; }
+  el.classList.remove("d-none");
+  const chips = (zone.chains_priced || []).map((c) => {
+    const m = state.chains[c] || {};
+    return `<span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || c)}</span>`;
+  }).join("");
+  const lidl = zone.lidl_in_zone ? ` <span class="text-muted">· Lidl finns men saknar prisdata</span>` : "";
+  el.innerHTML = `<span class="zone-bar-row"><strong>Zonens sortiment</strong> · ${kr(zone.radius_km)} km ·
+    ${fmtNum(zone.store_count)} butiker ${chips}${lidl}
+    <button id="zoneEdit" class="btn btn-sm btn-link p-0 ms-1">Ändra zon</button></span>`;
+  document.getElementById("zoneEdit").onclick = () => { browseGo(""); zoneStartPick(true); };
+}
+
+function zoneClearLayers() {
+  if (zoneState.marker) { map.removeLayer(zoneState.marker); zoneState.marker = null; }
+  if (zoneState.circle) { map.removeLayer(zoneState.circle); zoneState.circle = null; }
+}
+
+// Starta zon-väljaren: nål + radie-cirkel på kartan. keep=true -> behåll nuvarande zon-plats
+// (panorera dit), annars utgå från kartans mitt.
+function zoneStartPick(keep) {
+  if (document.body.classList.contains("browse-mode")) showMapUI();  // tillbaka till kartvyn (sidopanelen + nålen syns)
+  let lat, lng;
+  if (keep && zoneState.lat != null) {
+    lat = zoneState.lat; lng = zoneState.lng;
+    map.setView([lat, lng], Math.max(map.getZoom(), 11));
+  } else {
+    const c = map.getCenter(); lat = c.lat; lng = c.lng;
+  }
+  zoneState.lat = lat; zoneState.lng = lng;
+  const rEl = document.getElementById("zoneRadius");
+  zoneState.radius = parseInt(rEl.value, 10) || 10;
+  document.getElementById("zoneRadiusVal").textContent = zoneState.radius;
+  if (!zoneState.marker) {
+    zoneState.marker = L.marker([lat, lng], { draggable: true, autoPan: true }).addTo(map);
+    zoneState.marker.on("drag", () => {
+      const p = zoneState.marker.getLatLng();
+      zoneState.lat = p.lat; zoneState.lng = p.lng;
+      if (zoneState.circle) zoneState.circle.setLatLng(p);
+    });
+  } else {
+    zoneState.marker.setLatLng([lat, lng]);
+  }
+  if (!zoneState.circle) {
+    zoneState.circle = L.circle([lat, lng], { radius: zoneState.radius * 1000, color: "#1d6f42",
+      fillColor: "#1d6f42", fillOpacity: 0.08, weight: 2 }).addTo(map);
+  } else {
+    zoneState.circle.setLatLng([lat, lng]).setRadius(zoneState.radius * 1000);
+  }
+  document.getElementById("zoneStart").classList.add("d-none");
+  document.getElementById("zonePicker").classList.remove("d-none");
+}
+
+function zoneEndPick() {
+  document.getElementById("zonePicker").classList.add("d-none");
+  document.getElementById("zoneStart").classList.remove("d-none");
+}
+
+document.getElementById("zoneStart").addEventListener("click", () => zoneStartPick(!!zoneState.marker));
+document.getElementById("zoneCancel").addEventListener("click", () => { zoneEndPick(); zoneClearLayers(); });
+document.getElementById("zoneCompare").addEventListener("click", () => {
+  if (zoneState.lat == null) return;
+  zoneEndPick();        // stäng väljaren; nål/cirkel kvar som kontext på kartan
+  showCompare();        // prisjämför erbjudanden i zonen (zoneState lat/lng/radie)
+});
+document.getElementById("zoneRadius").addEventListener("input", (e) => {
+  zoneState.radius = parseInt(e.target.value, 10) || 10;
+  document.getElementById("zoneRadiusVal").textContent = zoneState.radius;
+  if (zoneState.circle) zoneState.circle.setRadius(zoneState.radius * 1000);
+});
+document.getElementById("zoneBrowse").addEventListener("click", () => {
+  if (zoneState.lat == null) return;
+  zoneEndPick();
+  browseGo(`zon/${zoneState.lat.toFixed(5)}/${zoneState.lng.toFixed(5)}/${zoneState.radius}`);
 });
 
 // ---- Mobil: sidopanel som overlay ----

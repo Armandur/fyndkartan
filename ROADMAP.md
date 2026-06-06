@@ -1145,7 +1145,16 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
 - Admin: `store_crawl`-status + per-butik-trigger + queryability-karta (likt partial/EAN-warm-korten).
 
 ### Kart-appen (konsument) - ny funktionalitet
-- [ ] **UI-OMTAG: gör per-butik-pris-vyn GEO-FIRST, inte produkt-first (TODO 2026-06-06).** Nuvarande
+- [x] **GEO-FIRST zon-browse BYGGT (2026-06-06, Fas C).** Backend: `GET /v1/products/catalog/zone?lat=&lng=&radius=`
+  (`api/database/zone.py`: `zone_stores` haversine över alla kedjor -> `_zone_aggregate` ICA/Coop ur
+  `catalog_store_prices`, OR-grenad + `COUNT(*)` = butiker; `catalog_zone_browse` återanvänder cachade
+  `_browse_groups` + samma CatalogProduct-form -> frontend delar catalogCard). Union-semantik: ICA/Coop
+  butiksspecifikt zon-pris, Willys/Hemköp/CG nationellt om butik i zonen, Lidl saknar pris (zon-meta-flagga).
+  Mätt PG: 5km ~1,8s, 20km ~2,9s varmt (Python-loopen över 74k grupper dominerar; SQL ~1s). Frontend:
+  kart-nål (drag) + radie-slider-cirkel via "Bläddra zonens sortiment", bläddra-vyn i zon-läge (`#zon/lat/lng/r`,
+  kategori-chips ur zon-svaret, sök/kategori/sort stannar i zonen, infinite scroll). EJ webbläsartestad än.
+  Kvar/ev.: cacha/snabba Python-loopen om den känns trög; matkasse-jämförelse; prisvärmekarta.
+- [~] **UI-OMTAG: gör per-butik-pris-vyn GEO-FIRST, inte produkt-first (TODO 2026-06-06) - GJORT, se ovan.** Nuvarande
   lösning (per-butik-pris-modalen med tabbarna Alla/Nära kartans mitt/Mina favoriter) FUNKAR men är
   bakvänd - "nära kartans mitt" gömd i en produktmodal i bläddra-vyn (där kartan dessutom är dold).
   Bättre riktning (användarens förslag): börja från KARTAN. Sätt en pil/markör på kartan + rita en
