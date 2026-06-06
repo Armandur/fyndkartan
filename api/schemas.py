@@ -363,3 +363,24 @@ class ProductStoresResponse(BaseModel):
     ean: str = Field(..., description="Normaliserad EAN/GTIN")
     count: int = Field(..., description="Antal butiker med erbjudande på varan")
     stores: list[ProductStore] = Field(..., description="Butiker med erbjudande (ej hyllsortiment)")
+
+
+class ScopedStorePrice(BaseModel):
+    chain: str = Field(..., description="Kedjenyckel (ica/coop)")
+    store_id: str = Field(..., description="Fysisk butiks id (samma som i /v1/stores)")
+    name: str | None = Field(None, description="Butiksnamn")
+    city: str | None = Field(None, description="Ort")
+    lat: float | None = Field(None, description="Latitud")
+    lng: float | None = Field(None, description="Longitud")
+    distance_km: float | None = Field(None, description="Avstånd från sökpunkten (km), bara vid near-scope")
+    price: float | None = Field(None, description="Hyllpris (kr) i butiken; null = inget data för butiken")
+    comparison_value: float | None = Field(None, description="Jämförpris (per enhet)")
+    comparison_unit: str | None = Field(None, description="Jämförprisets enhet (kg/l/st)")
+
+
+class ProductPricesScopedResponse(BaseModel):
+    ean: str = Field(..., description="Normaliserad EAN/GTIN")
+    scope: str = Field(..., description="near | favorites | stores")
+    radius_km: float | None = Field(None, description="Sökradie (km), bara vid near-scope")
+    store_count: int = Field(..., description="Antal butiker i svaret")
+    stores: list[ScopedStorePrice] = Field(..., description="Per-butik-hyllpris, billigast först")

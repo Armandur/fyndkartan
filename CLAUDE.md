@@ -299,6 +299,14 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   AIMD-parallellism (tak `_MAX_CONC`=12, ICA+Coop parallellt) ~1-1,5h för full bägge-kedjor-crawl. Inkrementellt
   mycket billigare (`stores_to_crawl(max_age_hours)` hoppar nyligen crawlade). Hävstänger ej utnyttjade (se
   ROADMAP "Crawl-prestanda"): lägre pace, droppa breda termer på stora butiker, inom-butik-parallellism.
+- **Per-butik-pris konsument-läsväg (Steg 6-payoffen, `GET /v1/products/{ean}/prices`):** SCOPAR
+  hyllpriset till det användaren bryr sig om - `lat`/`lng`/`radius` (billigast nära en plats), `favorites=true`
+  (inloggad användares favoritbutiker) eller `stores=chain:id,...` (explicit). Skild från
+  `/store-prices` (som ger ALLA butiker grupperat per prisnivå - intervall-modalen). `database.store_prices_geo`
+  mappar FYSISK butik (`stores`.lat/lng + native) -> ledger/account -> `catalog_store_prices` (en ledger kan
+  täcka flera fysiska butiker -> pris per fysisk butik, geo korrekt). Haversine-filter (delad `geo.haversine`),
+  billigast först. Geo-scope = bara prissatta butiker; favorit/explicit = alla (pris null = inget data för
+  butiken -> visa elegant). Bara ICA/Coop (butiksprissatta). Matkasse-jämförelse (`/compare/basket`) är nästa steg.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och

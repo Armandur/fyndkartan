@@ -777,8 +777,10 @@ aggregering - stäm av innan skarp drift.
   (`database.price_history`, grupperad per kedja, Axfood via ean_cache reverse-resolve) + inline-SVG
   stegfunktion i konsument-appens produktmodal (lucka vid utgånget erbjudande, medlemspris som ring).
   Stats i konsolens Översikt. Kvar: ev. djupare vy (per butik, längre tidsspann) när datan vuxit.
-- Avvägning kvarstår: per butik (nu, stort) vs aggregerat per kedja/nationellt (juridiskt
-  känsligare) - stäm av ToS innan ev. nationell aggregering.
+- AVGJORT (2026-06-06): **per butik** för butiksprissatta kedjor (ICA/Coop) - vi spårar pris i ALLA
+  frågbara butiker (se Steg 6). Den tidigare "avvägning per butik vs nationellt aggregat" är därmed
+  resolverad till per butik; ToS/last hanteras som drift-fråga (rate-limit/cadence), inte genom att
+  avstå granulariteten.
 
 ---
 
@@ -954,10 +956,13 @@ jämförpris-ändring (+ baslinje vid första pris).
   historiken vuxit.)
 
 ### Avgörande beslut (ta UPP innan bygge)
-- **Nationellt, ej per butik.** Katalog-API:erna är nationella -> hyllpris + "KEDJAN för varan",
-  inte "BUTIKEN för varan". Per-butiks-sortiment skulle kräva crawl × 2500 butiker × hela katalogen =
-  ogenomförbart. Konsekvens: det EXAKTA kartfiltret per butik förblir offers-baserat; fulla sortiment
-  ger kedjenivå-täckning + nationellt hyllpris.
+- **Nationellt för Steg 5 (de nationellt prissatta kedjorna), per butik för ICA/Coop i Steg 6.**
+  ~~"Per-butiks-sortiment är ogenomförbart"~~ - det antagandet är ÖVERSPELAT (beslut 2026-06-06):
+  Willys/Hemköp/CG ÄR nationella (en crawl, nationellt hyllpris), men ICA/Coop är butiksprissatta och
+  spåras nu per butik i ALLA frågbara butiker (Steg 6). "Ogenomförbart" gällde att crawla × tusentals
+  butiker × hela katalogen - det är exakt vad vi medvetet bygger nu; den verkliga begränsningen är
+  crawl-tid/WAF (drift), inte teknisk omöjlighet. Konsekvens: kartfilter/jämförelser kan vara per butik
+  för ICA/Coop, kedjenivå/nationellt för de andra. (Se Steg 6 "Konsekvenser av beslutet".)
 - **Storlek:** ~30-50k varor/kedja × 5 ≈ 200k rader (~5x offers). Hanterbart i SQLite med index.
 - **ToS/juridik:** att skörda hela kataloger är känsligare än erbjudanden - stäm av före skarp drift.
 - **Beroende:** bygg EFTER datalager-översynen (se nedan) - särskilt den normaliserade `offer_eans`-tabellen,
@@ -991,7 +996,12 @@ klar: alla P1-fynd + de fristående P2 (C/D/E) åtgärdade; kvar = sweep-/crawl-
 fynd (F: per-butik-`store`-kolumn, G: Coop-butiksscoping).
 
 
-## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (PÅBÖRJAS - Fas 1)
+## Steg 6 - Per-butik-priser (Coop/ICA geografisk prisintelligens) (INSAMLING BYGGD, LÄSVÄG KVAR)
+<!-- Status 2026-06-06: datamodell (catalog_store_prices/store_crawl), mät-sweep (queryability), per-butik-
+rotations-crawl (AIMD, härdad), intervall i bläddra-vyn + butik-modal, per-butik prishistorik, och
+crawl-körningshistorik = BYGGT. KVAR (den faktiska konsumentnyttan): geo-/favorit-/matkasse-läsvägen
+(`/{ean}/prices?near=`, `/compare/basket`, butiks-scope i browse/compare) + kadens/färskhet i drift. -->
+
 
 Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), så vi kan svara
 "var är varan/matkassen billigast - hos mina favoritbutiker / nära mig". Bygger ovanpå Steg 5
@@ -999,6 +1009,33 @@ Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), s
 (ej bara efterfrågestyrt), med per-butik-historik från dag 1 och admin-styrt urval.** (Den tidigare
 brasklappen "vänta på en uttalad konsument" är medvetet åsidosatt.) Fas 1 (datamodell + mät-sweep) är
 låg risk och ger skala-siffran som DB-beslutet vilar på.
+
+### Konsekvenser av beslutet "alla frågbara butiker" (2026-06-06)
+Beslutet att spåra pris i ALLA frågbara ICA/Coop-butiker (inte representativt urval) flyttar tyngdpunkten
+från "ska vi?" till drift + konsumentnytta. Konkreta konsekvenser:
+- **Skala blir ett hårt krav, inte en öppen fråga.** Full matris ≈ ICA 1288 × ~13k + Coop ~214-310 × ~12k
+  ≈ **~20M rader**, plus per-butik prishistorik (append-on-change) ovanpå. Vi är på ~3,6M idag (341 ICA +
+  48 Coop crawlade). -> **Datalager-beslutet (SQLite vs Postgres) är inte längre hypotetiskt.** Varnings-
+  tecken syns redan: `recompute_store_aggregates` ~24s, `COUNT(*)` på catalog_store_prices ~6s (därför
+  materialiserat). Läs-frågorna (`store_prices_for_ean`, "billigast nära mig") måste hålla vid 20-50M rader.
+- **Färskhet blir det centrala drift-problemet.** En full körning ~2h (mätt) -> kan inte köras konstant.
+  Värdet av "alla butiker" beror på att priserna är rimligt färska -> kadens (re-crawl var M:e dag,
+  favoriter oftare) måste matchas mot hur ofta ICA/Coop faktiskt ändrar hyllpris. Den frekvensen VET vi
+  inte än - crawl-historiken + `changed`-räknarna (nyss byggt) avslöjar den över tid. Prioriterad rotation
+  (favoriter > representativa > resten) blir nödvändig, inte valfri.
+- **Prisspridnings-mätningen byter roll: tuning, inte go/no-go.** Sedan beslutet är fattat avgör den inte
+  LÄNGRE om vi gör det - men den styr kadens/prioritering (vilka varor/butiker ändras mest -> crawla dem
+  oftare) och om lika-pris-kollaps sparar nämnvärt lagring. Fortf. värd att köra, för att rikta resurser.
+- **Konsument-läsvägen blir THE deliverable.** Insamlingen är beslutad -> nyttan ("billigast nära mig /
+  hos favoriter / hela matkassen") levereras av läs-API:erna nedan (`/{ean}/prices?near=`, `/compare/basket`).
+  Vi har byggt datapipen + intervall + modal; geo-/favorit-/matkasse-frågorna är där den faktiska
+  användarnyttan sitter och bör prioriteras före mer crawl-finputs.
+- **ToS/last skalar upp.** Per-butik × ~1500 är den mest aggressiva skörden vi gör (22:12-PoolTimeout-
+  incidenten visar att vi tänjer på deras infra). Härdningen (breaker/token/dispatcher) är nu bärande.
+  En medveten rate-/cadence-hållning krävs; lagring är inte flaskhalsen, deras tålamod är.
+- **Ej-frågbara butiker = hårt tak.** Coop ~43% frågbara -> för ~57% av Coop-butikerna går pris INTE att
+  hämta (ej e-handelsindexerade). "Alla butiker" = "alla FRÅGBARA". Konsument-UX:t måste visa "inget
+  prisdata för den här butiken" elegant, inte tomt/fel.
 
 ### Nuläge (grunden som redan finns)
 - `catalog_products.store` taggar vilken butik (ledger/account) priset är scopat till (Coop=251300,
@@ -1060,11 +1097,14 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   ica_resolve_accounts()[0]).
 
 ### Nya API-endpoints
-- `GET /v1/products/{ean}/prices` - per-butik-pris för en EAN (cross-chain). Query: `stores=`
-  (specifika, t.ex. favoriter), `near=lat,lng&radius=` (närmaste), default representativa.
-- `GET /v1/compare/basket?stores=&eans=` - matkasse-jämförelse: summa per butik för en varukorg
+- [x] **`GET /v1/products/{ean}/prices` BYGGT (2026-06-06).** Per-FYSISK-butik hyllpris scopat: `lat`/`lng`/
+  `radius` (billigast nära plats), `favorites=true` (inloggad), `stores=chain:id,...` (explicit). Billigast
+  först. `database.store_prices_geo` mappar fysisk butik (`stores`.lat/lng + native) -> ledger/account ->
+  catalog_store_prices (haversine-filter). Verifierat live: 3 ICA-butiker inom 30km, 33,95 vs 34,96 kr.
+  `ProductPricesScopedResponse` + OWN_APIS. (Frontend-wiring i kart-appen = nästa steg.)
+- [ ] `GET /v1/compare/basket?stores=&eans=` - matkasse-jämförelse: summa per butik för en varukorg
   (PRO-undersöknings-caset). Markerar saknade varor per butik.
-- Utöka `catalog_browse`/`compare` med butiks-scope (`stores=`) -> hyllpris filtrerat till favoriter.
+- [ ] Utöka `catalog_browse`/`compare` med butiks-scope (`stores=`) -> hyllpris filtrerat till favoriter.
 - Admin: `store_crawl`-status + per-butik-trigger + queryability-karta (likt partial/EAN-warm-korten).
 
 ### Kart-appen (konsument) - ny funktionalitet

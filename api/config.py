@@ -376,6 +376,15 @@ OWN_APIS = [
              "kartfilter. Bara erbjudande-cachen, inte hyllsortiment.",
      "params": [{"name": "ean", "desc": "Path: EAN/GTIN"}],
      "returns": schemas.fields_doc(schemas.ProductStoresResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/products/7340005403530/prices?lat=59.33&lng=18.06&radius=10",
+     "desc": "Per-FYSISK-butik HYLLPRIS för EAN:en (Steg 6, ICA/Coop butiksprissatt), scopat till det "
+             "användaren bryr sig om: billigast nära en plats (lat/lng/radius), favoritbutiker "
+             "(favorites=true, inloggad) eller explicit urval (stores=chain:id,...). Billigast först.",
+     "params": [{"name": "ean", "desc": "Path: EAN/GTIN"},
+                {"name": "lat, lng, radius", "desc": "Närmaste runt punkt (km, default 10)"},
+                {"name": "favorites", "desc": "true = inloggad användares favoritbutiker"},
+                {"name": "stores", "desc": "Explicit urval, t.ex. ica:1234,coop:5678"}],
+     "returns": schemas.fields_doc(schemas.ProductPricesScopedResponse)},
     {"group": "Jämförelse", "method": "GET", "path": "/v1/compare/near?lat=59.33&lng=18.06&radius_km=5",
      "desc": "Prisjämför matchande EAN mellan kedjor nära en punkt.",
      "params": [{"name": "lat, lng, radius_km", "desc": "Område runt punkt"},

@@ -4,6 +4,7 @@ med `store` satt). Fas 1: seeding ur stores + admin-läsning; rotations-crawlern
 import json
 
 from ._conn import _now, get_conn
+from ..geo import haversine
 
 
 def seed_store_crawl():
@@ -278,6 +279,56 @@ def store_prices_for_ean(ean):
         g["stores"].append({"name": r["name"] or r["store"], "city": r["city"]})
     out = sorted(groups.values(), key=lambda g: g["price"])
     return {"levels": out, "total_stores": total}
+
+
+def store_prices_geo(ean, lat=None, lng=None, radius_km=10.0, pairs=None):
+    """Per-FYSISK-butik hyllpris för en EAN, scopat geografiskt eller till specifika butiker (favoriter).
+    Mappar fysisk butik (`stores`.lat/lng + native) -> ledger/account -> `catalog_store_prices`. `pairs` =
+    [(chain, store_id)] (favoriter/explicit); annars `lat`/`lng`/`radius_km` (närmaste). Billigast först;
+    vid geo-scope tas bara prissatta butiker med, vid favorit/explicit tas alla med (pris kan vara null ->
+    'inget data för den butiken'). Bara ICA/Coop (butiksprissatta)."""
+    conn = get_conn()
+    if pairs:
+        srows = []
+        for c, sid in pairs:
+            if c in ("ica", "coop"):
+                r = conn.execute("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
+                                 "WHERE chain=? AND store_id=?", (c, str(sid))).fetchone()
+                if r:
+                    srows.append(r)
+    else:
+        srows = conn.execute("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
+                             "WHERE chain IN ('ica','coop') AND native IS NOT NULL").fetchall()
+    prices = {(r["chain"], str(r["store"])): r for r in conn.execute(
+        "SELECT chain, store, price, comparison_value, comparison_unit FROM catalog_store_prices "
+        "WHERE ean=? AND price IS NOT NULL", (str(ean),))}
+    conn.close()
+    near = lat is not None and lng is not None
+    out = []
+    for r in srows:
+        nat = json.loads(r["native"]) if r["native"] else {}
+        ledger = nat.get("ledgerAccountNumber") if r["chain"] == "coop" else nat.get("accountNumber")
+        if not ledger:
+            continue
+        dist = None
+        if near:
+            if not r["lat"] or not r["lng"]:
+                continue
+            dist = haversine(lat, lng, r["lat"], r["lng"])
+            if dist > radius_km:
+                continue
+        pr = prices.get((r["chain"], str(ledger)))
+        if near and pr is None:  # "nära mig" = prissatta butiker
+            continue
+        out.append({"chain": r["chain"], "store_id": r["store_id"], "name": r["name"], "city": r["city"],
+                    "lat": r["lat"], "lng": r["lng"],
+                    "distance_km": round(dist, 1) if dist is not None else None,
+                    "price": pr["price"] if pr else None,
+                    "comparison_value": pr["comparison_value"] if pr else None,
+                    "comparison_unit": pr["comparison_unit"] if pr else None})
+    out.sort(key=lambda x: (x["price"] is None, x["price"] or 0,
+                            x["distance_km"] if x["distance_km"] is not None else 1e9))
+    return out
 
 
 def store_name(chain, store):

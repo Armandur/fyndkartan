@@ -15,7 +15,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse
 
-from .. import apilog, catalog, categories, config, database, details, images, matching, schemas
+from .. import apilog, auth, catalog, categories, config, database, details, images, matching, schemas
 from ..database import get_conn
 from ..deps import require_admin, require_consumer
 from ..sync import STATE
@@ -234,6 +234,36 @@ async def product_store_prices(ean: str, _auth=Depends(require_consumer)):
         return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
     d = database.store_prices_for_ean(e)
     return {"ean": e, "total_stores": d["total_stores"], "levels": d["levels"]}
+
+
+@router.get("/v1/products/{ean}/prices", responses={200: {"model": schemas.ProductPricesScopedResponse}})
+async def product_prices_scoped(ean: str, lat: float = None, lng: float = None, radius: float = 10.0,
+                                favorites: bool = False, stores: str = None,
+                                user=Depends(auth.current_user), _auth=Depends(require_consumer)):
+    """Per-FYSISK-butik hyllpris för en EAN, SCOPAT till det användaren bryr sig om (Steg 6-konsumentnyttan):
+    `favorites=true` (inloggad användares favoritbutiker), `stores=chain:store_id,...` (explicit urval),
+    eller `lat`+`lng`+`radius` (km, billigast nära en plats). Billigast först. Bara ICA/Coop (butiksprissatta);
+    nationella kedjor har inget per-butik-data. Geo-scope = bara prissatta butiker; favorit/explicit = alla
+    (pris null = inget data för butiken)."""
+    e = matching.normalize_ean(ean)
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    pairs = None
+    if favorites:
+        if not user:
+            return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+        pairs = [tok.split(":", 1) for tok in database.list_favorites(user["id"]) if ":" in tok]
+        scope = "favorites"
+    elif stores:
+        pairs = [s.split(":", 1) for s in stores.split(",") if ":" in s]
+        scope = "stores"
+    elif lat is not None and lng is not None:
+        scope = "near"
+    else:
+        return JSONResponse({"detail": "Ange favorites=true, stores=chain:id, eller lat+lng."}, status_code=400)
+    rows = database.store_prices_geo(e, lat=lat, lng=lng, radius_km=radius, pairs=pairs)
+    return {"ean": e, "scope": scope, "radius_km": radius if scope == "near" else None,
+            "store_count": len(rows), "stores": rows}
 
 
 @router.get("/v1/categories", responses={200: {"model": schemas.CategoriesResponse}})
