@@ -166,6 +166,33 @@ def get_conn():
     return _Conn(get_engine().connect())
 
 
+def dialect_name():
+    return get_engine().dialect.name
+
+
+# --- Dialekt-portabla JSON-fragment (data lagras som JSON-i-TEXT, ej jsonb-migrerat) ---
+# `col`/`key` är alltid kod-literaler (aldrig användarinput) -> säkra att interpolera.
+def json_get(col, key):
+    """SQL-fragment: JSON-skalär (text) ur en TEXT/JSON-kolumn."""
+    if dialect_name() == "postgresql":
+        return f"({col}::jsonb ->> '{key}')"
+    return f"json_extract({col}, '$.{key}')"
+
+
+def json_array_len(col, key):
+    """SQL-fragment: längd på en JSON-array under `key` (0 om saknas hanteras av anropare)."""
+    if dialect_name() == "postgresql":
+        return f"jsonb_array_length(({col}::jsonb) -> '{key}')"
+    return f"json_array_length(json_extract({col}, '$.{key}'))"
+
+
+def json_is_true(col, key):
+    """SQL-fragment: booleskt villkor att JSON-fältet under `key` är true."""
+    if dialect_name() == "postgresql":
+        return f"({col}::jsonb ->> '{key}') = 'true'"
+    return f"json_extract({col}, '$.{key}') = 1"
+
+
 def _ensure_column(conn, table, col, coltype):
     cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     if col not in cols:

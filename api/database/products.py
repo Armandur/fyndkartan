@@ -1,13 +1,16 @@
 import json
 
-from ._conn import _now, get_conn
+from sqlalchemy import bindparam, text
+
+from ._conn import _now, get_conn, json_array_len, json_get, json_is_true
 from ..categories import category_from_detail
 from .. import countries, diet
 
 
 def get_product_info(ean):
     conn = get_conn()
-    row = conn.execute("SELECT data FROM product_info WHERE ean=?", (str(ean),)).fetchone()
+    row = conn.execute(text("SELECT data FROM product_info WHERE ean=:ean"),
+                       {"ean": str(ean)}).fetchone()
     conn.close()
     return json.loads(row["data"]) if row else None
 
@@ -37,7 +40,7 @@ def product_info_cached(ean):
     Utgången cache (positiv som negativ) rapporteras som ej-cachad -> route hämtar om."""
     conn = get_conn()
     row = conn.execute(
-        "SELECT data, fetched_at FROM product_info WHERE ean=?", (str(ean),)
+        text("SELECT data, fetched_at FROM product_info WHERE ean=:ean"), {"ean": str(ean)}
     ).fetchone()
     conn.close()
     if not row:
@@ -59,9 +62,9 @@ def _product_info_fields(eans, select_exprs):
         return []
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT ean, {', '.join(select_exprs)} FROM product_info "
-        f"WHERE ean IN ({','.join('?' * len(eans))})",
-        eans,
+        text(f"SELECT ean, {', '.join(select_exprs)} FROM product_info "
+             "WHERE ean IN :eans").bindparams(bindparam("eans", expanding=True)),
+        {"eans": eans},
     ).fetchall()
     conn.close()
     return rows
@@ -71,8 +74,8 @@ def get_product_categories(eans):
     """{ean: kanonisk kategori} ur produktdetalj-cachen (rikare än offer-nivån).
     Resolverar category_raw+source -> kanonisk; bara de som mappar."""
     rows = _product_info_fields(eans, [
-        "json_extract(data,'$.category_raw') AS raw",
-        "json_extract(data,'$.category_source') AS src",
+        f"{json_get('data', 'category_raw')} AS raw",
+        f"{json_get('data', 'category_source')} AS src",
     ])
     out = {}
     for r in rows:
@@ -95,10 +98,10 @@ def get_product_diets():
     if _DIET_CACHE is not None:
         return _DIET_CACHE
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT ean, json_extract(data,'$.ingredients') AS ing FROM product_info "
-        "WHERE json_extract(data,'$.ingredients') IS NOT NULL"
-    ).fetchall()
+    rows = conn.execute(text(
+        f"SELECT ean, {json_get('data', 'ingredients')} AS ing FROM product_info "
+        f"WHERE {json_get('data', 'ingredients')} IS NOT NULL"
+    )).fetchall()
     conn.close()
     out = {}
     for r in rows:
@@ -113,7 +116,7 @@ def get_product_origins(eans):
     """{ean: (origin-namn-lista, ISO-koder)} ur produktdetalj-cachen (Axfood/Coop/ICA-detalj).
     Rikare ursprung än offers brand-parsning (som bara fångar ICA/Coop). Bara EAN där minst
     ett land kunde resolvas; råname normaliseras till svenska via countries.split_origins."""
-    rows = _product_info_fields(eans, ["json_extract(data,'$.origin') AS origin"])
+    rows = _product_info_fields(eans, [f"{json_get('data', 'origin')} AS origin"])
     out = {}
     for r in rows:
         if not r["origin"]:
@@ -134,8 +137,9 @@ def save_product_info(ean, data, partial=False):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
     conn.execute(
-        "INSERT OR REPLACE INTO product_info (ean, data, fetched_at) VALUES (?,?,?)",
-        (str(ean), json.dumps(data, ensure_ascii=False), now),
+        text("INSERT INTO product_info (ean, data, fetched_at) VALUES (:ean, :data, :fetched_at) "
+             "ON CONFLICT (ean) DO UPDATE SET data=excluded.data, fetched_at=excluded.fetched_at"),
+        {"ean": str(ean), "data": json.dumps(data, ensure_ascii=False), "fetched_at": now},
     )
     conn.commit()
     conn.close()
@@ -171,18 +175,22 @@ def archive_product_info(items):
     eans = list({c[0] for c in cand})
     last = {}  # (ean, source) -> senaste signatur (id-ordnat -> sista vinner)
     for r in conn.execute(
-        f"SELECT ean, source, ingredients, nutrition, origin FROM product_info_observations "
-        f"WHERE ean IN ({','.join('?' * len(eans))}) ORDER BY id", eans,
+        text("SELECT ean, source, ingredients, nutrition, origin FROM product_info_observations "
+             "WHERE ean IN :eans ORDER BY id").bindparams(bindparam("eans", expanding=True)),
+        {"eans": eans},
     ):
         last[(r["ean"], r["source"])] = _info_sig(
             r["ingredients"], json.loads(r["nutrition"]) if r["nutrition"] else [], r["origin"])
     now = _now()
-    rows = [(c[0], c[1], c[2], json.dumps(c[3], ensure_ascii=False) if c[3] else None, c[4], now)
+    rows = [{"ean": c[0], "source": c[1], "ingredients": c[2],
+             "nutrition": json.dumps(c[3], ensure_ascii=False) if c[3] else None,
+             "origin": c[4], "observed_at": now}
             for c in cand if last.get((c[0], c[1])) != c[5]]
     if rows:
         conn.executemany(
-            "INSERT INTO product_info_observations (ean, source, ingredients, nutrition, origin, observed_at) "
-            "VALUES (?,?,?,?,?,?)", rows)
+            text("INSERT INTO product_info_observations "
+                 "(ean, source, ingredients, nutrition, origin, observed_at) "
+                 "VALUES (:ean, :source, :ingredients, :nutrition, :origin, :observed_at)"), rows)
         conn.commit()
     conn.close()
 
@@ -191,11 +199,13 @@ def sparse_partial_eans(limit=None):
     """EAN för partial-rader (piggyback) med GLES näring (< 4 värden) - kandidater för full
     korsskällig merge-uppgradering. Uppgraderade rader tappar partial-flaggan och faller ur mängden."""
     conn = get_conn()
-    sql = ("SELECT ean FROM product_info WHERE json_extract(data,'$.partial')=1 "
-           "AND COALESCE(json_array_length(json_extract(data,'$.nutrition')),0) < 4")
+    sql = (f"SELECT ean FROM product_info WHERE {json_is_true('data', 'partial')} "
+           f"AND COALESCE({json_array_len('data', 'nutrition')}, 0) < 4")
+    params = {}
     if limit:
-        sql += f" LIMIT {int(limit)}"
-    rows = conn.execute(sql).fetchall()
+        sql += " LIMIT :limit"
+        params["limit"] = int(limit)
+    rows = conn.execute(text(sql), params).fetchall()
     conn.close()
     return [r["ean"] for r in rows]
 
@@ -204,9 +214,9 @@ def product_info_observations_stats():
     """(antal rader, distinkta produkter (ean), äldsta observation) för innehållshistoriken
     (recept-/närings-/ursprungsändringar, product_info_observations)."""
     conn = get_conn()
-    r = conn.execute(
+    r = conn.execute(text(
         "SELECT COUNT(*) c, COUNT(DISTINCT ean) p, MIN(observed_at) o FROM product_info_observations"
-    ).fetchone()
+    )).fetchone()
     conn.close()
     return {"rows": r["c"], "products": r["p"], "since": r["o"]}
 
@@ -214,10 +224,11 @@ def product_info_observations_stats():
 def partial_info_counts():
     """{partial: antal partial-rader, sparse: antal med gles näring (<4, uppgraderingskandidater)}."""
     conn = get_conn()
-    total = conn.execute("SELECT COUNT(*) FROM product_info WHERE json_extract(data,'$.partial')=1").fetchone()[0]
-    sparse = conn.execute(
-        "SELECT COUNT(*) FROM product_info WHERE json_extract(data,'$.partial')=1 "
-        "AND COALESCE(json_array_length(json_extract(data,'$.nutrition')),0) < 4").fetchone()[0]
+    total = conn.execute(text(
+        f"SELECT COUNT(*) FROM product_info WHERE {json_is_true('data', 'partial')}")).fetchone()[0]
+    sparse = conn.execute(text(
+        f"SELECT COUNT(*) FROM product_info WHERE {json_is_true('data', 'partial')} "
+        f"AND COALESCE({json_array_len('data', 'nutrition')}, 0) < 4")).fetchone()[0]
     conn.close()
     return {"partial": total, "sparse": sparse}
 
@@ -237,7 +248,8 @@ def product_info_fresh_set(eans):
 def get_ica_cid(ean):
     """ICA consumerItemId för en EAN. None = ej försökt; '' = försökt utan träff; annars cid."""
     conn = get_conn()
-    row = conn.execute("SELECT cid FROM ica_item_map WHERE ean=?", (str(ean),)).fetchone()
+    row = conn.execute(text("SELECT cid FROM ica_item_map WHERE ean=:ean"),
+                       {"ean": str(ean)}).fetchone()
     conn.close()
     return row["cid"] if row else None
 
@@ -245,8 +257,9 @@ def get_ica_cid(ean):
 def save_ica_cid(ean, cid):
     conn = get_conn()
     conn.execute(
-        "INSERT OR REPLACE INTO ica_item_map (ean, cid, fetched_at) VALUES (?,?,?)",
-        (str(ean), cid or "", _now()),
+        text("INSERT INTO ica_item_map (ean, cid, fetched_at) VALUES (:ean, :cid, :fetched_at) "
+             "ON CONFLICT (ean) DO UPDATE SET cid=excluded.cid, fetched_at=excluded.fetched_at"),
+        {"ean": str(ean), "cid": cid or "", "fetched_at": _now()},
     )
     conn.commit()
     conn.close()
@@ -258,9 +271,9 @@ def ica_resolve_accounts(limit=4):
     en handfull profiler (Maxi/Kvantum/Supermarket/Nära) täcker betydligt fler EAN än en."""
     order = {"Maxi": 0, "Kvantum": 1, "Supermarket": 2, "Nära": 3}
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT native FROM stores WHERE chain='ica' AND native IS NOT NULL"
-    ).fetchall()
+    )).fetchall()
     conn.close()
     seen, picks = set(), []
     for r in rows:
@@ -276,12 +289,12 @@ def ica_resolve_accounts(limit=4):
     return [a for _, a in picks][:limit]
 
 
-
 # ---- Produktbilds-cache (metadata; bytes ligger på disk) ----
 def get_image_meta(ean, size):
     conn = get_conn()
     row = conn.execute(
-        "SELECT content_type, source_url FROM product_images WHERE ean=? AND size=?", (str(ean), size)
+        text("SELECT content_type, source_url FROM product_images WHERE ean=:ean AND size=:size"),
+        {"ean": str(ean), "size": size}
     ).fetchone()
     conn.close()
     return dict(row) if row else None
@@ -290,8 +303,12 @@ def get_image_meta(ean, size):
 def save_image_meta(ean, size, content_type, source_url):
     conn = get_conn()
     conn.execute(
-        "INSERT OR REPLACE INTO product_images (ean, size, content_type, source_url, fetched_at) VALUES (?,?,?,?,?)",
-        (str(ean), size, content_type, source_url, _now()),
+        text("INSERT INTO product_images (ean, size, content_type, source_url, fetched_at) "
+             "VALUES (:ean, :size, :content_type, :source_url, :fetched_at) "
+             "ON CONFLICT (ean, size) DO UPDATE SET content_type=excluded.content_type, "
+             "source_url=excluded.source_url, fetched_at=excluded.fetched_at"),
+        {"ean": str(ean), "size": size, "content_type": content_type,
+         "source_url": source_url, "fetched_at": _now()},
     )
     conn.commit()
     conn.close()
