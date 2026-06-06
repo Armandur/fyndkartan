@@ -3,20 +3,22 @@
 med `store` satt). Fas 1: seeding ur stores + admin-läsning; rotations-crawlern fyller resten."""
 import json
 
+from sqlalchemy import bindparam, text
+
 from ._conn import _now, get_conn
 from ..geo import haversine
 
 
 def seed_store_crawl():
     """Seeda `store_crawl` ur `stores.native` för de butiksprissatta kedjorna (Coop ledger, ICA account).
-    Idempotent på queryable/enabled/priority (`INSERT OR IGNORE`), men UPPDATERAR alltid denormaliserat
+    Idempotent på queryable/enabled/priority (ON CONFLICT DO NOTHING), men UPPDATERAR alltid denormaliserat
     namn/ort/antal (re-seed håller dem färska). Flera Coop-butiker kan dela en ledger -> kollapsas på PK
     (chain, store), `store_count` räknar dem. Returnerar antal nya rader. Coop: `native.ledgerAccountNumber`;
     ICA: `native.accountNumber`."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT chain, name, city, native FROM stores WHERE chain IN ('coop','ica') AND native IS NOT NULL"
-    ).fetchall()
+    )).fetchall()
     agg = {}  # (chain, store) -> [name, city, count]  (representativt namn/ort = första sedda)
     for r in rows:
         try:
@@ -31,10 +33,12 @@ def seed_store_crawl():
     n = 0
     for (chain, store), (name, city, count) in agg.items():
         n += conn.execute(
-            "INSERT OR IGNORE INTO store_crawl (chain, store) VALUES (?,?)", (chain, store)
+            text("INSERT INTO store_crawl (chain, store) VALUES (:chain, :store) "
+                 "ON CONFLICT (chain, store) DO NOTHING"), {"chain": chain, "store": store}
         ).rowcount
-        conn.execute("UPDATE store_crawl SET name=?, city=?, store_count=? WHERE chain=? AND store=?",
-                     (name, city, count, chain, store))
+        conn.execute(text("UPDATE store_crawl SET name=:name, city=:city, store_count=:count "
+                          "WHERE chain=:chain AND store=:store"),
+                     {"name": name, "city": city, "count": count, "chain": chain, "store": store})
     conn.commit()
     conn.close()
     return n
@@ -46,16 +50,17 @@ def stores_to_measure(chain=None, recheck=False, cap=None):
     scopar, `cap` begränsar. Ordnar omätta först, sedan äldst kontrollerade (rättvis rotation)."""
     conn = get_conn()
     sql = "SELECT chain, store FROM store_crawl WHERE 1=1"
-    args = []
+    args = {}
     if not recheck:
         sql += " AND queryable IS NULL"
     if chain:
-        sql += " AND chain=?"
-        args.append(chain)
+        sql += " AND chain=:chain"
+        args["chain"] = chain
     sql += " ORDER BY (checked_at IS NOT NULL), checked_at"
     if cap:
-        sql += f" LIMIT {int(cap)}"
-    rows = conn.execute(sql, args).fetchall()
+        sql += " LIMIT :cap"
+        args["cap"] = int(cap)
+    rows = conn.execute(text(sql), args).fetchall()
     conn.close()
     return [(r["chain"], r["store"]) for r in rows]
 
@@ -68,8 +73,9 @@ def set_store_queryability(chain, store, queryable, product_count, status):
     q = None if queryable is None else (1 if queryable else 0)
     conn = get_conn()
     conn.execute(
-        "UPDATE store_crawl SET queryable=?, product_count=?, status=?, checked_at=? WHERE chain=? AND store=?",
-        (q, product_count, status, now, chain, str(store)),
+        text("UPDATE store_crawl SET queryable=:q, product_count=:pc, status=:status, checked_at=:now "
+             "WHERE chain=:chain AND store=:store"),
+        {"q": q, "pc": product_count, "status": status, "now": now, "chain": chain, "store": str(store)},
     )
     conn.commit()
     conn.close()
@@ -80,25 +86,24 @@ def list_store_crawl(chain=None, q=None, queryable=None, enabled=None, limit=200
     `queryable` (0/1/None), `enabled` (0/1/None), `q` (namn/ort-sök). Returnerar (sida, total)."""
     conn = get_conn()
     where = "WHERE 1=1"
-    args = []
+    args = {}
     if chain:
-        where += " AND chain=?"
-        args.append(chain)
+        where += " AND chain=:chain"
+        args["chain"] = chain
     if queryable is not None:
-        where += " AND queryable=?"
-        args.append(queryable)
+        where += " AND queryable=:queryable"
+        args["queryable"] = queryable
     if enabled is not None:
-        where += " AND enabled=?"
-        args.append(enabled)
+        where += " AND enabled=:enabled"
+        args["enabled"] = enabled
     if q:
-        where += " AND (LOWER(name) LIKE ? OR LOWER(city) LIKE ?)"
-        like = f"%{q.lower()}%"
-        args += [like, like]
-    total = conn.execute(f"SELECT COUNT(*) FROM store_crawl {where}", args).fetchone()[0]
-    rows = [dict(r) for r in conn.execute(
+        where += " AND (LOWER(name) LIKE :like OR LOWER(city) LIKE :like)"
+        args["like"] = f"%{q.lower()}%"
+    total = conn.execute(text(f"SELECT COUNT(*) FROM store_crawl {where}"), args).fetchone()[0]
+    rows = [dict(r) for r in conn.execute(text(
         f"SELECT chain, store, queryable, enabled, product_count, last_crawled, status, checked_at, "
         f"name, city, store_count FROM store_crawl {where} ORDER BY (name IS NULL), LOWER(name), store "
-        f"LIMIT ? OFFSET ?", (*args, limit, offset)).fetchall()]
+        f"LIMIT :limit OFFSET :offset"), {**args, "limit": limit, "offset": offset}).fetchall()]
     conn.close()
     return rows, total
 
@@ -108,8 +113,8 @@ def set_stores_enabled(items, enabled):
     conn = get_conn()
     n = 0
     for chain, store in items:
-        n += conn.execute("UPDATE store_crawl SET enabled=? WHERE chain=? AND store=?",
-                          (1 if enabled else 0, chain, str(store))).rowcount
+        n += conn.execute(text("UPDATE store_crawl SET enabled=:enabled WHERE chain=:chain AND store=:store"),
+                          {"enabled": 1 if enabled else 0, "chain": chain, "store": str(store)}).rowcount
     conn.commit()
     conn.close()
     return n
@@ -118,12 +123,12 @@ def set_stores_enabled(items, enabled):
 def set_all_queryable_enabled(enabled, chain=None):
     """Bulk: sätt enabled för ALLA frågbara butiker (queryable=1), ev. chain-scopat. Returnerar antal."""
     conn = get_conn()
-    sql = "UPDATE store_crawl SET enabled=? WHERE queryable=1"
-    args = [1 if enabled else 0]
+    sql = "UPDATE store_crawl SET enabled=:enabled WHERE queryable=1"
+    args = {"enabled": 1 if enabled else 0}
     if chain:
-        sql += " AND chain=?"
-        args.append(chain)
-    n = conn.execute(sql, args).rowcount
+        sql += " AND chain=:chain"
+        args["chain"] = chain
+    n = conn.execute(text(sql), args).rowcount
     conn.commit()
     conn.close()
     return n
@@ -143,19 +148,20 @@ def stores_to_crawl(chain=None, cap=None, max_age_hours=None):
     daglig rotation refreshar det som blivit gammalt. None/0 = crawla alla enabled (full om-crawl)."""
     conn = get_conn()
     sql = "SELECT chain, store FROM store_crawl WHERE enabled=1 AND queryable=1"
-    args = []
+    args = {}
     if chain:
-        sql += " AND chain=?"
-        args.append(chain)
+        sql += " AND chain=:chain"
+        args["chain"] = chain
     if max_age_hours and max_age_hours > 0:
         from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        sql += " AND (last_crawled IS NULL OR last_crawled < ?)"
-        args.append(cutoff)
+        sql += " AND (last_crawled IS NULL OR last_crawled < :cutoff)"
+        args["cutoff"] = cutoff
     sql += " ORDER BY (last_crawled IS NOT NULL), last_crawled"
     if cap:
-        sql += f" LIMIT {int(cap)}"
-    rows = conn.execute(sql, args).fetchall()
+        sql += " LIMIT :cap"
+        args["cap"] = int(cap)
+    rows = conn.execute(text(sql), args).fetchall()
     conn.close()
     return [(r["chain"], r["store"]) for r in rows]
 
@@ -165,8 +171,9 @@ def mark_store_crawled(chain, store, product_count):
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
-    conn.execute("UPDATE store_crawl SET last_crawled=?, product_count=? WHERE chain=? AND store=?",
-                 (now, product_count, chain, str(store)))
+    conn.execute(text("UPDATE store_crawl SET last_crawled=:now, product_count=:pc "
+                      "WHERE chain=:chain AND store=:store"),
+                 {"now": now, "pc": product_count, "chain": chain, "store": str(store)})
     conn.commit()
     conn.close()
 
@@ -185,35 +192,44 @@ def upsert_store_prices(chain, store, rows):
     conn = get_conn()
     try:
         ids = [str(r["product_id"]) for r in rows]
-        ph = ",".join("?" * len(ids))
         existing = {r["product_id"]: (r["price"], r["comparison_value"]) for r in conn.execute(
-            f"SELECT product_id, price, comparison_value FROM catalog_store_prices "
-            f"WHERE chain=? AND store=? AND product_id IN ({ph})", (chain, store, *ids))}
+            text("SELECT product_id, price, comparison_value FROM catalog_store_prices "
+                 "WHERE chain=:chain AND store=:store AND product_id IN :ids").bindparams(
+                bindparam("ids", expanding=True)),
+            {"chain": chain, "store": store, "ids": ids})}
         new = changed = 0
-        obs = []  # (chain, product_id, store, ean, price, cv, cu, observed_at) vid nytt/ändrat pris
+        obs = []  # dict-rader vid nytt/ändrat pris
         for r in rows:
             pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
+            o = {"chain": chain, "product_id": pid, "store": store, "ean": r.get("ean"),
+                 "price": price, "comparison_value": cv,
+                 "comparison_unit": r.get("comparison_unit"), "observed_at": now}
             if pid not in existing:
                 new += 1
                 if price is not None:
-                    obs.append((chain, pid, store, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+                    obs.append(o)
             else:
                 op, ocv = existing[pid]
                 if price is not None and (_pdiff(op, price) or _pdiff(ocv, cv)):
                     changed += 1
-                    obs.append((chain, pid, store, r.get("ean"), price, cv, r.get("comparison_unit"), now))
+                    obs.append(o)
         conn.executemany(
-            "INSERT INTO catalog_store_prices (chain, product_id, store, ean, price, comparison_value, "
-            "comparison_unit, available, first_seen, last_seen) VALUES (?,?,?,?,?,?,?,1,?,?) "
-            "ON CONFLICT(chain, product_id, store) DO UPDATE SET ean=excluded.ean, price=excluded.price, "
-            "comparison_value=excluded.comparison_value, comparison_unit=excluded.comparison_unit, "
-            "available=1, last_seen=excluded.last_seen",
-            [(chain, str(r["product_id"]), store, r.get("ean"), r.get("price"), r.get("comparison_value"),
-              r.get("comparison_unit"), now, now) for r in rows])
+            text("INSERT INTO catalog_store_prices (chain, product_id, store, ean, price, comparison_value, "
+                 "comparison_unit, available, first_seen, last_seen) VALUES "
+                 "(:chain, :product_id, :store, :ean, :price, :comparison_value, :comparison_unit, 1, "
+                 ":first_seen, :last_seen) "
+                 "ON CONFLICT (chain, product_id, store) DO UPDATE SET ean=excluded.ean, price=excluded.price, "
+                 "comparison_value=excluded.comparison_value, comparison_unit=excluded.comparison_unit, "
+                 "available=1, last_seen=excluded.last_seen"),
+            [{"chain": chain, "product_id": str(r["product_id"]), "store": store, "ean": r.get("ean"),
+              "price": r.get("price"), "comparison_value": r.get("comparison_value"),
+              "comparison_unit": r.get("comparison_unit"), "first_seen": now, "last_seen": now} for r in rows])
         if obs:
             conn.executemany(
-                "INSERT INTO catalog_price_observations (chain, product_id, store, ean, price, "
-                "comparison_value, comparison_unit, observed_at) VALUES (?,?,?,?,?,?,?,?)", obs)
+                text("INSERT INTO catalog_price_observations (chain, product_id, store, ean, price, "
+                     "comparison_value, comparison_unit, observed_at) VALUES "
+                     "(:chain, :product_id, :store, :ean, :price, :comparison_value, :comparison_unit, "
+                     ":observed_at)"), obs)
         conn.commit()
     finally:
         conn.close()
@@ -232,21 +248,25 @@ def recompute_store_aggregates(chain=None):
            f"price_max={sub.format(agg='MAX(price)')}, "
            f"price_stores={sub.format(agg='COUNT(DISTINCT store)')} "
            f"WHERE cp.chain IN ('ica','coop')")
-    args = []
+    args = {}
     if chain:
-        sql += " AND cp.chain=?"
-        args.append(chain)
-    cur = conn.execute(sql, args)
+        sql += " AND cp.chain=:chain"
+        args["chain"] = chain
+    cur = conn.execute(text(sql), args)
     n = cur.rowcount
     # Materialisera radantalet (catalog_store_prices är för stor för COUNT(*) per overview-laddning).
     # Här (slutet av en crawl) är COUNT:en försumbar mot resten av jobbet. Scopar på chain om satt.
     vol_sql = "SELECT chain, COUNT(*) rows, COUNT(DISTINCT store) stores FROM catalog_store_prices"
     if chain:
-        vol_sql += " WHERE chain=?"
+        vol_sql += " WHERE chain=:chain"
     vol_sql += " GROUP BY chain"
-    for r in conn.execute(vol_sql, args).fetchall():
-        conn.execute("INSERT OR REPLACE INTO store_price_volume (chain, price_rows, price_stores, updated) "
-                     "VALUES (?,?,?,?)", (r["chain"], r["rows"], r["stores"], _now()))
+    for r in conn.execute(text(vol_sql), args).fetchall():
+        conn.execute(text(
+            "INSERT INTO store_price_volume (chain, price_rows, price_stores, updated) "
+            "VALUES (:chain, :price_rows, :price_stores, :updated) "
+            "ON CONFLICT (chain) DO UPDATE SET price_rows=excluded.price_rows, "
+            "price_stores=excluded.price_stores, updated=excluded.updated"),
+            {"chain": r["chain"], "price_rows": r["rows"], "price_stores": r["stores"], "updated": _now()})
     conn.commit()
     conn.close()
     from .catalog import bump_catalog_version  # lokal import (undvik cirkulär) - intervallen ska synas i browse
@@ -260,11 +280,11 @@ def store_prices_for_ean(ean):
     först: {chain, price, comparison_value, comparison_unit, store_count, stores:[{name,city}]}. Driver
     bläddra-vyns intervall-modal (kort + smal lista). `total_stores` = antal butiker totalt."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT sp.chain, sp.store, sp.price, sp.comparison_value, sp.comparison_unit, "
         "sc.name, sc.city FROM catalog_store_prices sp "
         "LEFT JOIN store_crawl sc ON sc.chain=sp.chain AND sc.store=sp.store "
-        "WHERE sp.ean=? AND sp.price IS NOT NULL ORDER BY sp.price", (str(ean),)).fetchall()
+        "WHERE sp.ean=:ean AND sp.price IS NOT NULL ORDER BY sp.price"), {"ean": str(ean)}).fetchall()
     conn.close()
     groups, total = {}, 0
     for r in rows:
@@ -292,16 +312,17 @@ def store_prices_geo(ean, lat=None, lng=None, radius_km=10.0, pairs=None):
         srows = []
         for c, sid in pairs:
             if c in ("ica", "coop"):
-                r = conn.execute("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
-                                 "WHERE chain=? AND store_id=?", (c, str(sid))).fetchone()
+                r = conn.execute(text("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
+                                      "WHERE chain=:chain AND store_id=:store_id"),
+                                 {"chain": c, "store_id": str(sid)}).fetchone()
                 if r:
                     srows.append(r)
     else:
-        srows = conn.execute("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
-                             "WHERE chain IN ('ica','coop') AND native IS NOT NULL").fetchall()
+        srows = conn.execute(text("SELECT chain, store_id, name, city, lat, lng, native FROM stores "
+                                  "WHERE chain IN ('ica','coop') AND native IS NOT NULL")).fetchall()
     prices = {(r["chain"], str(r["store"])): r for r in conn.execute(
-        "SELECT chain, store, price, comparison_value, comparison_unit FROM catalog_store_prices "
-        "WHERE ean=? AND price IS NOT NULL", (str(ean),))}
+        text("SELECT chain, store, price, comparison_value, comparison_unit FROM catalog_store_prices "
+             "WHERE ean=:ean AND price IS NOT NULL"), {"ean": str(ean)})}
     conn.close()
     near = lat is not None and lng is not None
     out = []
@@ -334,7 +355,8 @@ def store_prices_geo(ean, lat=None, lng=None, radius_km=10.0, pairs=None):
 def store_name(chain, store):
     """Denormaliserat butiksnamn ur store_crawl (för crawl-feeden), annars store-id:t."""
     conn = get_conn()
-    r = conn.execute("SELECT name FROM store_crawl WHERE chain=? AND store=?", (chain, str(store))).fetchone()
+    r = conn.execute(text("SELECT name FROM store_crawl WHERE chain=:chain AND store=:store"),
+                     {"chain": chain, "store": str(store)}).fetchone()
     conn.close()
     return (r["name"] if r else None) or str(store)
 
@@ -343,14 +365,14 @@ def store_crawl_stats():
     """Översikt för admin/konsol: antal butiker (ledgers/accounts) i store_crawl per kedja, samt hur många
     som är frågbara (queryable=1), omätta (NULL), ej frågbara (0) och valda (enabled=1)."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT chain, COUNT(*) total, "
         "SUM(CASE WHEN queryable=1 THEN 1 ELSE 0 END) queryable, "
         "SUM(CASE WHEN queryable IS NULL THEN 1 ELSE 0 END) unmeasured, "
         "SUM(CASE WHEN queryable=0 THEN 1 ELSE 0 END) not_queryable, "
         "SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) enabled "
         "FROM store_crawl GROUP BY chain"
-    ).fetchall()
+    )).fetchall()
     conn.close()
     return {r["chain"]: {k: r[k] for k in ("total", "queryable", "unmeasured", "not_queryable", "enabled")}
             for r in rows}
@@ -362,17 +384,17 @@ def store_prices_stats():
     uppdaterat per crawl). Räknar INTE catalog_store_prices vid läsning - den tabellen växer mot ~17M rader
     (COUNT(*) ~6s och stigande) och får inte ligga i overview-laddningen."""
     conn = get_conn()
-    crawl = {r["chain"]: dict(r) for r in conn.execute(
+    crawl = {r["chain"]: dict(r) for r in conn.execute(text(
         "SELECT chain, COUNT(*) total, "
         "SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) enabled, "
         "SUM(CASE WHEN queryable=1 THEN 1 ELSE 0 END) queryable, "
         "SUM(CASE WHEN last_crawled IS NOT NULL THEN 1 ELSE 0 END) crawled, "
         "MAX(last_crawled) last_crawled "
         "FROM store_crawl GROUP BY chain"
-    ).fetchall()}
-    vol = {r["chain"]: dict(r) for r in conn.execute(
+    )).fetchall()}
+    vol = {r["chain"]: dict(r) for r in conn.execute(text(
         "SELECT chain, price_rows, price_stores FROM store_price_volume"
-    ).fetchall()}
+    )).fetchall()}
     conn.close()
     out = {}
     for chain in sorted(set(crawl) | set(vol)):
