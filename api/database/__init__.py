@@ -12,4 +12,5 @@ from .offers import _clean_package, _deal_type  # privata, men brands.py använd
 from .catalog import *  # noqa: F401,F403
 from .store_prices import *  # noqa: F401,F403
 from .zone import *  # noqa: F401,F403
+from .basket import *  # noqa: F401,F403
 from .crawl_runs import *  # noqa: F401,F403

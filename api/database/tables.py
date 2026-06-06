@@ -216,6 +216,14 @@ favorites = Table(
     Column("store_id", Text, primary_key=True),
 )
 
+basket = Table(  # server-side matkasse per app-användare (EAN + antal); matkasse-jämförelsen läser den
+    "basket", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("ean", Text, primary_key=True),
+    Column("qty", Integer, server_default=_ONE),
+    Column("added_at", Text),
+)
+
 admin_users = Table(
     "admin_users", metadata,
     Column("id", Integer, primary_key=True),

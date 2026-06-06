@@ -360,6 +360,13 @@ OWN_APIS = [
                 {"name": "category", "desc": "Kanonisk kategori-nyckel"},
                 {"name": "sort", "desc": "price | spread | name"}, _P_LIMIT],
      "returns": schemas.fields_doc(schemas.ZoneBrowseResponse)},
+    {"group": "Produkter", "method": "GET", "path": "/v1/basket/compare?lat=59.33&lng=18.06&radius=10",
+     "desc": "Jämför inloggad användares matkasse över zonens butiker: hyllpris-total + erbjudande-"
+             "överlagrad total + täckning per butik. ICA/Coop per butik, Willys/Hemköp/CG nationellt. "
+             "Full täckning + billigast först.",
+     "params": [{"name": "lat", "desc": "Zonens mitt, latitud"}, {"name": "lng", "desc": "Zonens mitt, longitud"},
+                {"name": "radius", "desc": "Radie i km (cappas till 50)"}],
+     "returns": schemas.fields_doc(schemas.BasketCompareResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/manufacturers",
      "desc": "Tillverkar-aggregat ur den persisterade katalogen: distinkta produkter per normaliserad "
              "tillverkare (key matar /catalog/browse?manufacturer=, name = display-namn), flest först.",

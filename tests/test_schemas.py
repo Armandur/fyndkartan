@@ -166,6 +166,24 @@ def test_zone_browse_matches_model():
     return total
 
 
+def test_basket_compare_matches_model():
+    """basket_compare-svar (matkasse-jämförelse i en zon) ska validera mot BasketCompareResponse.
+    Plockar några EAN ur per-butik-priserna som korg och jämför kring en butiks koordinater."""
+    conn = database.get_conn()
+    from sqlalchemy import text
+    eans = [r["ean"] for r in conn.execute(text(
+        "SELECT ean FROM catalog_store_prices WHERE ean IS NOT NULL AND ean!='' AND price>0 "
+        "GROUP BY ean HAVING COUNT(DISTINCT store)>10 LIMIT 4")).fetchall()]
+    s = conn.execute(text("SELECT lat, lng FROM stores WHERE chain IN ('ica','coop') "
+                          "AND lat IS NOT NULL AND lat!=0 LIMIT 1")).fetchone()
+    conn.close()
+    if not eans or not s:
+        return 0
+    r = database.basket_compare([{"ean": e, "qty": 1} for e in eans], lat=s["lat"], lng=s["lng"], radius_km=20)
+    schemas.BasketCompareResponse.model_validate(r)
+    return len(r["results"])
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
@@ -176,3 +194,4 @@ if __name__ == "__main__":
     print(f"OK: {test_catalog_manufacturers_matches_model()} tillverkare validerade mot CatalogManufacturersResponse")
     print(f"OK: {test_product_prices_scoped_matches_model()} butiker validerade mot ProductPricesScopedResponse")
     print(f"OK: {test_zone_browse_matches_model()} zon-varor validerade mot ZoneBrowseResponse")
+    print(f"OK: {test_basket_compare_matches_model()} matkasse-kandidater validerade mot BasketCompareResponse")

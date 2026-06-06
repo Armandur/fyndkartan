@@ -117,6 +117,46 @@ class ZoneBrowseResponse(BaseModel):
     products: list[CatalogProduct] = Field(..., description="Zonens varor (zon-scopat pris), sorterade")
 
 
+class BasketItem(BaseModel):
+    ean: str = Field(..., description="EAN/GTIN")
+    name: str | None = Field(None, description="Produktnamn (ur katalogen) eller null")
+    qty: int | None = Field(None, description="Antal i matkassen (null för otillgänglig-listan)")
+
+
+class BasketLine(BaseModel):
+    ean: str = Field(..., description="EAN/GTIN")
+    name: str | None = Field(None, description="Produktnamn eller null")
+    qty: int = Field(..., description="Antal")
+    shelf: float | None = Field(None, description="Hyllpris/st i kr (null = butiken saknar varan)")
+    offer: float | None = Field(None, description="Erbjudande-styckpris i kr (null = inget erbjudande)")
+    eff: float | None = Field(None, description="Effektivt pris/st (min av hyllpris/erbjudande)")
+
+
+class BasketCandidate(BaseModel):
+    kind: str = Field(..., description="store (ICA/Coop fysisk butik) | chain (nationell kedja)")
+    chain: str = Field(..., description="Kedja")
+    store_id: str | None = Field(None, description="Butiks-id (null för nationell kedja)")
+    name: str | None = Field(None, description="Butiksnamn (null för nationell kedja)")
+    city: str | None = Field(None, description="Ort eller null")
+    distance_km: float | None = Field(None, description="Avstånd till zonens mitt i km (null för nationell)")
+    store_count: int | None = Field(None, description="Antal butiker som delar priset (samma ledger)")
+    total_shelf: float = Field(..., description="Summa hyllpris för funna varor (× antal)")
+    total_offer: float = Field(..., description="Summa effektivt pris (erbjudanden överlagrade)")
+    found: int = Field(..., description="Antal av korgens varor butiken har")
+    missing: list[str] = Field(..., description="EAN:er butiken saknar")
+    uses_member: bool = Field(..., description="Om något effektivt pris bygger på medlems-/klubbpris")
+    lines: list[BasketLine] = Field(..., description="Per vara: hyllpris/erbjudande/effektivt")
+
+
+class BasketCompareResponse(BaseModel):
+    """Matkasse-jämförelse över en geografisk zon."""
+
+    zone: ZoneMeta = Field(..., description="Zonens metadata (butiker, kedjor, radie)")
+    basket: list[BasketItem] = Field(..., description="Korgens varor (EAN, namn, antal)")
+    results: list[BasketCandidate] = Field(..., description="Kandidater, full täckning + billigast först")
+    unavailable: list[BasketItem] = Field(..., description="Varor ingen butik i zonen har")
+
+
 class CatalogManufacturer(BaseModel):
     key: str = Field(..., description="Normaliserad tillverkar-nyckel (stabil; matar /catalog/browse?manufacturer=)")
     name: str | None = Field(None, description="Kanoniskt display-namn (legal-suffix-städat + admin-merges)")

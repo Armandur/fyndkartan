@@ -13,9 +13,11 @@ from sqlalchemy import bindparam, text
 
 from ._conn import get_conn
 from ..geo import haversine
+from ..matching import normalize_ean
 from .. import manufacturers
 from .catalog import (_BROWSE_SORTS, _NONFOOD_DIET, _browse_groups, _cat_canonical, _cat_pick,
-                      _normalize_catalog_page, _parse_origin)
+                      _normalize_catalog_page, _parse_origin, catalog_names_for_eans)
+from .offers import _deal_type
 from .products import get_product_diets
 
 _PER_STORE = ("ica", "coop")                            # butiksspecifikt pris (zon-aggregat)
@@ -43,15 +45,18 @@ def zone_stores(lat, lng, radius_km):
         dist = haversine(lat, lng, r["lat"], r["lng"])
         if dist > radius_km:
             continue
-        stores.append({"chain": r["chain"], "store_id": r["store_id"], "name": r["name"],
-                       "city": r["city"], "lat": r["lat"], "lng": r["lng"], "distance_km": round(dist, 1)})
+        led = None
         if r["chain"] in _PER_STORE:
             nat = json.loads(r["native"]) if r["native"] else {}
             led = nat.get("ledgerAccountNumber") if r["chain"] == "coop" else nat.get("accountNumber")
             if led:
-                pairs[r["chain"]].add(str(led))
+                led = str(led)
+                pairs[r["chain"]].add(led)
         elif r["chain"] in _PRICED_NATIONAL:
             national.add(r["chain"])
+        stores.append({"chain": r["chain"], "store_id": r["store_id"], "name": r["name"],
+                       "city": r["city"], "lat": r["lat"], "lng": r["lng"],
+                       "distance_km": round(dist, 1), "ledger": led})
     stores.sort(key=lambda s: s["distance_km"])
     return {"pairs": {k: list(v) for k, v in pairs.items()}, "national": national, "stores": stores}
 
@@ -146,9 +151,126 @@ def catalog_zone_browse(lat, lng, radius_km=10.0, q=None, category=None, manufac
     for p in page:  # normaliserad tillverkare bara på sidan (dyrt -> skjut upp från huvudloopen)
         p["manufacturer"] = manufacturers.canonical(p["brand"])
     _normalize_catalog_page(page)  # derive-at-read: bara sidan (förpackning/jämförenhet/ursprung)
-    chains_priced = sorted({c for c in _PER_STORE if z["pairs"].get(c)} | national)
-    zone_meta = {"lat": lat, "lng": lng, "radius_km": radius_km, "store_count": len(z["stores"]),
-                 "chains_priced": chains_priced,
-                 "lidl_in_zone": any(s["chain"] == "lidl" for s in z["stores"]),
-                 "stores": z["stores"]}
-    return page, total, dict(sorted(cats.items(), key=lambda kv: -kv[1])), zone_meta
+    return page, total, dict(sorted(cats.items(), key=lambda kv: -kv[1])), _zone_meta(z, lat, lng, radius_km)
+
+
+def _zone_meta(z, lat, lng, radius_km):
+    """Zonens metadata-block (delas av zon-browse + matkasse-jämförelse)."""
+    chains_priced = sorted({c for c in _PER_STORE if z["pairs"].get(c)} | z["national"])
+    return {"lat": lat, "lng": lng, "radius_km": radius_km, "store_count": len(z["stores"]),
+            "chains_priced": chains_priced,
+            "lidl_in_zone": any(s["chain"] == "lidl" for s in z["stores"]),
+            "stores": z["stores"]}
+
+
+def basket_compare(items, lat, lng, radius_km=10.0, max_results=30):
+    """Jämför en matkasse ([{ean, qty}]) över zonens butiker. Per kandidat: HYLLPRIS-total +
+    ERBJUDANDE-överlagrad total (effektivt pris/vara = min(hyllpris, erbjudande/st)) + täckning
+    (funna/saknade varor). ICA/Coop = fysiska butiker dedupade per ledger (närmast som representant,
+    `store_count` räknar resten); Willys/Hemköp/CG = nationellt (en post per kedja i zonen). EAN-exakt
+    -> hyllpriserna är per styck (ingen enhets-normalisering behövs). Rankas: FULL täckning först,
+    sedan billigaste effektiva total (en delvis korg får aldrig se billigast ut). Lidl saknar pris."""
+    radius_km = max(0.5, min(float(radius_km), ZONE_MAX_RADIUS_KM))
+    norm, seen = [], set()
+    for it in items or []:
+        e = normalize_ean(it.get("ean"))
+        if e and e not in seen:
+            seen.add(e)
+            norm.append((e, max(1, int(it.get("qty") or 1))))
+    eans = [e for e, _ in norm]
+    qty = dict(norm)
+    z = zone_stores(lat, lng, radius_km)
+    names = catalog_names_for_eans(eans) if eans else {}
+    if not eans:
+        return {"zone": _zone_meta(z, lat, lng, radius_km), "basket": [], "results": [], "unavailable": []}
+    ica, coop = z["pairs"].get("ica") or [], z["pairs"].get("coop") or []
+    national = z["national"]
+    conn = get_conn()
+    shelf = {}  # (chain, ledger, ean) -> hyllpris
+    if ica or coop:
+        for r in conn.execute(text(
+            "SELECT chain, store, ean, MIN(price) p FROM catalog_store_prices "
+            "WHERE ean IN :eans AND price > 0 AND "
+            "((chain='ica' AND store IN :ica) OR (chain='coop' AND store IN :coop)) "
+            "GROUP BY chain, store, ean").bindparams(
+            bindparam("eans", expanding=True), bindparam("ica", expanding=True), bindparam("coop", expanding=True)),
+                {"eans": eans, "ica": ica or [""], "coop": coop or [""]}):
+            shelf[(r["chain"], r["store"], r["ean"])] = r["p"]
+    nat_shelf = {}  # (chain, ean) -> nationellt hyllpris
+    if national:
+        for r in conn.execute(text(
+            "SELECT chain, ean, MIN(price) p FROM catalog_products "
+            "WHERE ean IN :eans AND available=1 AND price > 0 AND chain IN :ch GROUP BY chain, ean").bindparams(
+            bindparam("eans", expanding=True), bindparam("ch", expanding=True)),
+                {"eans": eans, "ch": list(national)}):
+            nat_shelf[(r["chain"], r["ean"])] = r["p"]
+    # Erbjudanden för korgens EAN: styckpris per (kedja, butik, ean) + bästa per (kedja, ean) (nationellt).
+    store_off, chain_off = {}, {}
+    for r in conn.execute(text(
+        "SELECT oe.ean, o.chain, o.store_id, o.price, o.price_text, o.member_price FROM offer_eans oe "
+        "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+        "WHERE oe.ean IN :eans AND o.price IS NOT NULL").bindparams(bindparam("eans", expanding=True)),
+            {"eans": eans}):
+        _, mq = _deal_type(r["price_text"])
+        per = r["price"] / (mq or 1)
+        rec = (per, bool(r["member_price"]))
+        sk = (r["chain"], str(r["store_id"]), r["ean"])
+        if sk not in store_off or per < store_off[sk][0]:
+            store_off[sk] = rec
+        ck = (r["chain"], r["ean"])
+        if ck not in chain_off or per < chain_off[ck][0]:
+            chain_off[ck] = rec
+    conn.close()
+
+    def _candidate(kind, chain, store_id, name, city, distance, store_count, get):
+        lines, ts, to, found, missing, member = [], 0.0, 0.0, 0, [], False
+        for e in eans:
+            q = qty[e]
+            sh, of = get(e)
+            if sh is None:  # varan finns inte hos butiken (hyllpris saknas)
+                missing.append(e)
+                lines.append({"ean": e, "name": names.get(e), "qty": q, "shelf": None, "offer": None, "eff": None})
+                continue
+            found += 1
+            offp = of[0] if of else None
+            used = offp is not None and offp < sh  # erbjudandet vinner bara om billigare än hyllpriset
+            eff = offp if used else sh
+            if used and of[1]:
+                member = True
+            ts += sh * q
+            to += eff * q
+            lines.append({"ean": e, "name": names.get(e), "qty": q, "shelf": round(sh, 2),
+                          "offer": round(offp, 2) if offp is not None else None, "eff": round(eff, 2)})
+        return {"kind": kind, "chain": chain, "store_id": store_id, "name": name, "city": city,
+                "distance_km": distance, "store_count": store_count,
+                "total_shelf": round(ts, 2), "total_offer": round(to, 2),
+                "found": found, "missing": missing, "uses_member": member, "lines": lines}
+
+    results = []
+    by_ledger = {}  # ICA/Coop fysiska butiker dedupade per (kedja, ledger), närmast som representant
+    for s in z["stores"]:
+        if s["chain"] not in _PER_STORE or not s.get("ledger"):
+            continue
+        k = (s["chain"], s["ledger"])
+        cur = by_ledger.get(k)
+        if cur is None:
+            by_ledger[k] = {**s, "store_count": 1}
+        else:
+            cur["store_count"] += 1
+            if s["distance_km"] < cur["distance_km"]:
+                cur.update(store_id=s["store_id"], name=s["name"], city=s["city"], distance_km=s["distance_km"])
+    for (chain, ledger), s in by_ledger.items():
+        sid = str(s["store_id"])
+        results.append(_candidate(
+            "store", chain, s["store_id"], s["name"], s["city"], s["distance_km"], s["store_count"],
+            lambda e, c=chain, lg=ledger, st=sid: (shelf.get((c, lg, e)), store_off.get((c, st, e)))))
+    for chain in sorted(national):  # nationella kedjor i zonen (en post per kedja)
+        results.append(_candidate(
+            "chain", chain, None, None, None, None, None,
+            lambda e, c=chain: (nat_shelf.get((c, e)), chain_off.get((c, e)))))
+    results.sort(key=lambda r: (len(r["missing"]), r["total_offer"]))  # full täckning först, sedan billigast
+    available = {k[2] for k in shelf} | {k[1] for k in nat_shelf}
+    unavailable = [{"ean": e, "name": names.get(e)} for e in eans if e not in available]
+    return {"zone": _zone_meta(z, lat, lng, radius_km),
+            "basket": [{"ean": e, "name": names.get(e), "qty": qty[e]} for e in eans],
+            "results": results[:max_results], "unavailable": unavailable}

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, store_crawl, store_measure, tags
+from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, schemas, settings, store_crawl, store_measure, tags
 from .routes import admin_vocab, compare as compare_routes, products as products_routes, stores as stores_routes
 from .database import (
     get_conn,
@@ -379,6 +379,52 @@ async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
         return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
     database.remove_favorite(user["id"], chain, store_id)
     return {"favorites": database.list_favorites(user["id"])}
+
+
+# ---- Matkasse (server-side per inloggad användare) + matkasse-jämförelse ----
+@app.get("/v1/basket")
+async def get_basket(user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    return {"items": database.list_basket(user["id"])}
+
+
+@app.post("/v1/basket")
+async def add_basket(payload: dict = Body(...), user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    e = database.set_basket_item(user["id"], payload.get("ean"), payload.get("qty", 1))
+    if not e:
+        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
+    return {"items": database.list_basket(user["id"])}
+
+
+@app.delete("/v1/basket")
+async def clear_basket_route(user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    database.clear_basket(user["id"])
+    return {"items": []}
+
+
+@app.delete("/v1/basket/{ean}")
+async def del_basket_item(ean: str, user=Depends(auth.current_user)):
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    database.remove_basket_item(user["id"], ean)
+    return {"items": database.list_basket(user["id"])}
+
+
+@app.get("/v1/basket/compare", responses={200: {"model": schemas.BasketCompareResponse}})
+async def basket_compare_route(lat: float, lng: float, radius: float = 10.0,
+                               user=Depends(auth.current_user)):
+    """Jämför den inloggade användarens matkasse över zonens butiker (punkt + radie). Per butik:
+    hyllpris-total + erbjudande-överlagrad total + täckning. ICA/Coop per butik, Willys/Hemköp/CG
+    nationellt, Lidl saknar pris. Full täckning rankas först, sedan billigaste effektiva total."""
+    if not user:
+        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+    items = database.list_basket(user["id"])
+    return database.basket_compare(items, lat=lat, lng=lng, radius_km=radius)
 
 
 # ---- API-konsol (egen admin-auth, skild från app-konton) ----
