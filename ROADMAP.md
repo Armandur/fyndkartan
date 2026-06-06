@@ -896,12 +896,16 @@ Inget i API-konsolen (`/admin`) ska göra att hela UI:t hänger sig (webbläsare
   boven var render-ordningen, inte listan.)
 - [x] **Universell spinner i `show()` KLAR:** en tom flik får en spinner-platshållare direkt -> ingen
   blank/"fastnad" skärm under laddning, alla flikar.
-- [ ] **KVAR - Översikts-fliken (default/"hemsidan") är backend-långsam (~4,3s):** `/v1/admin/overview`
-  domineras av `ean_stats` (UNION över json-arrayer + DISTINCT på 36k EAN). Spinnern ger nu feedback,
-  men fyllningen tar ändå 4,3s. Fixas backend-sida: dela ut den tunga statistik-delen till ett eget
-  lazy-anrop (så resten av översikten visas direkt), eller cacha/materialisera ean_stats hårdare.
-  Samma 4,3s-endpoint delas av Kedjor- och Erbjudande-flikarna.
-- [ ] **KVAR - övriga flikar:** gå igenom resten på samma sätt (skal direkt, tungt lazy) vid behov.
+- **Granskning av alla flik-laddare (mätt 2026-06-06 mot PG).** Med spinnern ger ingen flik längre en
+  blank/"fastnad" skärm. Kvar är LATENS på två endpoints som awaitas före render:
+  - [ ] **`/v1/admin/overview` ~4,3s** (Översikt = default/"hemsidan", + Kedjor + Erbjudanden - alla tre
+    delar endpointen). Domineras av `ean_stats` (UNION över json-arrayer + DISTINCT på 36k EAN).
+    Fix: dela ut `ean_stats` till ett eget lazy-anrop (`/v1/admin/overview/ean-stats`?) så resten av
+    översikten renderas direkt och EAN-siffran fylls i efterhand; ev. cacha/materialisera ean_stats hårdare.
+  - [ ] **`/v1/admin/private-products` ~3,5s** (Märkesvaror). `_products` skannar offers per kedja för
+    private-label-produkter. Fix: rendera flikens skal direkt + ladda listan lazy (ev. paginerat).
+  - OK (snabba, <0,15s, inget behov): sources, categories, manufacturers, settings. Skal-först redan:
+    calls, tags, keys, catalog.
 
 ### Crawl-prestanda - hävstänger att undersöka framöver (TODO, mätt 2026-06-05)
 Tidsprofil uppmätt efter sidstorleks-höjningen (per butik, produktions-pace 0.35s/sida): **~2/3 nätverk

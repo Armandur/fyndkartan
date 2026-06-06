@@ -247,6 +247,14 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   admin-split. Där konsolen behöver konsument-data finns admin-speglade routes (`/v1/admin/products/
   {ean}/info|image`) som delar resolver-helper med konsument-endpointen (`_resolve_product_info`/
   `_resolve_product_image`). Speglas/dupliceras vid en riktig split; lägg nya konsol-behov under `/v1/admin/*`.
+- **Konsol-UI får ALDRIG blockera renderingen (designbeslut, gäller generellt):** ingen flik i `/admin`
+  ska kunna hänga hela UI:t (webbläsaren fast i "loading"). Princip för varje flik-laddare i `admin.js`:
+  (1) rendera flikens skal/layout SYNKRONT direkt (per-sektions-platshållare), (2) hämta tunga block i
+  egna anrop som fyller i efterhand - parallellisera oberoende anrop med `Promise.all`, blockera aldrig
+  skalet på dem, (3) data som inte behövs för första vyn laddas LAZY/på-begäran (t.ex. butiksurvalet
+  ~2000 rader bakom en "Hantera butiksurval"-toggle). `show()` lägger dessutom en spinner-platshållare i
+  en ännu-tom flik så ingen flik blir blank. (Sortiment-fliken + spinnern är gjorda; översikts-endpointen
+  ~4,3s återstår att dela ut, se ROADMAP "Konsol-UI".)
 - **Produktsök/-bläddring (`database.list_products` + `GET /v1/products/search|by-category`):**
   distinkta produkter ur **offers-cachen**, grupperade på EAN (cross-chain, Axfood-EAN via
   `ean_cache`) annars (kedja, namn), med samma berikning som `get_store_offers` (kanonisk
