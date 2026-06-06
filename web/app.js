@@ -17,6 +17,9 @@ const state = {
   favorites: new Set(),
   user: null,
   productFilter: null,  // {ean, name, stores: Set("chain:store_id"), count} - kartfilter på en vara
+  baskets: [],          // [{id, name, item_count}] - användarens namngivna matkassar
+  activeBasket: null,   // id på den matkasse som visas/fylls (header-räknaren speglar den)
+  basket: new Map(),    // aktiva matkassens varor: ean -> {qty, name, exact, paired}
 };
 
 const COMPARE_CHAINS = ["ica", "coop", "willys", "hemkop", "citygross"];
@@ -335,6 +338,12 @@ function fitToFavorites(keys) {
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
 }
 
+// Zooma kartan så en lista butiker (med lat/lng) ryms i vyn (bbox).
+function fitStores(stores) {
+  const pts = (stores || []).filter((s) => s.lat && s.lng).map((s) => [s.lat, s.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+}
+
 document.getElementById("productFilterClear").addEventListener("click", () => {
   _selfNav = true; location.hash = ""; clearProductFilter(); setTimeout(() => { _selfNav = false; }, 0);
 });
@@ -387,9 +396,10 @@ function offerCard(o) {
     ? `${catChip}${valid ? `<span class="o-valid">${valid}</span>` : ""}`
     : "";
   const ean = o.eans && o.eans[0];
-  const info = ean
-    ? `<button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Visa information</button>`
-    : "";
+  const actions = ean
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(ean)}" data-chain="${esc(o.chain || "")}" data-name="${esc(o.name || "")}">Visa information</button>`
+      + `<button class="o-basket${state.basket.has(ean) ? " in" : ""}" data-ean="${esc(ean)}" data-name="${esc(o.name || "")}">${state.basket.has(ean) ? "&#10003; I kassen" : "&#128722; Lägg i kassen"}</button></div>`
+    : `<div class="o-actions"><span class="o-basket o-basket--off" title="Erbjudandet saknar EAN i källan - kan inte läggas i matkassen (jämförs på EAN)">&#128722; saknar EAN</span></div>`;
   return `<div class="offer-card">
     ${img}
     <div class="o-body">
@@ -403,7 +413,7 @@ function offerCard(o) {
         ${save}
       </div>
       ${foot ? `<div class="o-foot">${foot}</div>` : ""}
-      ${info}
+      ${actions}
     </div>
   </div>`;
 }
@@ -768,10 +778,14 @@ document.addEventListener("click", (e) => {
   openLightbox(src.includes("size=thumb") ? src.replace("size=thumb", "size=full") : src);
 });
 document.getElementById("offersList").addEventListener("click", (e) => {
+  const bk = e.target.closest(".o-basket");
+  if (bk) { addToBasket(bk.dataset.ean, bk.dataset.name); return; }
   const b = e.target.closest(".o-info");
   if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
 });
 document.getElementById("compareList").addEventListener("click", (e) => {
+  const bk = e.target.closest(".o-basket");
+  if (bk) { addToBasket(bk.dataset.ean, bk.dataset.name); return; }
   const b = e.target.closest(".o-info");
   if (b) openProductModal(b.dataset.ean, b.dataset.chain, b.dataset.name);
 });
@@ -928,7 +942,8 @@ function compareCard(p) {
     </div>`;
   }).join("");
   const actions = p.ean
-    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button></div>`
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button>`
+      + `<button class="o-basket${state.basket.has(p.ean) ? " in" : ""}" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">${state.basket.has(p.ean) ? "&#10003; I kassen" : "&#128722; Lägg i kassen"}</button></div>`
     : "";
   return `<div class="offer-card cmp-card">
     <div class="cmp-top">
@@ -1108,7 +1123,7 @@ function productCard(p) {
     : "";
   const stores = p.offer_count ? `<span class="o-stores">${p.offer_count} butik${p.offer_count === 1 ? "" : "er"}</span>` : "";
   const actions = p.ean
-    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button><button class="o-basket${state.basket.has(p.ean) ? " in" : ""}" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">${state.basket.has(p.ean) ? "&#10003; I kassen" : "&#128722; Lägg i kassen"}</button></div>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -1173,7 +1188,7 @@ function catalogCard(p) {
     ? `<span class="o-offer-badge">På erbjudande${p.offer_min != null ? ` fr. ${kr(p.offer_min)} kr` : ""}</span>`
     : "";
   const actions = p.ean
-    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button></div>`
+    ? `<div class="o-actions"><button class="o-info" data-ean="${esc(p.ean)}" data-chain="" data-name="${esc(p.name || "")}">Visa information</button><button class="o-map" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">Visa på karta</button><button class="o-basket${state.basket.has(p.ean) ? " in" : ""}" data-ean="${esc(p.ean)}" data-name="${esc(p.name || "")}">${state.basket.has(p.ean) ? "&#10003; I kassen" : "&#128722; Lägg i kassen"}</button></div>`
     : "";
   return `<div class="offer-card">
     ${img}
@@ -1289,6 +1304,8 @@ document.getElementById("productsList").addEventListener("click", (e) => {
   if (range && range.dataset.ean) { e.preventDefault(); openStorePricesModal(range.dataset.ean, range.dataset.chain, range.dataset.name); return; }
   const info = e.target.closest(".o-info");
   if (info) { openProductModal(info.dataset.ean, info.dataset.chain, info.dataset.name); return; }
+  const bk = e.target.closest(".o-basket");
+  if (bk) { addToBasket(bk.dataset.ean, bk.dataset.name); return; }
   const mapBtn = e.target.closest(".o-map");
   if (mapBtn) goProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
@@ -1349,8 +1366,16 @@ function applyBrowseHash() {
   setBrowseZoneMode(false);
   showBrowseUI();
   const rest = h.slice("sortiment".length).replace(/^\//, "");
-  browseState.category = rest.startsWith("k/") ? decodeURIComponent(rest.slice(2)) : "";
-  browseState.q = rest.startsWith("s/") ? decodeURIComponent(rest.slice(2)) : "";
+  // Kategori ligger i hashen (delbar). Sök (q) är ett TRANSIENT filter som KOMBINERAS med kategorin
+  // (+ kost) -> bevaras vid kategori-byte (sök inom kategori). /s/<q> = delbar ren sökning (ingen kategori).
+  if (rest.startsWith("k/")) {
+    browseState.category = decodeURIComponent(rest.slice(2));  // q bevaras
+  } else if (rest.startsWith("s/")) {
+    browseState.category = "";
+    browseState.q = decodeURIComponent(rest.slice(2));
+  } else {
+    browseState.category = "";  // bart #sortiment: rensa kategori, bevara ev. sök
+  }
   document.getElementById("browseSearch").value = browseState.q;
   loadBrowseSummary();  // räknare per kategori + totaler (renderar chips)
   loadBrowse();
@@ -1456,7 +1481,9 @@ function browseCardsHtml(products) {
 function updateBrowseTitle() {
   // onlyOffers är ett SERVERFILTER -> browseProducts innehåller redan bara erbjudande-produkter.
   const title = document.getElementById("browseTitle");
-  const head = browseState.q ? `Sök: "${browseState.q}"` : (catLabels[browseState.category] || browseState.category);
+  // Kategori + sök visas tillsammans (sök kombineras med kategori, ersätter den inte).
+  const cat = catLabels[browseState.category] || browseState.category;
+  const head = [cat, browseState.q ? `"${browseState.q}"` : ""].filter(Boolean).join(" · ");
   title.textContent = head
     ? `${head} (${fmtNum(browseProducts.length)}${browseHasMore ? "+" : ""}${browseState.onlyOffers ? " med erbjudande" : ""})` : "";
 }
@@ -1592,12 +1619,14 @@ function setupBrowseObserver() {
 document.getElementById("browseSearch").addEventListener("input", (e) => {
   const q = e.target.value.trim();
   clearTimeout(browseTimer);
-  if (browseState.zoneMode) {  // stanna kvar i zon-läget, filtrera bara
-    browseTimer = setTimeout(() => { browseState.q = q.length >= 2 ? q : ""; loadBrowse(); }, 250);
-    return;
-  }
-  browseTimer = setTimeout(() =>
-    browseGo(q.length >= 2 ? "sortiment/s/" + encodeURIComponent(q) : "sortiment"), 250);
+  // Sök är ett transient filter som KOMBINERAS med vald kategori + kost (ersätter den inte). Längre
+  // debounce + ingen hash-navigering per tangenttryck. Gäller både sortiment- och zon-läget.
+  browseTimer = setTimeout(() => {
+    const nq = q.length >= 2 ? q : "";
+    if (nq === browseState.q) return;  // oförändrat -> hoppa onödig laddning
+    browseState.q = nq;
+    loadBrowse();
+  }, 400);
 });
 document.getElementById("browseChain").addEventListener("change", (e) => {
   browseState.chain = e.target.value;
@@ -1654,6 +1683,8 @@ document.getElementById("browseGrid").addEventListener("click", (e) => {
     openProductModal(offer.dataset.ean, offer.dataset.chain, offer.dataset.name);
     return;
   }
+  const bk = e.target.closest(".o-basket");
+  if (bk) { addToBasket(bk.dataset.ean, bk.dataset.name); return; }
   const mapBtn = e.target.closest(".o-map");
   if (mapBtn) goProduct(mapBtn.dataset.ean, mapBtn.dataset.name);
 });
@@ -1691,21 +1722,17 @@ function zoneClearLayers() {
   if (zoneState.circle) { map.removeLayer(zoneState.circle); zoneState.circle = null; }
 }
 
-// Starta zon-väljaren: nål + radie-cirkel på kartan. keep=true -> behåll nuvarande zon-plats
-// (panorera dit), annars utgå från kartans mitt.
-function zoneStartPick(keep) {
-  if (document.body.classList.contains("browse-mode")) showMapUI();  // tillbaka till kartvyn (sidopanelen + nålen syns)
-  let lat, lng;
-  if (keep && zoneState.lat != null) {
-    lat = zoneState.lat; lng = zoneState.lng;
-    map.setView([lat, lng], Math.max(map.getZoom(), 11));
-  } else {
-    const c = map.getCenter(); lat = c.lat; lng = c.lng;
-  }
+// Håll båda radie-slidrarna (kart-väljaren + matkasse-panelen) + zoneState + cirkeln i synk.
+function _syncRadius(r) {
+  zoneState.radius = r;
+  ["zoneRadiusVal", "bkRadiusVal"].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = r; });
+  ["zoneRadius", "bkRadius"].forEach((id) => { const el = document.getElementById(id); if (el) el.value = r; });
+  if (zoneState.circle) zoneState.circle.setRadius(r * 1000);
+}
+
+// Rita/uppdatera nål (drag-bar) + radie-cirkel på kartan. Delas av kart- och matkasse-väljaren.
+function drawZone(lat, lng) {
   zoneState.lat = lat; zoneState.lng = lng;
-  const rEl = document.getElementById("zoneRadius");
-  zoneState.radius = parseInt(rEl.value, 10) || 10;
-  document.getElementById("zoneRadiusVal").textContent = zoneState.radius;
   if (!zoneState.marker) {
     zoneState.marker = L.marker([lat, lng], { draggable: true, autoPan: true }).addTo(map);
     zoneState.marker.on("drag", () => {
@@ -1722,6 +1749,17 @@ function zoneStartPick(keep) {
   } else {
     zoneState.circle.setLatLng([lat, lng]).setRadius(zoneState.radius * 1000);
   }
+}
+
+// Starta zon-väljaren: nål + radie-cirkel på kartan. keep=true -> behåll nuvarande zon-plats
+// (panorera dit), annars utgå från kartans mitt.
+function zoneStartPick(keep) {
+  if (document.body.classList.contains("browse-mode")) showMapUI();  // tillbaka till kartvyn (sidopanelen + nålen syns)
+  const reuse = keep && zoneState.lat != null;
+  const c = reuse ? { lat: zoneState.lat, lng: zoneState.lng } : map.getCenter();
+  _syncRadius(parseInt(document.getElementById("zoneRadius").value, 10) || zoneState.radius || 10);
+  drawZone(c.lat, c.lng);
+  map.fitBounds(zoneState.circle.getBounds(), { padding: [40, 40], maxZoom: 14 });  // visa hela zonens omfång
   document.getElementById("zoneStart").classList.add("d-none");
   document.getElementById("zonePicker").classList.remove("d-none");
 }
@@ -1739,14 +1777,343 @@ document.getElementById("zoneCompare").addEventListener("click", () => {
   showCompare();        // prisjämför erbjudanden i zonen (zoneState lat/lng/radie)
 });
 document.getElementById("zoneRadius").addEventListener("input", (e) => {
-  zoneState.radius = parseInt(e.target.value, 10) || 10;
-  document.getElementById("zoneRadiusVal").textContent = zoneState.radius;
-  if (zoneState.circle) zoneState.circle.setRadius(zoneState.radius * 1000);
+  _syncRadius(parseInt(e.target.value, 10) || 10);
 });
 document.getElementById("zoneBrowse").addEventListener("click", () => {
   if (zoneState.lat == null) return;
   zoneEndPick();
   browseGo(`zon/${zoneState.lat.toFixed(5)}/${zoneState.lng.toFixed(5)}/${zoneState.radius}`);
+});
+
+// ---- Matkasse (server-side korg + zon-jämförelse) ----
+const chainLabel = (c) => (state.chains[c] && state.chains[c].label) || c;
+
+function updateBasketCount() {
+  let n = 0;
+  for (const v of state.basket.values()) n += v.qty;
+  const el = document.getElementById("basketCount");
+  if (el) el.textContent = n;
+}
+
+function refreshBasketButtons() {  // uppdatera "Lägg i kassen"-knappar i synliga listor
+  document.querySelectorAll(".o-basket").forEach((b) => {
+    const inB = state.basket.has(b.dataset.ean);
+    b.classList.toggle("in", inB);
+    b.innerHTML = inB ? "✓ I kassen" : "\u{1F6D2} Lägg i kassen";
+  });
+}
+
+const _bkVal = (it) => ({ qty: it.qty, name: it.name, exact: it.exact, paired: it.paired });
+const _bkUrl = () => `/v1/baskets/${state.activeBasket}/items`;
+
+function syncBasket(items) {  // uppdatera aktiva matkassens varor + räknare/knappar/lista
+  state.basket = new Map((items || []).map((it) => [it.ean, _bkVal(it)]));
+  // håll item_count i listan färsk (för väljaren)
+  const b = state.baskets.find((x) => x.id === state.activeBasket);
+  if (b) b.item_count = state.basket.size;
+  updateBasketCount();
+  refreshBasketButtons();
+  if (!document.getElementById("basketPanel").classList.contains("d-none")) { renderBasketSelect(); renderBasketList(); }
+}
+
+async function loadBaskets() {  // hämta matkassar; skapa en default om inga, sätt aktiv = senast ändrad
+  state.baskets = []; state.activeBasket = null; state.basket = new Map();
+  if (!state.user) { updateBasketCount(); return; }
+  try {
+    const d = await (await fetch("/v1/baskets")).json();
+    state.baskets = d.baskets || [];
+    if (!state.baskets.length) {
+      const c = await (await fetch("/v1/baskets", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Min matkasse" }) })).json();
+      state.baskets = c.baskets || [];
+    }
+    state.activeBasket = state.baskets.length ? state.baskets[0].id : null;
+    await loadActiveBasketItems();
+  } catch (e) { /* ingen matkasse */ }
+  updateBasketCount();
+}
+
+async function loadActiveBasketItems() {
+  state.basket = new Map();
+  if (state.activeBasket == null) return;
+  try {
+    const d = await (await fetch(`/v1/baskets/${state.activeBasket}`)).json();
+    (d.items || []).forEach((it) => state.basket.set(it.ean, _bkVal(it)));
+  } catch (e) { /* tom */ }
+  updateBasketCount();
+  refreshBasketButtons();
+}
+
+async function ensureActiveBasket() {  // skapa en matkasse on-demand (t.ex. vid första "lägg i kassen")
+  if (state.activeBasket != null) return state.activeBasket;
+  const c = await (await fetch("/v1/baskets", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "Min matkasse" }) })).json();
+  state.baskets = c.baskets || [];
+  state.activeBasket = (c.basket && c.basket.id) || (state.baskets[0] && state.baskets[0].id);
+  return state.activeBasket;
+}
+
+async function addToBasket(ean, name) {
+  if (!state.user) { openAuth("login"); return; }
+  if (!ean) return;
+  await ensureActiveBasket();
+  const cur = state.basket.get(ean);
+  state.basket.set(ean, { qty: cur ? cur.qty + 1 : 1, name: name || (cur && cur.name) });  // optimistiskt
+  updateBasketCount();
+  refreshBasketButtons();
+  try {
+    const d = await (await fetch(_bkUrl(), { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ean, qty: state.basket.get(ean).qty }) })).json();
+    syncBasket(d.items);
+  } catch (e) { /* behåll optimistiska värdet */ }
+}
+
+async function setBasketQty(ean, qty) {
+  if (qty < 1) return removeFromBasket(ean);
+  const d = await (await fetch(_bkUrl(), { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ean, qty }) })).json();
+  syncBasket(d.items);
+}
+
+async function removeFromBasket(ean) {
+  const d = await (await fetch(`${_bkUrl()}/${encodeURIComponent(ean)}`, { method: "DELETE" })).json();
+  syncBasket(d.items);
+}
+
+async function clearBasket() {
+  await fetch(_bkUrl(), { method: "DELETE" });
+  syncBasket([]);
+}
+
+function renderBasketSelect() {
+  const sel = document.getElementById("basketSelect");
+  if (!sel) return;
+  sel.innerHTML = state.baskets.map((b) =>
+    `<option value="${b.id}"${b.id === state.activeBasket ? " selected" : ""}>${esc(b.name)} (${b.item_count})</option>`).join("");
+}
+
+async function selectBasket(id) {
+  state.activeBasket = id;
+  await loadActiveBasketItems();
+  renderBasketSelect();
+  renderBasketList();
+}
+
+async function newBasket() {
+  const name = prompt("Namn på den nya matkassen:", "Veckohandling");
+  if (name === null) return;
+  const c = await (await fetch("/v1/baskets", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }) })).json();
+  state.baskets = c.baskets || [];
+  state.activeBasket = (c.basket && c.basket.id) || state.activeBasket;
+  await loadActiveBasketItems();
+  renderBasketSelect();
+  renderBasketList();
+}
+
+async function renameActiveBasket() {
+  const b = state.baskets.find((x) => x.id === state.activeBasket);
+  if (!b) return;
+  const name = prompt("Nytt namn:", b.name);
+  if (name === null || !name.trim()) return;
+  const d = await (await fetch(`/v1/baskets/${state.activeBasket}/rename`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) })).json();
+  state.baskets = d.baskets || state.baskets;
+  renderBasketSelect();
+}
+
+async function deleteActiveBasket() {
+  if (state.activeBasket == null) return;
+  const b = state.baskets.find((x) => x.id === state.activeBasket);
+  if (!confirm(`Ta bort matkassen "${b ? b.name : ""}"?`)) return;
+  const d = await (await fetch(`/v1/baskets/${state.activeBasket}`, { method: "DELETE" })).json();
+  state.baskets = d.baskets || [];
+  state.activeBasket = state.baskets.length ? state.baskets[0].id : null;
+  await loadActiveBasketItems();
+  renderBasketSelect();
+  renderBasketList();
+}
+
+function openBasketPanel() {
+  if (!state.user) { openAuth("login"); return; }
+  // 🛒 ligger i headern (klickbar även i bläddra-läget), men panelen bor i sidopanelen som göms då
+  // -> tillbaka till kartvyn först, annars syns inget.
+  if (document.body.classList.contains("browse-mode")) showMapUI();
+  ["offersPanel", "comparePanel", "productsPanel"].forEach((id) => document.getElementById(id).classList.add("d-none"));
+  document.getElementById("basketResults").classList.add("d-none");
+  document.getElementById("basketManage").classList.remove("d-none");
+  document.getElementById("basketPanel").classList.remove("d-none");
+  renderBasketSelect();
+  renderBasketList();
+  openNav();
+}
+
+function renderBasketList() {
+  const el = document.getElementById("basketList");
+  if (!el) return;
+  const b = state.baskets.find((x) => x.id === state.activeBasket);
+  document.getElementById("basketTitle").textContent = b ? b.name : "Matkasse";
+  if (!state.basket.size) {
+    el.innerHTML = `<div class="text-muted small p-2">Korgen är tom. Lägg till varor med \u{1F6D2} i bläddra-vyn.</div>`;
+    return;
+  }
+  el.innerHTML = [...state.basket.entries()].map(([ean, v]) => `
+    <div class="bk-row">
+      <img class="bk-thumb" src="/v1/products/${encodeURIComponent(ean)}/image?size=thumb" loading="lazy" alt="" onerror="this.style.visibility='hidden'">
+      <div class="bk-name">${esc(v.name || ean)}${v.paired ? `
+        <label class="bk-exact" title="Jämför bara exakt denna märkesvara - ingen motsvarighet i andra kedjor">
+          <input type="checkbox" class="bk-exact-cb" data-ean="${esc(ean)}"${v.exact ? " checked" : ""}> endast denna märkesvara</label>` : ""}</div>
+      <div class="bk-qty">
+        <button class="bk-dec" data-ean="${esc(ean)}">−</button>
+        <span>${v.qty}</span>
+        <button class="bk-inc" data-ean="${esc(ean)}">+</button>
+        <button class="bk-rm" data-ean="${esc(ean)}" title="Ta bort">✕</button>
+      </div>
+    </div>`).join("");
+}
+
+async function setBasketExact(ean, exact) {
+  const v = state.basket.get(ean);
+  if (!v) return;
+  const d = await (await fetch(_bkUrl(), { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ean, qty: v.qty, exact }) })).json();
+  syncBasket(d.items);
+}
+
+// Säkerställ en zon: använd markerad zon (nål), annars kartans mitt + slider-radie -> och RITA nålen
+// (synlig + drag-bar) så zonen inte är en osynlig gissning.
+function ensureZone() {
+  if (zoneState.lat == null) {
+    const c = map.getCenter();
+    const r = parseInt((document.getElementById("bkRadius") || {}).value, 10) || zoneState.radius || 10;
+    _syncRadius(r);
+    drawZone(c.lat, c.lng);
+  }
+  return zoneState;
+}
+
+// Starta matkasse-panelens zon-väljare: rita nål på kartan + visa radie-slidern (speglar kart-väljaren).
+function bkZoneStart() {
+  if (document.body.classList.contains("browse-mode")) showMapUI();
+  const c = zoneState.lat != null ? { lat: zoneState.lat, lng: zoneState.lng } : map.getCenter();
+  _syncRadius(parseInt(document.getElementById("bkRadius").value, 10) || zoneState.radius || 10);
+  drawZone(c.lat, c.lng);
+  map.fitBounds(zoneState.circle.getBounds(), { padding: [40, 40], maxZoom: 14 });  // visa hela zonens omfång
+  document.getElementById("bkZonePicker").classList.remove("d-none");
+}
+
+let basketCompareData = null, basketMode = "offer", basketCov = "all";
+async function compareBasket(scope) {
+  if (!state.basket.size || state.activeBasket == null) return;
+  let url;
+  if (scope === "favorites") {
+    url = `/v1/baskets/${state.activeBasket}/compare?favorites=true`;
+  } else {
+    const z = ensureZone();  // ritar nålen om ingen är satt
+    url = `/v1/baskets/${state.activeBasket}/compare?lat=${z.lat.toFixed(5)}&lng=${z.lng.toFixed(5)}&radius=${z.radius}`;
+  }
+  document.getElementById("basketManage").classList.add("d-none");
+  document.getElementById("basketResults").classList.remove("d-none");
+  const body = document.getElementById("basketResultsBody");
+  body.innerHTML = `<div class="text-muted small p-2">Jämför matkassen&hellip;</div>`;
+  try {
+    const d = await (await fetch(url)).json();
+    basketCompareData = d;
+    if (scope === "favorites") fitStores(d.zone.stores);  // zooma till favoriternas bbox
+    renderBasketResults();
+  } catch (e) {
+    body.innerHTML = `<div class="text-danger small p-2">Kunde inte jämföra matkassen.</div>`;
+  }
+}
+
+function renderBasketResults() {
+  const d = basketCompareData;
+  if (!d) return;
+  const body = document.getElementById("basketResultsBody");
+  const useOffer = basketMode === "offer";
+  // Coverage-filter: alla / har minst en vara (found>0) / endast full täckning (inga saknade)
+  const results = d.results.filter((c) =>
+    basketCov === "full" ? c.missing.length === 0 : (basketCov === "some" ? c.found > 0 : true));
+  const cands = results.map((c) => {
+    const total = useOffer ? c.total_offer : c.total_shelf;
+    const nm = c.name || chainLabel(c.chain);
+    const dist = c.distance_km != null ? ` &middot; ${c.distance_km} km` : "";
+    const share = (c.store_count && c.store_count > 1) ? ` &middot; ${c.store_count} butiker` : "";
+    const nat = c.national ? ` <span class="bk-nat" title="Samma pris i alla butiker i kedjan">nationellt pris</span>` : "";
+    const miss = c.missing.length ? ` <span class="bk-miss">saknar ${c.missing.length}</span>` : "";
+    const member = (useOffer && c.uses_member) ? ` <span class="o-member">Klubbpris</span>` : "";
+    const best = !c.missing.length;  // bara FULL täckning får billigast-markering
+    const lines = c.lines.map((l) => {
+      const eff = useOffer ? l.eff : l.shelf;
+      const onsale = useOffer && l.offer != null && l.shelf != null && l.offer < l.shelf;
+      const pr = eff != null ? `${onsale ? "<span class='o-offer'>" : ""}${kr(eff)} kr${l.qty > 1 ? ` ×${l.qty}` : ""}${onsale ? "</span>" : ""}`
+        : `<span class="bk-miss">saknas</span>`;
+      const via = l.used_name ? ` <span class="bk-via">via ${esc(l.used_name)}</span>` : "";  // private-label-substitut
+      return `<div class="bk-line"><span class="bk-line-name">${esc(l.name || l.ean)}${via}</span><span>${pr}</span></div>`;
+    }).join("");
+    // Nationell kedja: rada upp butikerna i zonen (samma pris) under prisuppställningen.
+    const storeList = (c.stores && c.stores.length)
+      ? `<div class="bk-cand-stores"><div class="bk-cand-stores-h">${c.stores.length} butiker (samma pris):</div>`
+        + c.stores.map((s) => `<div class="bk-store">${esc(s.name || "")}${s.distance_km != null ? ` <span class="text-muted">${s.distance_km} km</span>` : ""}</div>`).join("")
+        + `</div>`
+      : "";
+    return `<details class="bk-cand${best ? " bk-best" : ""}">
+      <summary><span class="bk-cand-name">${esc(nm)}${dist}${share}${nat}${miss}${member}</span>
+        <span class="bk-cand-tot">${kr(total)} kr</span></summary>
+      <div class="bk-lines">${lines}${storeList}</div></details>`;
+  }).join("");
+  const unav = d.unavailable.length
+    ? `<div class="bk-unav">Ingen butik i zonen har: ${d.unavailable.map((u) => esc(u.name || u.ean)).join(", ")}</div>` : "";
+  const z = d.zone;
+  const where = z.scope === "favorites"
+    ? `${fmtNum(z.store_count)} favoritbutiker`
+    : `${fmtNum(z.store_count)} butiker i zonen (${kr(z.radius_km)} km)`;
+  body.innerHTML =
+    `<div class="small text-muted mb-2">${where}. `
+    + `${useOffer ? "Effektivt pris med aktuella erbjudanden." : "Ordinarie hyllpris."} Full täckning rankas först.</div>`
+    + (cands || `<div class="text-muted small p-2">${basketCov === "full" ? "Ingen butik i urvalet har alla varorna." : "Inga butiker med pris i urvalet."}</div>`) + unav;
+}
+
+document.getElementById("basketBtn").addEventListener("click", openBasketPanel);
+document.getElementById("basketBack").addEventListener("click", () => document.getElementById("basketPanel").classList.add("d-none"));
+document.getElementById("basketClear").addEventListener("click", clearBasket);
+document.getElementById("basketCompareBtn").addEventListener("click", () => compareBasket("zone"));
+document.getElementById("basketCompareFav").addEventListener("click", () => compareBasket("favorites"));
+document.getElementById("bkZoneStart").addEventListener("click", bkZoneStart);
+document.getElementById("bkRadius").addEventListener("input", (e) => _syncRadius(parseInt(e.target.value, 10) || 10));
+document.getElementById("basketSelect").addEventListener("change", (e) => selectBasket(parseInt(e.target.value, 10)));
+document.getElementById("basketNew").addEventListener("click", newBasket);
+document.getElementById("basketRename").addEventListener("click", renameActiveBasket);
+document.getElementById("basketDelete").addEventListener("click", deleteActiveBasket);
+document.getElementById("basketResultsBack").addEventListener("click", () => {
+  document.getElementById("basketResults").classList.add("d-none");
+  document.getElementById("basketManage").classList.remove("d-none");
+});
+document.getElementById("basketModeOffer").addEventListener("click", () => {
+  basketMode = "offer";
+  document.getElementById("basketModeOffer").classList.add("active");
+  document.getElementById("basketModeShelf").classList.remove("active");
+  renderBasketResults();
+});
+document.getElementById("basketModeShelf").addEventListener("click", () => {
+  basketMode = "shelf";
+  document.getElementById("basketModeShelf").classList.add("active");
+  document.getElementById("basketModeOffer").classList.remove("active");
+  renderBasketResults();
+});
+document.getElementById("basketCovFilter").addEventListener("change", (e) => {
+  basketCov = e.target.value;  // alla / minst en vara / endast full täckning
+  renderBasketResults();
+});
+document.getElementById("basketList").addEventListener("click", (e) => {
+  const inc = e.target.closest(".bk-inc"), dec = e.target.closest(".bk-dec"), rm = e.target.closest(".bk-rm");
+  if (inc) { const v = state.basket.get(inc.dataset.ean); setBasketQty(inc.dataset.ean, (v ? v.qty : 0) + 1); }
+  else if (dec) { const v = state.basket.get(dec.dataset.ean); setBasketQty(dec.dataset.ean, (v ? v.qty : 1) - 1); }
+  else if (rm) removeFromBasket(rm.dataset.ean);
+});
+document.getElementById("basketList").addEventListener("change", (e) => {
+  const cb = e.target.closest(".bk-exact-cb");
+  if (cb) setBasketExact(cb.dataset.ean, cb.checked);  // ignorera/aktivera private-label-parning
 });
 
 // ---- Mobil: sidopanel som overlay ----
@@ -1884,7 +2251,7 @@ async function submitAuth() {
   hideWall();
   renderAuthArea();
   // Data laddas först efter inloggning (endpoints är gatade); småhämtningar parallellt.
-  await Promise.all([loadFavorites(), loadCategories(), loadChains()]);
+  await Promise.all([loadFavorites(), loadCategories(), loadChains(), loadBaskets()]);
   await loadStores();
   render();
   populateBrowseChain();
@@ -1929,7 +2296,7 @@ document.getElementById("setNew").addEventListener("keydown", (e) => { if (e.key
   await loadUser();
   if (state.user) {
     // Oberoende småhämtningar parallellt (alla klara innan loadStores renderar -> chains/favoriter finns).
-    await Promise.all([loadFavorites(), loadCategories(), loadChains()]);
+    await Promise.all([loadFavorites(), loadCategories(), loadChains(), loadBaskets()]);
     await loadStores();
     populateBrowseChain();
     applyBrowseHash();   // återställ bläddra-vyn / produktfiltret om URL:en bär det

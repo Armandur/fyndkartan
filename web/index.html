@@ -17,6 +17,7 @@
     <div class="header-sub d-none d-md-block">Hitta butiker &amp; erbjudanden nära dig</div>
     <div class="ms-auto d-flex align-items-center gap-3">
       <button id="viewToggle" class="btn btn-sm btn-outline-light">Bläddra sortiment</button>
+      <button id="basketBtn" class="btn btn-sm btn-outline-light">&#128722; Matkasse <span id="basketCount" class="basket-count">0</span></button>
       <span id="authArea" class="d-flex align-items-center gap-2"></span>
     </div>
   </header>
@@ -162,6 +163,50 @@
           </select>
         </div>
         <div id="compareList" class="offers-list"></div>
+      </div>
+
+      <!-- Matkasse-panel: hantera korgen + jämför över zonen -->
+      <div id="basketPanel" class="offers-panel d-none">
+        <div class="offers-head">
+          <button id="basketBack" class="btn btn-sm btn-link p-0">&larr; Tillbaka</button>
+          <div id="basketTitle" class="offers-title">Matkasse</div>
+        </div>
+        <div id="basketManage">
+          <div class="d-flex gap-2 mb-2 align-items-center">
+            <select id="basketSelect" class="form-select form-select-sm"></select>
+            <button id="basketNew" class="btn btn-sm btn-outline-dark" title="Ny matkasse">+ Ny</button>
+            <button id="basketRename" class="btn btn-sm btn-outline-secondary" title="Byt namn">&#9998;</button>
+            <button id="basketDelete" class="btn btn-sm btn-outline-danger" title="Ta bort matkassen">&#128465;</button>
+          </div>
+          <div id="basketList" class="offers-list"></div>
+          <div class="bk-compare-box mt-2">
+            <div class="small fw-semibold mb-2">Jämför matkassen</div>
+            <button id="basketCompareFav" class="btn btn-sm btn-dark w-100 mb-2">&#9733; Hos mina favoriter</button>
+            <button id="bkZoneStart" class="btn btn-sm btn-dark w-100">&#128205; I en zon på kartan</button>
+            <div id="bkZonePicker" class="zone-picker d-none mt-2">
+              <div class="small text-muted mb-2">Dra nålen på kartan för att välja plats, justera radien.</div>
+              <label class="small d-block mb-1">Radie: <span id="bkRadiusVal">10</span> km</label>
+              <input id="bkRadius" type="range" min="2" max="50" step="1" value="10" class="form-range mb-2">
+              <button id="basketCompareBtn" class="btn btn-sm btn-dark w-100">Jämför i zonen</button>
+            </div>
+          </div>
+          <button id="basketClear" class="btn btn-sm btn-outline-secondary w-100 mt-2">Töm matkassen</button>
+        </div>
+        <div id="basketResults" class="d-none">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <button id="basketResultsBack" class="btn btn-sm btn-link p-0">&larr; Korgen</button>
+            <div class="btn-group btn-group-sm ms-auto" role="group">
+              <button id="basketModeOffer" type="button" class="btn btn-outline-dark active">Med erbjudanden</button>
+              <button id="basketModeShelf" type="button" class="btn btn-outline-dark">Bara hyllpris</button>
+            </div>
+          </div>
+          <select id="basketCovFilter" class="form-select form-select-sm mb-2">
+            <option value="all">Alla butiker</option>
+            <option value="some">Har minst en vara</option>
+            <option value="full">Endast butiker med alla varor</option>
+          </select>
+          <div id="basketResultsBody"></div>
+        </div>
       </div>
 
       <!-- Produktsök-panel (namnsök + kategori-bläddring, ur erbjudande-cachen) -->
