@@ -11,6 +11,8 @@ import random
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import text
+
 from . import apilog, config, database
 from .adapters import axfood_offers, citygross_offers, coop_offers, ica_offers
 from .database import get_conn, get_store_offers, offers_fetched_at, replace_store_offers
@@ -29,9 +31,9 @@ def _offers_expired(chain, store_id):
     today = datetime.now(ZoneInfo(config.SYNC_TZ)).date().isoformat()
     conn = get_conn()
     row = conn.execute(
-        "SELECT MIN(valid_to) AS m FROM offers WHERE chain=? AND store_id=? "
-        "AND valid_to IS NOT NULL AND valid_to != ''",
-        (chain, str(store_id)),
+        text("SELECT MIN(valid_to) AS m FROM offers WHERE chain=:chain AND store_id=:store "
+             "AND valid_to IS NOT NULL AND valid_to != ''"),
+        {"chain": chain, "store": str(store_id)},
     ).fetchone()
     conn.close()
     return bool(row and row["m"]) and row["m"] < today

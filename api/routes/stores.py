@@ -5,6 +5,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy import bindparam, text
 
 from .. import apilog, schemas
 from ..database import get_conn, get_store_offers, row_to_store
@@ -25,26 +26,30 @@ def _last_sync():
 
 def _query_stores(chain=None, city=None, q=None, brand=None, features=None, has_offers=False):
     sql = "SELECT * FROM stores WHERE 1=1"
-    args = []
+    args, binds = {}, []
     if chain:
         chains = [c.strip() for c in chain.split(",") if c.strip()]
-        sql += f" AND chain IN ({','.join('?' * len(chains))})"
-        args += chains
+        sql += " AND chain IN :chains"
+        args["chains"] = chains
+        binds.append(bindparam("chains", expanding=True))
     if brand:
         brands = [b.strip() for b in brand.split(",") if b.strip()]
-        sql += f" AND brand IN ({','.join('?' * len(brands))})"
-        args += brands
+        sql += " AND brand IN :brands"
+        args["brands"] = brands
+        binds.append(bindparam("brands", expanding=True))
     if city:
-        sql += " AND lower(city) = lower(?)"
-        args.append(city)
+        sql += " AND lower(city) = lower(:city)"
+        args["city"] = city
     if q:
-        sql += " AND (lower(name) LIKE ? OR lower(street) LIKE ? OR lower(city) LIKE ?)"
-        like = f"%{q.lower()}%"
-        args += [like, like, like]
+        sql += " AND (lower(name) LIKE :like OR lower(street) LIKE :like OR lower(city) LIKE :like)"
+        args["like"] = f"%{q.lower()}%"
     if has_offers:
         sql += " AND link_offers IS NOT NULL"
+    stmt = text(sql)
+    if binds:
+        stmt = stmt.bindparams(*binds)
     conn = get_conn()
-    rows = conn.execute(sql, args).fetchall()
+    rows = conn.execute(stmt, args).fetchall()
     conn.close()
     stores = [row_to_store(r) for r in rows]
     if features:
@@ -97,7 +102,8 @@ async def stores_near(
 async def get_store(chain: str, store_id: str, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
-        "SELECT * FROM stores WHERE chain=? AND store_id=?", (chain, store_id)
+        text("SELECT * FROM stores WHERE chain=:chain AND store_id=:store"),
+        {"chain": chain, "store": store_id}
     ).fetchone()
     conn.close()
     if not row:
@@ -109,8 +115,8 @@ async def get_store(chain: str, store_id: str, _auth=Depends(require_consumer)):
 async def store_offers(chain: str, store_id: str, refresh: bool = False, _auth=Depends(require_consumer)):
     conn = get_conn()
     row = conn.execute(
-        "SELECT chain, link_offers, native FROM stores WHERE chain=? AND store_id=?",
-        (chain, store_id),
+        text("SELECT chain, link_offers, native FROM stores WHERE chain=:chain AND store_id=:store"),
+        {"chain": chain, "store": store_id},
     ).fetchone()
     conn.close()
     if not row:

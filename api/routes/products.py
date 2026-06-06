@@ -15,6 +15,8 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse, JSONResponse
 
+from sqlalchemy import text
+
 from .. import apilog, auth, catalog, categories, config, database, details, images, matching, schemas
 from ..database import get_conn
 from ..deps import require_admin, require_consumer
@@ -277,7 +279,7 @@ async def chains(_auth=Depends(require_consumer)):
     conn = get_conn()
     counts = {
         r["chain"]: r["c"]
-        for r in conn.execute("SELECT chain, COUNT(*) AS c FROM stores GROUP BY chain")
+        for r in conn.execute(text("SELECT chain, COUNT(*) AS c FROM stores GROUP BY chain"))
     }
     conn.close()
     out = []

@@ -14,6 +14,8 @@ import json
 import logging
 import re
 
+from sqlalchemy import text
+
 from . import config, countries, database as db
 from .adapters import ica_token, keys
 from .adapters.axfood_offers import DOMAIN, UA
@@ -174,7 +176,8 @@ def normalize_info(info):
 
 def _axfood_code(ean):
     conn = db.get_conn()
-    row = conn.execute("SELECT code FROM ean_cache WHERE ean=? LIMIT 1", (str(ean),)).fetchone()
+    row = conn.execute(text("SELECT code FROM ean_cache WHERE ean=:ean LIMIT 1"),
+                       {"ean": str(ean)}).fetchone()
     conn.close()
     return row["code"] if row else None
 

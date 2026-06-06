@@ -10,6 +10,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy import bindparam, text
 
 from .. import apilog, auth, database, matching, schemas
 from ..adapters import axfood_offers
@@ -117,8 +118,9 @@ async def favorites_offers(user=Depends(auth.current_user)):
     rows = []
     for c, sid in pairs:
         r = conn.execute(
-            "SELECT chain, store_id, name, link_offers, native FROM stores WHERE chain=? AND store_id=?",
-            (c, sid),
+            text("SELECT chain, store_id, name, link_offers, native FROM stores "
+                 "WHERE chain=:chain AND store_id=:store"),
+            {"chain": c, "store": sid},
         ).fetchone()
         if r:
             rows.append(r)
@@ -169,9 +171,10 @@ async def compare_near(
 
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT chain, store_id, name, lat, lng, link_offers, native FROM stores "
-        f"WHERE chain IN ({','.join('?' * len(allowed))}) AND lat IS NOT NULL",
-        allowed,
+        text("SELECT chain, store_id, name, lat, lng, link_offers, native FROM stores "
+             "WHERE chain IN :chains AND lat IS NOT NULL").bindparams(
+            bindparam("chains", expanding=True)),
+        {"chains": list(allowed)},
     ).fetchall()
     conn.close()
 
@@ -212,8 +215,9 @@ async def compare_stores(stores: str = Query(...), min_chains: int = 2, _auth=De
     rows = []
     for c, sid in pairs:
         r = conn.execute(
-            "SELECT chain, store_id, name, link_offers, native FROM stores WHERE chain=? AND store_id=?",
-            (c, sid),
+            text("SELECT chain, store_id, name, link_offers, native FROM stores "
+                 "WHERE chain=:chain AND store_id=:store"),
+            {"chain": c, "store": sid},
         ).fetchone()
         if r:
             rows.append(r)

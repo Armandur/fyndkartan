@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from fastapi import Body, Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, settings, store_crawl, store_measure, tags
@@ -89,7 +90,7 @@ async def lifespan(app: FastAPI):
     categories.set_map(database.load_category_map())
     manufacturers.set_map(database.load_manufacturer_map())
     conn = get_conn()
-    n = conn.execute("SELECT COUNT(*) AS c FROM stores").fetchone()["c"]
+    n = conn.execute(text("SELECT COUNT(*) AS c FROM stores")).fetchone()["c"]
     conn.close()
     if n == 0:
         log.info("Cachen tom - startar synk + EAN-förvärmning i bakgrunden.")
@@ -441,12 +442,13 @@ def _overview_stats():
         return _OVERVIEW_CACHE["data"]
     conn = get_conn()
     store_counts = {
-        r["chain"]: r["c"] for r in conn.execute("SELECT chain, COUNT(*) c FROM stores GROUP BY chain")
+        r["chain"]: r["c"]
+        for r in conn.execute(text("SELECT chain, COUNT(*) c FROM stores GROUP BY chain"))
     }
-    offers_rows = conn.execute("SELECT COUNT(*) c FROM offers").fetchone()["c"]
-    offers_stores = conn.execute(
-        "SELECT COUNT(*) c FROM (SELECT 1 FROM offers GROUP BY chain, store_id)"
-    ).fetchone()["c"]
+    offers_rows = conn.execute(text("SELECT COUNT(*) c FROM offers")).fetchone()["c"]
+    offers_stores = conn.execute(text(
+        "SELECT COUNT(*) c FROM (SELECT 1 FROM offers GROUP BY chain, store_id) sub"
+    )).fetchone()["c"]
     conn.close()
 
     def _file_size(p):

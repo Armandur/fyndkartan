@@ -17,6 +17,8 @@ import re
 from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import text
+
 from . import apilog, auth, catalog, config, database as db, embeddings
 from .matching import _norm_unit, normalize_ean
 
@@ -176,15 +178,16 @@ def _products(conn, brands, chain=None, q=None):
             continue
         if ch in _AXFOOD:
             rows = conn.execute(
-                "SELECT o.name, o.brand, o.package, o.comparison_value, o.comparison_unit, o.price, "
-                "o.price_text, o.category_raw, o.image, e.ean FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
-                "WHERE o.chain=? AND e.ean!=''", (ch,)
+                text("SELECT o.name, o.brand, o.package, o.comparison_value, o.comparison_unit, o.price, "
+                     "o.price_text, o.category_raw, o.image, e.ean FROM offers o "
+                     "JOIN ean_cache e ON e.code=o.offer_id WHERE o.chain=:chain AND e.ean!=''"),
+                {"chain": ch}
             ).fetchall()
             inline = False
         else:
             rows = conn.execute(
-                "SELECT name, brand, package, comparison_value, comparison_unit, price, price_text, "
-                "category_raw, image, eans FROM offers WHERE chain=?", (ch,)
+                text("SELECT name, brand, package, comparison_value, comparison_unit, price, price_text, "
+                     "category_raw, image, eans FROM offers WHERE chain=:chain"), {"chain": ch}
             ).fetchall()
             inline = True
         for r in rows:

@@ -6,6 +6,7 @@ bytes lokalt per (ean, storlek) -> CDN-oberoende + snabbt. Storlekar: thumb/defa
 import logging
 
 import httpx
+from sqlalchemy import text
 
 from . import config, database as db
 
@@ -48,16 +49,17 @@ def _resolve_url(ean):
     täcker ICA:s egna märken utan offer-bild), annars ICA:s EAN-CDN (400px)."""
     conn = db.get_conn()
     rows = conn.execute(
-        "SELECT chain, image FROM offers WHERE image IS NOT NULL AND image!='' AND eans LIKE ?",
-        (f'%"{ean}"%',),
+        text("SELECT chain, image FROM offers WHERE image IS NOT NULL AND image!='' AND eans LIKE :pat"),
+        {"pat": f'%"{ean}"%'},
     ).fetchall()
     rows += conn.execute(
-        "SELECT o.chain, o.image FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
-        "WHERE e.ean=? AND o.image IS NOT NULL AND o.image!=''",
-        (ean,),
+        text("SELECT o.chain, o.image FROM offers o JOIN ean_cache e ON e.code=o.offer_id "
+             "WHERE e.ean=:ean AND o.image IS NOT NULL AND o.image!=''"),
+        {"ean": ean},
     ).fetchall()
     pi = conn.execute(
-        "SELECT json_extract(data,'$.image') AS img FROM product_info WHERE ean=?", (ean,)
+        text(f"SELECT {db.json_get('data', 'image')} AS img FROM product_info WHERE ean=:ean"),
+        {"ean": ean}
     ).fetchone()
     conn.close()
     resizable = [r for r in rows if "/image/upload/" in (r["image"] or "")]

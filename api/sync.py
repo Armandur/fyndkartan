@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
+from sqlalchemy import text
+
 from . import apilog, config, details
 from .adapters import axfood_offers, citygross, coop, hemkop, ica, lidl, willys
 from .matching import normalize_ean
@@ -131,8 +133,8 @@ async def warm_axfood_eans():
     samples = {}
     for chain in ("willys", "hemkop"):
         rows = conn.execute(
-            "SELECT store_id FROM stores WHERE chain=? ORDER BY RANDOM() LIMIT ?",
-            (chain, WARM_SAMPLE),
+            text("SELECT store_id FROM stores WHERE chain=:chain ORDER BY RANDOM() LIMIT :n"),
+            {"chain": chain, "n": WARM_SAMPLE},
         ).fetchall()
         samples[chain] = [r["store_id"] for r in rows]
     conn.close()
