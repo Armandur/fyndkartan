@@ -46,13 +46,28 @@ browse är den analytiska/samtidiga-last-frågan där Postgres tjänar in sig. D
 
 ## Nästa steg (sekvens)
 
-1. **SQLAlchemy Core-refaktor** av `api/database/` (DB-oberoende brygga) - actionable plan i ROADMAP
-   "SQLAlchemy Core -> Postgres-refaktor". Behåll `database.X`-API:n exakt; byt implementationen modulvis;
-   kör `tests/test_schemas.py` + import efter varje modul.
-2. **Postgres** (compose-service + `DATABASE_URL` + `psycopg`), re-crawla data, lägg det täckande indexet.
+1. ✅ **SQLAlchemy Core-refaktor Fas A (2026-06-06): I PRINCIP KLAR.** Bryggan (`_conn.py`-shim) + ALLA
+   query-moduler i `api/database/` + alla direkta `get_conn`-anrop i routes/services konverterade till
+   `text()` + namngivna params (dialekt-portabelt). Avsteg från planens "Core-uttryck": default blev
+   `text()`+named (lägre risk), Core/dialekt-grenat bara för upserts (`ON CONFLICT`), JSON-funktioner
+   (helpers i `_conn.py`) och dynamisk IN (`bindparam(expanding=True)`). **KVAR (Fas B, kräver Postgres):**
+   `schema.py` (init_db DDL -> Table-objekt + create_all) och `apilog.py` (autocommit-logger) är fortf.
+   SQLite-only. **OBS PG-fara dokumenterad i ROADMAP:** `json_each_from`/`ean_stats` + schema.py offer_eans-
+   backfill kraschar på `eans=''` i PG (WHERE skyddar ej casten) - fixa när PG är uppe. Detaljer + de exakta
+   kvarvarande punkterna: ROADMAP "SQLAlchemy Core -> Postgres-refaktor" (STATUS-blocket).
+2. **Postgres** (compose-service + `DATABASE_URL` + `psycopg`): konvertera schema.py + apilog.py, fixa
+   json_each-PG-faran, re-crawla data (eller engångs-dump/load - historik-tabellerna ~6,5M rader är EJ
+   återskapbara, se nedan), lägg det täckande indexet `(chain, store, product_id, price)`.
 3. **Zon-browse + geo-first UI** (ROADMAP "Kart-appen / UI-OMTAG"): kart-pil + radie-cirkel + "Bläddra
    zonens sortiment". Semantik bekräftad: union (varor i MINST EN zon-butik), per vara billigast-i-zonen +
    intervall + antal butiker, sorterbart.
+
+### Datamigrering SQLite -> Postgres (en gång, Fas B)
+Datan delar sig: **färska snapshots** (catalog_store_prices ~6M, catalog_products, offers, stores, ean_cache,
+product_info, bilder) = återskapbara via crawl/sync; **tidsserie-historik** (catalog_price_observations
+~6,07M, offer_observations ~393k, product_info_observations ~24k) = byggs upp över tid, EJ återskapbar.
+Slutsats: gör en generisk tabell-för-tabell bulk-kopia av ALLT (inte selektiv re-crawl) så historiken följer
+med + ingen kall period. JSON-kolumner: behåll som TEXT (ingen jsonb-migrering i denna refaktor).
 
 ## Drift / så kör man
 

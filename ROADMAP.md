@@ -1175,6 +1175,27 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
 Mål: gör `api/database/` DB-oberoende (SQLAlchemy Core) och flytta till Postgres. Behåll den publika
 `database.X`-funktions-API:n EXAKT (callers i routes/services rörs inte) - bara implementationen byts.
 
+**STATUS (2026-06-06): Fas A i princip KLAR.** Bryggan + alla query-moduler + routes/services är
+konverterade till `text()` + namngivna params (dialekt-portabelt). Avsteg från "Core-uttryck" i planen
+nedan: default-mål blev `text()`+named-params (lägre drift-risk på fungerande analytisk SQL); Core/
+dialekt-grenat reserverat för det icke-portabla (upserts -> `ON CONFLICT`, JSON-funktioner -> helpers i
+`_conn.py`, dynamisk IN -> `bindparam(expanding=True)`). Verifierat per modul: statisk grind (0 kvar-
+varande `?`/`INSERT OR`/`json_each`) + funktionstest + `tests/test_schemas.py` + live auth-test av routes
++ EN riktig en-butiks ICA-crawl (~15k rader upsertade skarpt). **KVAR till Fas B (kräver Postgres att
+testa mot):**
+- **`schema.py`** (init_db DDL): `PRAGMA journal_mode=WAL`, `AUTOINCREMENT`, `PRAGMA table_info`-baserade
+  ALTER-guards, `json_each`-engångsbackfill -> kräver `Table`-objekt + `metadata.create_all()` + dialekt-
+  DDL. Detta är "biten som gör init_db portabel" - gör den med Postgres uppe.
+- **`apilog.py`**: egen autocommit-`sqlite3`-connection (tråd-delad, cachad). Flytta till
+  `engine.connect().execution_options(isolation_level="AUTOCOMMIT")` - testa trådsemantik mot PG.
+- **PG-FARA att fixa i `json_each_from`-frågorna:** PG evaluerar set-returning-funktioner i FROM FÖRE
+  WHERE, så `ean_stats`-frågan (`FROM offers, jsonb_array_elements_text(offers.eans::jsonb) WHERE
+  offers.eans NOT IN ('','[]')`) kraschar på rader med `eans=''` (`''::jsonb` = invalid). WHERE skyddar
+  INTE (SQLite tål det -> testet passerade). Fix: filtrera till giltig JSON FÖRE casten (derived table
+  eller `WHERE eans LIKE '[%'` inskjutet). Samma mönster i `schema.py` offer_eans-backfillen (~rad 102).
+  `json_get`/`json_is_true` på `product_info.data`/`catalog_products.origin` är säkra (alltid giltig
+  JSON eller NULL) - faran är lokal till `offers.eans`.
+
 **Fas A - SQLAlchemy Core på SQLite (beteende-bevarande, ingen Postgres än):**
 1. Lägg `sqlalchemy` i `pyproject.toml`. Skapa en Engine i `api/database/_conn.py` (URL ur env
    `DATABASE_URL`, default `sqlite:///stores.db`). Behåll `get_conn()`-signaturen men låt den ge en

@@ -9,8 +9,15 @@ Aktuell status och plan: `ROADMAP.md`. **Återupptar du arbetet? Läs `HANDOFF.m
 ## Stack
 
 - **Backend:** Python 3.12 + FastAPI (uvicorn), `httpx` (async) för utgående anrop.
-- **Databas:** SQLite via raw `sqlite3`. Schema + migrering i `init_db()`
-  (`ALTER TABLE`-guards, ingen Alembic).
+- **Databas:** SQLite via **SQLAlchemy Core** (DB-oberoende brygga mot kommande Postgres-byte).
+  `api/database/_conn.py` ger `get_conn()` - en tunn shim ovanpå en SQLAlchemy-Connection som beter
+  sig som gamla `sqlite3` (`execute(sql, params)`, rader med `r[0]`/`r["kol"]`, `lastrowid`,
+  `commit/close`). Query-modulerna använder `text()` med namngivna params (`:name`, dialekt-portabelt)
+  + dialekt-grenade JSON-helpers (`json_get`/`json_array_len`/`json_is_true`/`json_each_from`) och
+  portabla upserts (`ON CONFLICT`). URL ur env `DATABASE_URL` (default lokal sqlite-fil). **Undantag
+  (fortf. SQLite-only, konverteras i Fas B mot Postgres):** `schema.py` (init_db DDL: PRAGMA/
+  AUTOINCREMENT/json_each-backfill -> Table-objekt + create_all) och `apilog.py` (autocommit-logger).
+  Schema + migrering i `init_db()` (`ALTER TABLE`-guards, ingen Alembic).
 - **Frontend:** vanilla JS, **Bootstrap 5** + **Leaflet** (OSM) med markercluster
   - allt via CDN, ingen bundler. Ren statisk app i `web/`, serveras av API:t.
 - **Körning (dev):** I DETTA projekt äger Claude start/stopp/reset av dev-servern
