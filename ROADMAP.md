@@ -1108,9 +1108,18 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
 - Admin: `store_crawl`-status + per-butik-trigger + queryability-karta (likt partial/EAN-warm-korten).
 
 ### Kart-appen (konsument) - ny funktionalitet
+- [ ] **UI-OMTAG: gör per-butik-pris-vyn GEO-FIRST, inte produkt-first (TODO 2026-06-06).** Nuvarande
+  lösning (per-butik-pris-modalen med tabbarna Alla/Nära kartans mitt/Mina favoriter) FUNKAR men är
+  bakvänd - "nära kartans mitt" gömd i en produktmodal i bläddra-vyn (där kartan dessutom är dold).
+  Bättre riktning (användarens förslag): börja från KARTAN. Sätt en pil/markör på kartan + rita en
+  RADIE-cirkel (justerbar), och en knapp "Bläddra zonens sortiment" -> bläddra alla varor med pris inom
+  den geografiska zonen. Flippar flödet: plats/zon -> produkter+pris, i st.f. produkt -> pris-nära.
+  Kräver ev. ny läs-endpoint (katalog scopad till en geo-zon, dvs union av butikerna inom radien) eller
+  att `catalog_browse` tar `near=lat,lng&radius=`. Den nuvarande modal-vyn kan finnas kvar som komplement.
 - **Butiksval/favoriter som jämförelse-scope:** "jämför sortiment bara mot mina favoritbutiker"
   (infran finns - favoriter används redan för offers "rea hos favoriter"; utöka till katalog/hyllpris).
 - **Per produkt:** "billigast hos dina favoriter" / "billigast nära dig" + en liten butikslista med pris.
+  (DELVIS BYGGT: per-butik-pris-modalen med scope-tabbar - se UI-OMTAG ovan.)
 - **Matkasse-vy:** lägg varor i en korg -> jämför totalsumma över favoritbutiker/kedjor.
 - **Prisvärmekarta:** var är varan/korgen billigast geografiskt (Leaflet, vi har redan kartan).
 - **Hantera ej-frågbara favoriter:** ~57% Coop-butiker saknar e-handelspris -> visa "inget hyllpris för
