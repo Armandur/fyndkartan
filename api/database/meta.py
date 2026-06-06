@@ -146,7 +146,7 @@ def manufacturer_rows():
 
 def load_tag_types():
     conn = get_conn()
-    rows = conn.execute(text("SELECT type FROM tag_types ORDER BY rowid")).fetchall()
+    rows = conn.execute(text("SELECT type FROM tag_types ORDER BY type")).fetchall()
     conn.close()
     return [r["type"] for r in rows]
 
@@ -179,7 +179,7 @@ def tag_type_in_use(type_):
 # ---- Speditörer (vokabulär + label-override), speglar tagg-typer/tag_map ----
 def load_providers():
     conn = get_conn()
-    rows = conn.execute(text("SELECT name FROM providers ORDER BY rowid")).fetchall()
+    rows = conn.execute(text("SELECT name FROM providers ORDER BY name")).fetchall()
     conn.close()
     return [r["name"] for r in rows]
 

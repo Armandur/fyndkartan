@@ -77,6 +77,9 @@ def main():
             grand += _copy_table(src, dst, table)
         print("Nollställer SERIAL-sekvenser...")
         _reset_sequences(dst)
+        print("ANALYZE (planerar-statistik; annars kall/seq-scan tills autovacuum hinner)...")
+        dst.exec_driver_sql("ANALYZE")
+        dst.commit()
     print(f"KLART: {grand} rader på {time.time() - t0:.0f}s")
 
 
