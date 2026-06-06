@@ -98,10 +98,11 @@ class ZoneStore(BaseModel):
 
 
 class ZoneMeta(BaseModel):
-    lat: float = Field(..., description="Zonens mittpunkt, latitud")
-    lng: float = Field(..., description="Zonens mittpunkt, longitud")
-    radius_km: float = Field(..., description="Zonens radie i km (cappad serverside)")
-    store_count: int = Field(..., description="Antal butiker i zonen (alla kedjor)")
+    lat: float | None = Field(None, description="Zonens mittpunkt, latitud (null vid favorit-scope)")
+    lng: float | None = Field(None, description="Zonens mittpunkt, longitud (null vid favorit-scope)")
+    radius_km: float | None = Field(None, description="Zonens radie i km (null vid favorit-scope)")
+    scope: str | None = Field(None, description="zone | favorites - hur butiksurvalet valdes")
+    store_count: int = Field(..., description="Antal butiker i urvalet (alla kedjor)")
     chains_priced: list[str] = Field(..., description="Kedjor med pris i zonen (ICA/Coop per-butik, Willys/Hemköp/CG nationellt)")
     lidl_in_zone: bool = Field(..., description="Om Lidl finns i zonen (saknar prisdata -> ej i sortimentet)")
     stores: list[ZoneStore] = Field(..., description="Zonens butiker, närmast först")
@@ -121,30 +122,42 @@ class BasketItem(BaseModel):
     ean: str = Field(..., description="EAN/GTIN")
     name: str | None = Field(None, description="Produktnamn (ur katalogen) eller null")
     qty: int | None = Field(None, description="Antal i matkassen (null för otillgänglig-listan)")
+    exact: bool | None = Field(None, description="True = ignorera private-label-parning (bara exakt denna EAN)")
+    paired: bool | None = Field(None, description="True = varan ingår i en private-label-parning (kan substitueras)")
 
 
 class BasketLine(BaseModel):
-    ean: str = Field(..., description="EAN/GTIN")
-    name: str | None = Field(None, description="Produktnamn eller null")
+    ean: str = Field(..., description="Korg-varans EAN/GTIN")
+    name: str | None = Field(None, description="Korg-varans namn eller null")
     qty: int = Field(..., description="Antal")
     shelf: float | None = Field(None, description="Hyllpris/st i kr (null = butiken saknar varan)")
     offer: float | None = Field(None, description="Erbjudande-styckpris i kr (null = inget erbjudande)")
     eff: float | None = Field(None, description="Effektivt pris/st (min av hyllpris/erbjudande)")
+    used_ean: str | None = Field(None, description="Substituerad EAN om en private-label-motsvarighet användes (annars null)")
+    used_name: str | None = Field(None, description="Substitutets namn (om annan vara än korg-varan användes)")
+
+
+class BasketStore(BaseModel):
+    name: str | None = Field(None, description="Butiksnamn")
+    city: str | None = Field(None, description="Ort eller null")
+    distance_km: float | None = Field(None, description="Avstånd till zonens mitt i km (null vid favorit-scope)")
 
 
 class BasketCandidate(BaseModel):
-    kind: str = Field(..., description="store (ICA/Coop fysisk butik) | chain (nationell kedja)")
+    kind: str = Field(..., description="store (ICA/Coop fysisk butik) | chain (nationell kedja, flera butiker)")
     chain: str = Field(..., description="Kedja")
     store_id: str | None = Field(None, description="Butiks-id (null för nationell kedja)")
     name: str | None = Field(None, description="Butiksnamn (null för nationell kedja)")
     city: str | None = Field(None, description="Ort eller null")
     distance_km: float | None = Field(None, description="Avstånd till zonens mitt i km (null för nationell)")
     store_count: int | None = Field(None, description="Antal butiker som delar priset (samma ledger)")
+    national: bool | None = Field(None, description="True = nationellt prissatt kedja (Willys/Hemköp/CG) - samma pris i alla butiker")
     total_shelf: float = Field(..., description="Summa hyllpris för funna varor (× antal)")
     total_offer: float = Field(..., description="Summa effektivt pris (erbjudanden överlagrade)")
     found: int = Field(..., description="Antal av korgens varor butiken har")
     missing: list[str] = Field(..., description="EAN:er butiken saknar")
     uses_member: bool = Field(..., description="Om något effektivt pris bygger på medlems-/klubbpris")
+    stores: list[BasketStore] | None = Field(None, description="Nationell kedjas butiker i urvalet (närmast först); null för enskild ICA/Coop-butik")
     lines: list[BasketLine] = Field(..., description="Per vara: hyllpris/erbjudande/effektivt")
 
 

@@ -360,11 +360,13 @@ OWN_APIS = [
                 {"name": "category", "desc": "Kanonisk kategori-nyckel"},
                 {"name": "sort", "desc": "price | spread | name"}, _P_LIMIT],
      "returns": schemas.fields_doc(schemas.ZoneBrowseResponse)},
-    {"group": "Produkter", "method": "GET", "path": "/v1/basket/compare?lat=59.33&lng=18.06&radius=10",
-     "desc": "Jämför inloggad användares matkasse över zonens butiker: hyllpris-total + erbjudande-"
-             "överlagrad total + täckning per butik. ICA/Coop per butik, Willys/Hemköp/CG nationellt. "
-             "Full täckning + billigast först.",
-     "params": [{"name": "lat", "desc": "Zonens mitt, latitud"}, {"name": "lng", "desc": "Zonens mitt, longitud"},
+    {"group": "Produkter", "method": "GET", "path": "/v1/baskets/{id}/compare?lat=59.33&lng=18.06&radius=10",
+     "desc": "Jämför en namngiven matkasse över zonens butiker: hyllpris-total + erbjudande-överlagrad "
+             "total + täckning per butik. ICA/Coop per butik, Willys/Hemköp/CG nationellt. Private-label-"
+             "parningar substitueras. Full täckning + billigast först. (Matkassarna: /v1/baskets*)",
+     "params": [{"name": "id", "desc": "Path: matkassens id"},
+                {"name": "favorites", "desc": "true = jämför hos användarens favoritbutiker (annars geo-zon)"},
+                {"name": "lat", "desc": "Zonens mitt, latitud"}, {"name": "lng", "desc": "Zonens mitt, longitud"},
                 {"name": "radius", "desc": "Radie i km (cappas till 50)"}],
      "returns": schemas.fields_doc(schemas.BasketCompareResponse)},
     {"group": "Produkter", "method": "GET", "path": "/v1/products/catalog/manufacturers",

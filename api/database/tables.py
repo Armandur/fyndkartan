@@ -216,11 +216,22 @@ favorites = Table(
     Column("store_id", Text, primary_key=True),
 )
 
-basket = Table(  # server-side matkasse per app-användare (EAN + antal); matkasse-jämförelsen läser den
-    "basket", metadata,
-    Column("user_id", Integer, primary_key=True),
+baskets = Table(  # namngivna matkassar per app-användare (veckohandling, recept...)
+    "baskets", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False),
+    Column("name", Text, nullable=False),
+    Column("created_at", Text), Column("updated_at", Text),
+    Index("idx_baskets_user", "user_id"),
+)
+
+basket_items = Table(  # varor i en matkasse (EAN + antal); matkasse-jämförelsen läser dem
+    "basket_items", metadata,
+    Column("basket_id", Integer, primary_key=True),
     Column("ean", Text, primary_key=True),
     Column("qty", Integer, server_default=_ONE),
+    # exact=1 -> ignorera private-label-parningen för varan (jämför bara exakt denna EAN, ingen substitut)
+    Column("exact", Integer, server_default=_Z),
     Column("added_at", Text),
 )
 
@@ -289,4 +300,4 @@ api_keys = Table(
 # Autoincrement-tabeller (id INTEGER PK) - för sequence-reset efter bulk-migrering (se migrate-skriptet).
 SERIAL_TABLES = ("offer_observations", "catalog_price_observations", "users",
                  "admin_users", "user_tokens", "api_keys", "crawl_runs", "api_calls",
-                 "product_info_observations")
+                 "product_info_observations", "baskets")

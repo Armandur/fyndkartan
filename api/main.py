@@ -381,49 +381,117 @@ async def del_fav(chain: str, store_id: str, user=Depends(auth.current_user)):
     return {"favorites": database.list_favorites(user["id"])}
 
 
-# ---- Matkasse (server-side per inloggad användare) + matkasse-jämförelse ----
-@app.get("/v1/basket")
-async def get_basket(user=Depends(auth.current_user)):
-    if not user:
-        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
-    return {"items": database.list_basket(user["id"])}
+# ---- Matkassar (server-side, namngivna per inloggad användare) + matkasse-jämförelse ----
+def _basket_items_with_names(user_id, basket_id):
+    """En matkasses varor berikade med namn + `paired` (private-label-parning -> kan substitueras).
+    None om kassen inte ägs av användaren."""
+    items = database.get_basket_items(user_id, basket_id)
+    if items is None:
+        return None
+    if not items:
+        return []
+    names = database.catalog_names_for_eans([i["ean"] for i in items])
+    paired = {m["ean"] for m in database.load_match_members()}
+    return [{**i, "name": names.get(i["ean"]), "paired": i["ean"] in paired} for i in items]
 
 
-@app.post("/v1/basket")
-async def add_basket(payload: dict = Body(...), user=Depends(auth.current_user)):
-    if not user:
-        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
-    e = database.set_basket_item(user["id"], payload.get("ean"), payload.get("qty", 1))
+def _require_user(user):
+    return None if user else JSONResponse({"detail": "Inte inloggad."}, status_code=401)
+
+
+@app.get("/v1/baskets")
+async def get_baskets(user=Depends(auth.current_user)):
+    return _require_user(user) or {"baskets": database.list_baskets(user["id"])}
+
+
+@app.post("/v1/baskets")
+async def create_basket_route(payload: dict = Body(...), user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    b = database.create_basket(user["id"], payload.get("name"))
+    return {"basket": b, "baskets": database.list_baskets(user["id"])}
+
+
+@app.post("/v1/baskets/{basket_id}/rename")
+async def rename_basket_route(basket_id: int, payload: dict = Body(...), user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    if not database.rename_basket(user["id"], basket_id, payload.get("name")):
+        return JSONResponse({"detail": "Matkassen hittades inte eller ogiltigt namn."}, status_code=400)
+    return {"baskets": database.list_baskets(user["id"])}
+
+
+@app.delete("/v1/baskets/{basket_id}")
+async def delete_basket_route(basket_id: int, user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    database.delete_basket(user["id"], basket_id)
+    return {"baskets": database.list_baskets(user["id"])}
+
+
+@app.get("/v1/baskets/{basket_id}")
+async def get_basket_route(basket_id: int, user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    items = _basket_items_with_names(user["id"], basket_id)
+    if items is None:
+        return JSONResponse({"detail": "Matkassen hittades inte."}, status_code=404)
+    return {"id": basket_id, "items": items}
+
+
+@app.post("/v1/baskets/{basket_id}/items")
+async def add_basket_item_route(basket_id: int, payload: dict = Body(...), user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    e = database.set_basket_item(user["id"], basket_id, payload.get("ean"), payload.get("qty", 1),
+                                 exact=payload.get("exact"))  # None = bevara befintlig exact-flagga
     if not e:
-        return JSONResponse({"detail": "Ogiltig EAN."}, status_code=400)
-    return {"items": database.list_basket(user["id"])}
+        return JSONResponse({"detail": "Ogiltig EAN eller matkasse."}, status_code=400)
+    return {"items": _basket_items_with_names(user["id"], basket_id)}
 
 
-@app.delete("/v1/basket")
-async def clear_basket_route(user=Depends(auth.current_user)):
-    if not user:
-        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
-    database.clear_basket(user["id"])
+@app.delete("/v1/baskets/{basket_id}/items")
+async def clear_basket_route(basket_id: int, user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    database.clear_basket_items(user["id"], basket_id)
     return {"items": []}
 
 
-@app.delete("/v1/basket/{ean}")
-async def del_basket_item(ean: str, user=Depends(auth.current_user)):
-    if not user:
-        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
-    database.remove_basket_item(user["id"], ean)
-    return {"items": database.list_basket(user["id"])}
+@app.delete("/v1/baskets/{basket_id}/items/{ean}")
+async def del_basket_item_route(basket_id: int, ean: str, user=Depends(auth.current_user)):
+    err = _require_user(user)
+    if err:
+        return err
+    database.remove_basket_item(user["id"], basket_id, ean)
+    return {"items": _basket_items_with_names(user["id"], basket_id)}
 
 
-@app.get("/v1/basket/compare", responses={200: {"model": schemas.BasketCompareResponse}})
-async def basket_compare_route(lat: float, lng: float, radius: float = 10.0,
+@app.get("/v1/baskets/{basket_id}/compare", responses={200: {"model": schemas.BasketCompareResponse}})
+async def basket_compare_route(basket_id: int, lat: float | None = None, lng: float | None = None,
+                               radius: float = 10.0, favorites: bool = False,
                                user=Depends(auth.current_user)):
-    """Jämför den inloggade användarens matkasse över zonens butiker (punkt + radie). Per butik:
-    hyllpris-total + erbjudande-överlagrad total + täckning. ICA/Coop per butik, Willys/Hemköp/CG
-    nationellt, Lidl saknar pris. Full täckning rankas först, sedan billigaste effektiva total."""
-    if not user:
-        return JSONResponse({"detail": "Inte inloggad."}, status_code=401)
-    items = database.list_basket(user["id"])
+    """Jämför en av användarens matkassar över ett butiksurval. Scope: `favorites=true` = användarens
+    favoritbutiker, annars geo-zon (`lat`/`lng`/`radius`). Per butik: hyllpris-total + erbjudande-
+    överlagrad total + täckning. ICA/Coop per butik, Willys/Hemköp/CG nationellt, Lidl saknar pris.
+    Private-label-parningar substitueras (om inte varan är exact-flaggad). Full täckning + billigast först."""
+    err = _require_user(user)
+    if err:
+        return err
+    items = database.get_basket_items(user["id"], basket_id)
+    if items is None:
+        return JSONResponse({"detail": "Matkassen hittades inte."}, status_code=404)
+    if favorites:
+        favs = [tuple(tok.split(":", 1)) for tok in database.list_favorites(user["id"]) if ":" in tok]
+        return database.basket_compare(items, pairs=favs)
+    if lat is None or lng is None:
+        return JSONResponse({"detail": "lat+lng krävs (eller favorites=true)."}, status_code=400)
     return database.basket_compare(items, lat=lat, lng=lng, radius_km=radius)
 
 
