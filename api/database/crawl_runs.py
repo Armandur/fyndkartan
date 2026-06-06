@@ -4,6 +4,8 @@ i konsolen + DURABLE "ändringar sedan senaste körningen" (överlever omstart, 
 in-memory CRAWL_STATE/STORE_PRICE_STATE som nollställs)."""
 import json
 
+from sqlalchemy import text
+
 from ._conn import get_conn
 
 _COLS = ("id", "kind", "chain", "started", "finished", "status", "rows", "changed",
@@ -26,11 +28,14 @@ def record_crawl_run(kind, chain, started=None, finished=None, status=None, rows
     """Spara en avslutad crawl-körning. `error_summary` = dict {feltyp: antal}. Returnerar rad-id."""
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO crawl_runs (kind, chain, started, finished, status, rows, changed, errors, "
-        "stores_ok, stores_total, last_error, error_summary) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (kind, chain, started, finished, status, rows or 0, changed or 0, errors or 0,
-         stores_ok, stores_total, last_error,
-         json.dumps(error_summary, ensure_ascii=False) if error_summary else None))
+        text("INSERT INTO crawl_runs (kind, chain, started, finished, status, rows, changed, errors, "
+             "stores_ok, stores_total, last_error, error_summary) VALUES "
+             "(:kind, :chain, :started, :finished, :status, :rows, :changed, :errors, "
+             ":stores_ok, :stores_total, :last_error, :error_summary)"),
+        {"kind": kind, "chain": chain, "started": started, "finished": finished, "status": status,
+         "rows": rows or 0, "changed": changed or 0, "errors": errors or 0,
+         "stores_ok": stores_ok, "stores_total": stores_total, "last_error": last_error,
+         "error_summary": json.dumps(error_summary, ensure_ascii=False) if error_summary else None})
     conn.commit()
     rid = cur.lastrowid
     conn.close()
@@ -40,17 +45,16 @@ def record_crawl_run(kind, chain, started=None, finished=None, status=None, rows
 def recent_crawl_runs(limit=50, kind=None, chain=None):
     """Senaste körningarna (nyast först), valfritt filtrerat på kind/chain."""
     sql = f"SELECT {', '.join(_COLS)} FROM crawl_runs"
-    where, args = [], []
+    where, args = [], {"limit": limit}
     if kind:
-        where.append("kind=?"); args.append(kind)
+        where.append("kind=:kind"); args["kind"] = kind
     if chain:
-        where.append("chain=?"); args.append(chain)
+        where.append("chain=:chain"); args["chain"] = chain
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY id DESC LIMIT ?"
-    args.append(limit)
+    sql += " ORDER BY id DESC LIMIT :limit"
     conn = get_conn()
-    rows = [_rowdict(r) for r in conn.execute(sql, args).fetchall()]
+    rows = [_rowdict(r) for r in conn.execute(text(sql), args).fetchall()]
     conn.close()
     return rows
 
@@ -58,9 +62,9 @@ def recent_crawl_runs(limit=50, kind=None, chain=None):
 def last_crawl_runs(kind=None):
     """Senaste körningen PER (kind, chain) -> {(kind, chain): rad}. För durable last-run i korten."""
     sql = ("SELECT cr.* FROM crawl_runs cr JOIN (SELECT kind, chain, MAX(id) mid FROM crawl_runs "
-           + ("WHERE kind=? " if kind else "") + "GROUP BY kind, chain) m "
+           + ("WHERE kind=:kind " if kind else "") + "GROUP BY kind, chain) m "
            "ON cr.id=m.mid")
     conn = get_conn()
-    rows = conn.execute(sql, ([kind] if kind else [])).fetchall()
+    rows = conn.execute(text(sql), ({"kind": kind} if kind else {})).fetchall()
     conn.close()
     return {(r["kind"], r["chain"]): _rowdict(r) for r in rows}

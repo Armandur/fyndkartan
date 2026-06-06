@@ -126,6 +126,10 @@ class _Conn:
         self._c = conn
 
     def execute(self, sql, params=None):
+        # Konverterade moduler skickar text()/Core-uttryck (named params -> dialekt-portabelt).
+        if not isinstance(sql, str):
+            return _Result(self._c.execute(sql, params or {}))
+        # Transitionell väg: rå SQL-sträng körs oförändrad via pysqlite native paramstyle.
         if params is None:
             return _Result(self._c.exec_driver_sql(sql))
         # list-params (t.ex. IN (...)-koder) = EN qmark-uppsättning, inte executemany.
