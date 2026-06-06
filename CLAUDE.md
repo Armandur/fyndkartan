@@ -253,8 +253,19 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   egna anrop som fyller i efterhand - parallellisera oberoende anrop med `Promise.all`, blockera aldrig
   skalet på dem, (3) data som inte behövs för första vyn laddas LAZY/på-begäran (t.ex. butiksurvalet
   ~2000 rader bakom en "Hantera butiksurval"-toggle). `show()` lägger dessutom en spinner-platshållare i
-  en ännu-tom flik så ingen flik blir blank. (Sortiment-fliken + spinnern är gjorda; översikts-endpointen
-  ~4,3s återstår att dela ut, se ROADMAP "Konsol-UI".)
+  en ännu-tom flik så ingen flik blir blank. (Sortiment-fliken + spinnern är gjorda; se ROADMAP "Konsol-UI".)
+- **Versionerad stats-memo (`@stats_memo` + `invalidate_stats`/`stats_version` i `database/_conn.py`):**
+  dyra argumentlösa konsol-aggregat som bara ändras vid data-skrivning (inte mellan laddningar) cachas på
+  funktionsnivå: `ean_stats` (UNION-distinct ~1,3s), `catalog_stats`, `partial_info_counts` -> varm 0ms.
+  EN version-räknare bumpas av `invalidate_stats()` vid varje skrivning som påverkar dem (katalog-crawl-slut,
+  butikspris-crawl-slut, `warm_after_sweep`, `sync_and_warm`, `upgrade_sparse_partials`); funktionerna räknar
+  om LAT vid nästa anrop. TTL-backstop 600s fångar konsument-driven drift (product_info/images växer av
+  bläddring), missade hooks och omstart. Overview-bundlen (`_overview_stats`, main.py) nycklas på samma
+  `stats_version` (+ TTL 300s) så crawl-slut syns direkt; den delade `catalog_stats`+`partial_info_counts`
+  med `/v1/admin/catalog/crawl/status` räknas om EN gång och återanvänds av båda. Lägg nya tunga, sällan-
+  ändrade stats bakom `@stats_memo` + en `invalidate_stats()` på rätt skriv-hook (hellre än egna ad hoc-TTL:er).
+  Memon + version-räknaren är PER-PROCESS (in-process scheduler, single-worker by design); kör aldrig
+  `uvicorn --workers>1` - då bryts både schemaläggaren och denna cache per worker.
 - **Produktsök/-bläddring (`database.list_products` + `GET /v1/products/search|by-category`):**
   distinkta produkter ur **offers-cachen**, grupperade på EAN (cross-chain, Axfood-EAN via
   `ean_cache`) annars (kedja, namn), med samma berikning som `get_store_offers` (kanonisk

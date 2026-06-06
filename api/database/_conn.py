@@ -7,7 +7,9 @@ rader som indexeras med både `r[0]` och `r["kol"]`, `.lastrowid`/`.rowcount`, `
 `close()`. Rå SQL körs alltså oförändrad genom shimmen modul för modul tills den
 Core-ifieras. URL ur env `DATABASE_URL` (default lokal sqlite-fil)."""
 
+import functools
 import os
+import time
 
 from sqlalchemy import URL, create_engine, event
 from sqlalchemy.pool import NullPool
@@ -205,6 +207,46 @@ def json_each_from(col):
     if dialect_name() == "postgresql":
         return f"jsonb_array_elements_text({col}::jsonb) AS je(value)"
     return f"json_each({col}) je"
+
+
+# --- Versionerad stats-memo (dyra argumentlösa aggregat) ---
+# De tunga konsol-stats:en (ean_stats UNION-distinct ~3s, catalog_stats, partial_info_counts
+# json-scan) ändras bara när data skrivs - inte mellan laddningar. En enda version-räknare
+# bumpas vid varje skrivning som påverkar dem (crawl/sweep/sync-slut + info-skrivningar ->
+# invalidate_stats()); funktioner memoiseras på (version, ts). TTL-backstop fångar konsument-
+# driven drift (product_info/images växer av bläddring), missade hooks och omstart. Lat
+# omräkning (invalidate bumpar bara versionen; nästa anrop räknar om).
+_STATS_VER = 0
+_STATS_TTL = 600.0  # sekunder; backstop om en invalidate-hook missas
+_STATS_MEMO = {}
+
+
+def invalidate_stats():
+    """Bumpa stats-versionen -> nästa anrop av en @stats_memo-funktion räknar om (lat)."""
+    global _STATS_VER
+    _STATS_VER += 1
+
+
+def stats_version():
+    """Aktuell stats-version (för cacher utanför datalagret, t.ex. overview-bundlen)."""
+    return _STATS_VER
+
+
+def stats_memo(fn):
+    """Memoisera ett argumentlöst, dyrt stats-aggregat tills invalidate_stats() bumpar
+    versionen eller TTL löper ut. GIL gör recompute-racet ofarligt (idempotent)."""
+
+    @functools.wraps(fn)
+    def wrapper():
+        now = time.monotonic()
+        c = _STATS_MEMO.get(fn.__name__)
+        if c is not None and c["ver"] == _STATS_VER and now - c["ts"] < _STATS_TTL:
+            return c["val"]
+        val = fn()
+        _STATS_MEMO[fn.__name__] = {"val": val, "ver": _STATS_VER, "ts": now}
+        return val
+
+    return wrapper
 
 
 def _ensure_column(conn, table, col, coltype):

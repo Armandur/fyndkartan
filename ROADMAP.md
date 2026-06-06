@@ -897,11 +897,22 @@ Inget i API-konsolen (`/admin`) ska göra att hela UI:t hänger sig (webbläsare
 - [x] **Universell spinner i `show()` KLAR:** en tom flik får en spinner-platshållare direkt -> ingen
   blank/"fastnad" skärm under laddning, alla flikar.
 - **Granskning av alla flik-laddare (mätt 2026-06-06 mot PG).** Med spinnern ger ingen flik längre en
-  blank/"fastnad" skärm. Kvar är LATENS på två endpoints som awaitas före render:
-  - [ ] **`/v1/admin/overview` ~4,3s** (Översikt = default/"hemsidan", + Kedjor + Erbjudanden - alla tre
-    delar endpointen). Domineras av `ean_stats` (UNION över json-arrayer + DISTINCT på 36k EAN).
-    Fix: dela ut `ean_stats` till ett eget lazy-anrop (`/v1/admin/overview/ean-stats`?) så resten av
-    översikten renderas direkt och EAN-siffran fylls i efterhand; ev. cacha/materialisera ean_stats hårdare.
+  blank/"fastnad" skärm. Kvar var LATENS på endpoints som awaitas före render:
+  - [x] **Versionerad stats-memo KLAR (2026-06-06).** Alla sex dyra argumentlösa konsol-aggregat cachas
+    nu på FUNKTIONSNIVÅ (`@stats_memo` i `_conn.py`): `ean_stats` (~1,3s), `catalog_stats` (~0,65s),
+    `partial_info_counts` (~1,3s), `offer_observations_stats` (~1,1s), `product_info_observations_stats`
+    (~83ms), `offers_coverage` (~85ms) -> alla varm 0ms. (`store_prices_stats` redan materialiserad ~5ms.)
+    EN version-räknare (`invalidate_stats()`/`stats_version()`) bumpas vid varje data-skrivning som
+    påverkar dem: katalog-crawl-slut (`catalog_crawl`), butikspris-crawl-slut (`store_crawl`),
+    `warm_after_sweep`, `sync_and_warm`, `upgrade_sparse_partials`. TTL-backstop 600s fångar konsument-
+    driven drift (product_images/info växer av bläddring) + missade hooks + omstart. Lat omräkning
+    (invalidate bumpar bara versionen). `/v1/admin/catalog/crawl/status` delade `catalog_stats`+
+    `partial_info_counts` med overview -> EN omräkning återanvänds av båda. **Overview-bundlen**
+    (`_overview_stats`) nycklas nu på `stats_version` (+ TTL höjd 30s->300s): crawl-slut invaliderar
+    version-räknaren -> nästa overview räknar om. Mätt: overview kall 4,2s -> varm 0ms. Version->overview-
+    länken verifierad via direkt `invalidate_stats()`-anrop; full crawl-cykel ej körd (hooken är kod-placerad
+    vid record_crawl_run/warm-slut). **Per-process** (in-process scheduler, single-worker) - bryts vid
+    `uvicorn --workers>1`.
   - [ ] **`/v1/admin/private-products` ~3,5s** (Märkesvaror). `_products` skannar offers per kedja för
     private-label-produkter. Fix: rendera flikens skal direkt + ladda listan lazy (ev. paginerat).
   - OK (snabba, <0,15s, inget behov): sources, categories, manufacturers, settings. Skal-först redan:
@@ -923,9 +934,11 @@ CLAUDE.md ("Per-butik-crawlens tidsprofil"). Hävstänger ej utvärderade i drif
   - [ ] **Höj `_MAX_CONC`** (12 -> högre) - men det är en medveten säkerhetsgräns; AIMD hittar redan faktiska
     gränsen under. Mät om kedjorna tål mer innan taket höjs.
   - [ ] Mer `take` ger nu AVTAGANDE nytta (payloaden växer, ~0,65s/req även vid take=1000) - inte en hävstång.
-  - [ ] **Overview-kallstart ~7s** (`_overview_stats` cachas 30s -> varm ~0ms, men första laddningen är trög).
-    Dominerande kostnad: `ean_stats` (UNION-distinct över offers/ean_cache/product_info/product_images, ~3s).
-    Materialisera EAN-unionen (counter vid insert) eller warma cachen i bakgrunden vid uppstart/timer.
+  - [ ] **Overview-kallstart** (`_overview_stats`): de tunga aggregaten är nu versions-memoiserade
+    (varm 0ms, crawl-slut invaliderar) men FÖRSTA laddningen efter omstart är fortf. trög (~4,7s,
+    dominerat av `ean_stats` ~1,3s + `partial_info_counts` ~1,3s + observation-stats + storage-scan).
+    Kvar om det stör: warma memon i lifespan (som `warm_catalog_cache`) eller materialisera EAN-unionen
+    (counter vid insert) i st.f. UNION-distinct read-time.
 
 ### Crawl-historik/observabilitet - persistera per-körning (TODO, 2026-06-05)
   - [x] **Crawl-körningshistorik BYGGT (2026-06-06).** Tabell `crawl_runs(kind, chain, started, finished,

@@ -4,7 +4,7 @@ import json
 
 from sqlalchemy import bindparam, text
 
-from ._conn import _now, get_conn
+from ._conn import _now, get_conn, stats_memo
 from .ean import get_axfood_origins
 from .offers import eans_on_offer_at_stores, norm_origin, normalized_package, offers_for_eans, on_offer_eans
 from .products import get_product_origins, get_product_diets
@@ -358,6 +358,7 @@ def catalog_mark_unseen(chain, before):
     _CATALOG_VER += 1  # invalidera browse-/summary-cachen
 
 
+@stats_memo
 def catalog_stats():
     """Per kedja: antal produkter, varav tillgängliga, distinkta EAN, hur många som SAKNAR EAN
     (tillgängliga rader utan EAN -> kan ej slås ihop cross-chain), senaste crawl (fetched_at)."""

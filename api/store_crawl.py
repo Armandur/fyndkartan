@@ -178,6 +178,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
                                   changed=cs["changed"], errors=cs["errors"], stores_ok=cs["stores_ok"],
                                   stores_total=cs["total"], last_error=cs["last_error"],
                                   error_summary=err_counts or None)
+        database.invalidate_stats()  # katalog-aggregat ändrat -> räkna om konsol-stats
 
 
 async def crawl_store_prices(chain="ica", cap=None, concurrency=None, max_age_hours=20):

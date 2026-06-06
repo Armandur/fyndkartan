@@ -3,7 +3,7 @@ import re
 
 from sqlalchemy import bindparam, text
 
-from ._conn import _now, get_conn, json_each_from
+from ._conn import _now, get_conn, json_each_from, stats_memo
 from .ean import get_axfood_categories, get_axfood_origins, get_cached_eans
 from .products import get_product_categories, get_product_origins
 from ..categories import category_for, category_from_detail, category_from_name, raw_key
@@ -84,6 +84,7 @@ def archive_offers(chain, store_id, offers):
         conn.close()
 
 
+@stats_memo
 def offer_observations_stats():
     """(antal rader, distinkta produkter, äldsta observation) för prishistorik-tabellen."""
     conn = get_conn()
@@ -565,6 +566,7 @@ def offers_fetched_at(chain, store_id):
     return row["t"] if row else None
 
 
+@stats_memo
 def ean_stats():
     """Distinkta EAN vi känner till, union över källorna: inline i offers (ICA/Coop/CG, via
     json_each), Axfood code->EAN-cachen, product_info och product_images. Plus delsiffror för
@@ -588,6 +590,7 @@ def ean_stats():
     return {"distinct": distinct, "axfood_cache": axfood, "with_info": with_info}
 
 
+@stats_memo
 def offers_coverage():
     """Per kedja: antal butiker med cachade erbjudanden + totalt antal cachade erbjudanden.
     Visar hur komplett offers-cachen är per kedja (det bulk-sweepen fyller)."""

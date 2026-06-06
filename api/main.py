@@ -430,15 +430,19 @@ async def console_change_password(payload: dict = Body(...), admin=Depends(auth.
 # Tunga DB-/filsystem-stats i overview (ean_stats ~3s UNION-distinct, catalog_stats, storage-scan m.m.)
 # cachas kort - de ändras långsamt och behöver inte räknas om varje laddning (Kedjor-/Sweep-flikarna
 # pollar samma endpoint). Live in-memory-state (synk-status, crawl/sweep-räknare) läggs på FÄRSK utanför.
-_OVERVIEW_CACHE = {"data": None, "ts": 0.0}
-_OVERVIEW_TTL = 30.0
+_OVERVIEW_CACHE = {"data": None, "ts": 0.0, "ver": -1}
+_OVERVIEW_TTL = 300.0  # backstop; data-skrivningar invaliderar via stats_version (crawl/sweep/sync)
 
 
 def _overview_stats():
-    """Cachad bundle av de dyra stats-queries:na (TTL `_OVERVIEW_TTL`). store_prices_stats är numera
-    cheap (materialiserad), men ean_stats m.fl. är fortf. sekunder -> cache så overview blir snabb."""
+    """Cachad bundle av de dyra stats-queries:na. Invalideras av `database.stats_version()` (bumpas
+    vid crawl/sweep/sync-slut -> färska siffror direkt) ELLER `_OVERVIEW_TTL` (backstop för konsument-
+    driven drift, t.ex. storage-scan/observation-stats). De memoiserade aggregaten (ean/catalog/partial)
+    delar samma version, så de räknas om en gång och återanvänds av både overview och catalog-status."""
     now = time.monotonic()
-    if _OVERVIEW_CACHE["data"] is not None and now - _OVERVIEW_CACHE["ts"] < _OVERVIEW_TTL:
+    ver = database.stats_version()
+    if (_OVERVIEW_CACHE["data"] is not None and _OVERVIEW_CACHE["ver"] == ver
+            and now - _OVERVIEW_CACHE["ts"] < _OVERVIEW_TTL):
         return _OVERVIEW_CACHE["data"]
     conn = get_conn()
     store_counts = {
@@ -478,7 +482,7 @@ def _overview_stats():
         "storage": {"db_bytes": db_bytes, "image_bytes": img_bytes,
                     "image_count": img_count, "total_bytes": db_bytes + img_bytes},
     }
-    _OVERVIEW_CACHE.update(data=data, ts=now)
+    _OVERVIEW_CACHE.update(data=data, ts=now, ver=ver)
     return data
 
 

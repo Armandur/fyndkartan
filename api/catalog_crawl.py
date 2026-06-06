@@ -654,6 +654,7 @@ async def crawl_all(limit_categories=None, chains=None):
                                       rows=cs.get("products", 0), changed=cs.get("changed", 0),
                                       errors=cs.get("errors", 0), last_error=(errs or [None])[0],
                                       error_summary=summary or None)
+    database.invalidate_stats()  # katalogen ändrad -> räkna om konsol-stats (catalog/ean/partial)
     log.info("Katalog-crawl klar: %s", {c: {k: CRAWL_STATE["chains"][c][k]
              for k in ("products", "new", "known", "changed", "errors")} for c in targets})
     return CRAWL_STATE

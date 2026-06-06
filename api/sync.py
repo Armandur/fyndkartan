@@ -21,6 +21,7 @@ from .database import (
     get_conn,
     get_product_categories,
     ica_offer_eans,
+    invalidate_stats,
     product_info_eans,
     replace_chain,
     save_ean_meta,
@@ -209,6 +210,7 @@ async def upgrade_sparse_partials(cap=None):
             await asyncio.gather(*(one(e) for e in eans))
     finally:
         PARTIAL_UPGRADE_STATE.update(running=False, finished_at=_now())
+    invalidate_stats()  # partial-rader uppgraderade -> räkna om partial/ean-stats
     log.info("Partial-uppgradering klar: %d/%d uppgraderade, %d fel",
              PARTIAL_UPGRADE_STATE["upgraded"], PARTIAL_UPGRADE_STATE["total"], PARTIAL_UPGRADE_STATE["failed"])
 
@@ -403,6 +405,7 @@ async def warm_after_sweep():
             await coro
         except Exception:  # noqa: BLE001
             log.exception("%s-förvärmning efter sweep misslyckades", label)
+    invalidate_stats()  # EAN-/info-cachen växte -> räkna om konsol-stats
 
 
 async def sync_and_warm():
@@ -420,6 +423,7 @@ async def sync_and_warm():
         await warm_ica_categories()
     except Exception:  # noqa: BLE001
         log.exception("ICA-kategoriförvärmning misslyckades")
+    invalidate_stats()  # synk + förvärmning ändrade offers/EAN/info -> räkna om konsol-stats
 
 
 SCHEDULER_CHECK = 30.0  # s: hur ofta cron/tz omläses (konsol-ändringar slår igenom inom detta)

@@ -2,7 +2,7 @@ import json
 
 from sqlalchemy import bindparam, text
 
-from ._conn import _now, get_conn, json_array_len, json_get, json_is_true
+from ._conn import _now, get_conn, json_array_len, json_get, json_is_true, stats_memo
 from ..categories import category_from_detail
 from .. import countries, diet
 
@@ -210,6 +210,7 @@ def sparse_partial_eans(limit=None):
     return [r["ean"] for r in rows]
 
 
+@stats_memo
 def product_info_observations_stats():
     """(antal rader, distinkta produkter (ean), äldsta observation) för innehållshistoriken
     (recept-/närings-/ursprungsändringar, product_info_observations)."""
@@ -221,6 +222,7 @@ def product_info_observations_stats():
     return {"rows": r["c"], "products": r["p"], "since": r["o"]}
 
 
+@stats_memo
 def partial_info_counts():
     """{partial: antal partial-rader, sparse: antal med gles näring (<4, uppgraderingskandidater)}."""
     conn = get_conn()
