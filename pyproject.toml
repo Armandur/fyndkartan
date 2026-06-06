@@ -16,4 +16,5 @@ dependencies = [
     "phonenumbers>=8.13",
     "holidays>=0.50",
     "model2vec>=0.3",
+    "sqlalchemy>=2.0",
 ]
