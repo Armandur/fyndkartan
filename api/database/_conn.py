@@ -142,6 +142,8 @@ class _Conn:
         seq = list(seq)
         if not seq:
             return _NoResult()
+        if not isinstance(sql, str):
+            return _Result(self._c.execute(sql, seq))
         return _Result(self._c.exec_driver_sql(sql, seq))
 
     def commit(self):

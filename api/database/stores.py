@@ -1,5 +1,7 @@
 import json
 
+from sqlalchemy import text
+
 from ._conn import get_conn
 from ..config import ORIGIN_COUNTRIES
 from ..tags import build_tag
@@ -46,6 +48,8 @@ _COLS = (
     "oh_today,open_now,link_store,link_offers,link_online,tags,raw,hours,native,method,fetched_at"
 )
 _PLACEHOLDERS = ",".join(f":{c}" for c in _COLS.split(","))
+_PK = ("chain", "store_id")
+_UPDATE = ", ".join(f"{c}=excluded.{c}" for c in _COLS.split(",") if c not in _PK)
 
 
 def replace_chain(chain, stores):
@@ -53,10 +57,11 @@ def replace_chain(chain, stores):
     rows = [_to_row(s) for s in stores]
     conn = get_conn()
     try:
-        conn.execute("DELETE FROM stores WHERE chain=?", (chain,))
+        conn.execute(text("DELETE FROM stores WHERE chain=:chain"), {"chain": chain})
         if rows:
             conn.executemany(
-                f"INSERT OR REPLACE INTO stores ({_COLS}) VALUES ({_PLACEHOLDERS})", rows
+                text(f"INSERT INTO stores ({_COLS}) VALUES ({_PLACEHOLDERS}) "
+                     f"ON CONFLICT (chain, store_id) DO UPDATE SET {_UPDATE}"), rows
             )
         conn.commit()
     finally:
