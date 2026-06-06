@@ -1521,7 +1521,7 @@
             (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc(fmtTs(st.last_crawl))}` : ""}</div>
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
-      }).join("");
+      }).join("") + ["ica", "coop"].map(c => storePriceCard(c, (spc.chains || {})[c])).join("");
       clearTimeout(catalogTimer);
       if ((d.running || (d.ean_warm && d.ean_warm.running) || pu.running || ms.running || spcRun) && active === "catalog")
         catalogTimer = setTimeout(loadCatalog, 1500);
@@ -1629,6 +1629,35 @@
       } else { prog.innerHTML = ""; }
     }
 
+    // ICA/Coop (per-butik-crawl, Steg 6) renderade med SAMMA kort-mall som nationella kedjorna -> samma
+    // "X produkter denna körning (Y prisändringar)" + status. Per-butik-info (butiker, AIMD) som underrad
+    // (funktionen är lite annorlunda men visas likadant). Datan ur STORE_PRICE_STATE (spc.chains[c]).
+    function storePriceCard(c, s) {
+      if (!s || (!s.running && !s.finished_at)) {
+        return `<div class="card p-3 mb-2"><div class="d-flex align-items-center">${chip(c)}
+          <span class="ms-2 small text-muted">per-butik-priser &middot; ingen körning än</span>
+          <span class="ms-auto st-ok">väntar</span></div></div>`;
+      }
+      const running = !!s.running;
+      const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+      const statusClass = running ? "running" : s.errors ? "error" : "ok";
+      const statusTxt = running ? "crawlar" : (s.errors ? "klar (med fel)" : "klar");
+      const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
+      const bar = (running || s.total)
+        ? `<div class="progress" style="height:6px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>` : "";
+      const sub = `<div class="small text-muted mt-1">${s.done || 0}/${s.total || 0} butiker${s.stores_ok ? ` &middot; ${s.stores_ok} ok` : ""}`
+        + (running ? ` &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}` : (s.finished_at ? ` &middot; senast ${esc(fmtTs(s.finished_at))}` : "")) + `</div>`;
+      return `<div class="card p-3 mb-2">
+        <div class="d-flex align-items-center mb-1">${chip(c)}
+          <span class="ms-2 stat" style="font-size:1.2rem">${(s.rows || 0).toLocaleString("sv-SE")}</span>
+          <span class="ms-2 small text-muted">rader denna körning${s.changed ? `, <span class="fw-semibold" style="color:#b8860b">${s.changed} prisändringar</span>` : ""}</span>
+          <span class="ms-auto st-${statusClass}">${running ? "● " : ""}${statusTxt}${s.errors ? ` &middot; ${s.errors} fel` : ""}</span>
+        </div>
+        ${bar}${sub}
+        ${s.last_error ? `<div class="small text-danger mt-1">senaste fel: ${esc(s.last_error)}</div>` : ""}
+      </div>`;
+    }
+
     function renderStorePriceCrawl(spc, stats, otherRunning) {
       const prog = document.getElementById("spcProgress"), status = document.getElementById("spcStatus");
       const statsEl = document.getElementById("spcStats");
@@ -1645,18 +1674,8 @@
       const st = stats || {};
       if (statsEl) statsEl.innerHTML = ["ica", "coop"].map(c =>
         `${chip(c)} <strong>${((st[c] || {}).enabled || 0).toLocaleString("sv-SE")}</strong> valda`).join(" &nbsp;&middot;&nbsp; ");
-      prog.innerHTML = ["ica", "coop"].map(c => {
-        const s = ch[c];
-        if (!s || (!s.running && !s.finished_at)) return "";
-        if (s.running) {
-          const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-          const cd = s.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
-          return `<div class="small text-muted mt-1 d-flex align-items-center gap-2 flex-wrap">${chip(c)}
-            <div class="progress" style="height:6px;width:120px"><div class="progress-bar ${s.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>
-            <span>${s.done}/${s.total} butiker &middot; ${s.stores_ok} ok${s.errors ? `, <span class="text-danger">${s.errors} fel</span>` : ""} &middot; ${(s.rows || 0).toLocaleString("sv-SE")} rader &middot; <span title="adaptiv AIMD">mål ${s.target}, ${s.active} aktiva</span>${cd}</span>${s.last_error ? `<div class="small text-danger w-100">senaste fel: ${esc(s.last_error)}</div>` : ""}</div>`;
-        }
-        return `<div class="small text-muted mt-1">${chip(c)} senast ${esc(fmtTs(s.finished_at))}: ${s.stores_ok} butiker, ${(s.rows || 0).toLocaleString("sv-SE")} rader${s.errors ? `, ${s.errors} fel` : ""}${s.last_error ? ` &middot; <span class="text-danger">senaste fel: ${esc(s.last_error)}</span>` : ""}</div>`;
-      }).join("");
+      // Per-kedje-progress visas nu som fulla kort i #catalogChains (storePriceCard) - här bara knappar/status.
+      prog.innerHTML = "";
     }
 
     async function triggerStorePriceCrawl(chain, cap) {

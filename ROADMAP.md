@@ -901,6 +901,9 @@ CLAUDE.md ("Per-butik-crawlens tidsprofil"). Hävstänger ej utvärderade i drif
   - [ ] **Höj `_MAX_CONC`** (12 -> högre) - men det är en medveten säkerhetsgräns; AIMD hittar redan faktiska
     gränsen under. Mät om kedjorna tål mer innan taket höjs.
   - [ ] Mer `take` ger nu AVTAGANDE nytta (payloaden växer, ~0,65s/req även vid take=1000) - inte en hävstång.
+  - [ ] **Overview-kallstart ~7s** (`_overview_stats` cachas 30s -> varm ~0ms, men första laddningen är trög).
+    Dominerande kostnad: `ean_stats` (UNION-distinct över offers/ean_cache/product_info/product_images, ~3s).
+    Materialisera EAN-unionen (counter vid insert) eller warma cachen i bakgrunden vid uppstart/timer.
 
 ### Crawl-historik/observabilitet - persistera per-körning (TODO, 2026-06-05)
   - [ ] **Spara jobb-/fel-/körningsinfo per crawl och kedja** så man kan gå tillbaka och se vad som hände.
