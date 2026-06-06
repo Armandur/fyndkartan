@@ -138,6 +138,7 @@ class BasketLine(BaseModel):
 
 
 class BasketStore(BaseModel):
+    store_id: str | None = Field(None, description="Butikens id (kedjans) - för 'visa på kartan'")
     name: str | None = Field(None, description="Butiksnamn")
     city: str | None = Field(None, description="Ort eller null")
     distance_km: float | None = Field(None, description="Avstånd till zonens mitt i km (null vid favorit-scope)")

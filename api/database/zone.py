@@ -337,7 +337,8 @@ def basket_compare(items, lat=None, lng=None, radius_km=10.0, pairs=None, max_re
             "chain", chain, None, None, None,
             cstores[0]["distance_km"] if cstores else None, len(cstores),
             lambda e, ch=chain: (nat_shelf.get((ch, e)), chain_off.get((ch, e))), national=True)
-        cand["stores"] = [{"name": s["name"], "city": s["city"], "distance_km": s["distance_km"]} for s in cstores]
+        cand["stores"] = [{"store_id": s["store_id"], "name": s["name"], "city": s["city"],
+                           "distance_km": s["distance_km"]} for s in cstores]
         results.append(cand)
     results.sort(key=lambda r: (len(r["missing"]), r["total_offer"]))  # full täckning först, sedan billigast
     available = {k[2] for k in shelf} | {k[1] for k in nat_shelf}  # EAN:er med pris någonstans i zonen
