@@ -301,11 +301,12 @@ def create_user(email, password_hash):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
     cur = conn.execute(
-        text("INSERT INTO users (email, password_hash, created_at) VALUES (:email, :ph, :now)"),
+        text("INSERT INTO users (email, password_hash, created_at) VALUES (:email, :ph, :now) "
+             "RETURNING id"),
         {"email": email, "ph": password_hash, "now": now},
     )
+    uid = cur.fetchone()[0]
     conn.commit()
-    uid = cur.lastrowid
     conn.close()
     return uid
 
@@ -325,11 +326,12 @@ def create_admin(email, password_hash):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
     cur = conn.execute(
-        text("INSERT INTO admin_users (email, password_hash, created_at) VALUES (:email, :ph, :now)"),
+        text("INSERT INTO admin_users (email, password_hash, created_at) VALUES (:email, :ph, :now) "
+             "RETURNING id"),
         {"email": email, "ph": password_hash, "now": now},
     )
+    aid = cur.fetchone()[0]
     conn.commit()
-    aid = cur.lastrowid
     conn.close()
     return aid
 
@@ -498,11 +500,11 @@ def create_user_token(user_id, token_hash, label):
     conn = get_conn()
     cur = conn.execute(
         text("INSERT INTO user_tokens (token_hash, user_id, label, created_at) "
-             "VALUES (:th, :uid, :label, :now)"),
+             "VALUES (:th, :uid, :label, :now) RETURNING id"),
         {"th": token_hash, "uid": user_id, "label": label, "now": _now()},
     )
+    tid = cur.fetchone()[0]
     conn.commit()
-    tid = cur.lastrowid
     conn.close()
     return tid
 
@@ -542,11 +544,11 @@ def create_api_key(key_hash, prefix, label):
     conn = get_conn()
     cur = conn.execute(
         text("INSERT INTO api_keys (key_hash, prefix, label, created_at) "
-             "VALUES (:kh, :prefix, :label, :now)"),
+             "VALUES (:kh, :prefix, :label, :now) RETURNING id"),
         {"kh": key_hash, "prefix": prefix, "label": label, "now": _now()},
     )
+    kid = cur.fetchone()[0]
     conn.commit()
-    kid = cur.lastrowid
     conn.close()
     return kid
 

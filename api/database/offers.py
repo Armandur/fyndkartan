@@ -570,10 +570,14 @@ def ean_stats():
     json_each), Axfood code->EAN-cachen, product_info och product_images. Plus delsiffror för
     Axfood-resolve-cachen och hur många som har hämtad produktinfo."""
     conn = get_conn()
+    # offers.eans filtreras till giltiga JSON-arrayer i en derived table FÖRE json-radifieringen:
+    # PG evaluerar set-returning-funktioner i FROM före WHERE, så '' -> ''::jsonb skulle krascha
+    # om filtret låg i yttre WHERE. SQLite tål det, men formen är portabel.
     distinct = conn.execute(text(
         "SELECT COUNT(*) FROM ("
-        f"SELECT je.value AS ean FROM offers, {json_each_from('offers.eans')} "
-        "WHERE offers.eans NOT IN ('','[]') "
+        "SELECT je.value AS ean FROM "
+        "(SELECT eans FROM offers WHERE eans NOT IN ('','[]') AND eans LIKE '[%') o, "
+        f"{json_each_from('o.eans')} "
         "UNION SELECT ean FROM ean_cache WHERE ean!='' "
         "UNION SELECT ean FROM product_info WHERE ean IS NOT NULL "
         "UNION SELECT ean FROM product_images WHERE ean IS NOT NULL) sub"

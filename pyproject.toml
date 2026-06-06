@@ -17,4 +17,5 @@ dependencies = [
     "holidays>=0.50",
     "model2vec>=0.3",
     "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
 ]

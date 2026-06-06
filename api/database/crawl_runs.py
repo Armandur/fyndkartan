@@ -31,13 +31,13 @@ def record_crawl_run(kind, chain, started=None, finished=None, status=None, rows
         text("INSERT INTO crawl_runs (kind, chain, started, finished, status, rows, changed, errors, "
              "stores_ok, stores_total, last_error, error_summary) VALUES "
              "(:kind, :chain, :started, :finished, :status, :rows, :changed, :errors, "
-             ":stores_ok, :stores_total, :last_error, :error_summary)"),
+             ":stores_ok, :stores_total, :last_error, :error_summary) RETURNING id"),
         {"kind": kind, "chain": chain, "started": started, "finished": finished, "status": status,
          "rows": rows or 0, "changed": changed or 0, "errors": errors or 0,
          "stores_ok": stores_ok, "stores_total": stores_total, "last_error": last_error,
          "error_summary": json.dumps(error_summary, ensure_ascii=False) if error_summary else None})
+    rid = cur.fetchone()[0]
     conn.commit()
-    rid = cur.lastrowid
     conn.close()
     return rid
 

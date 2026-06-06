@@ -1,378 +1,61 @@
-import json
+"""Schema-init: DB-oberoende via SQLAlchemy Core (tabelldefinitioner i tables.py).
 
-from ._conn import _ensure_column, get_conn
-from ..categories import raw_key
+`create_schema()` = `metadata.create_all()` (idempotent, bygger tabeller + index på SQLite/PG).
+`seed()` = idempotenta default-vokabulärer (ON CONFLICT DO NOTHING). `init_db()` = båda (normal
+uppstart / fresh deploy). Migrerings-skriptet kör `create_schema()` + bulk-kopia (utan seed -
+datan bär med sig vokabulären). De gamla ALTER-guards / DROP-migreringar / engångsbackfills var
+SQLite-in-place-migrerings-ställningar och är borttagna: create_all bygger hela nuvarande schemat
+i ett svep, och migrerad/befintlig data har redan backfillen."""
+from sqlalchemy import text
+
+from ._conn import dialect_name, get_conn, get_engine
+from .tables import metadata
 from ..config import (
-    BUILTIN_TAG_TYPES, COOP_DETAIL_STORE, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS,
+    BUILTIN_TAG_TYPES, DB_PATH, DEFAULT_CATEGORY_MAP, DEFAULT_PRIVATE_BRANDS,
     DEFAULT_PROVIDERS, DEFAULT_TAG_TYPES,
 )
 
 
-def init_db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+def create_schema():
+    """Bygg schemat (tabeller + index) på måldialekten. Idempotent (skippar befintliga tabeller)."""
+    eng = get_engine()
+    metadata.create_all(eng)
+    if dialect_name() == "sqlite":
+        with eng.connect() as conn:
+            conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+
+
+def seed():
+    """Idempotenta default-vokabulärer (kör alltid; ON CONFLICT DO NOTHING -> nya seed-nycklar läggs
+    till vid uppgradering utan att skriva över admin-ändringar)."""
     conn = get_conn()
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS stores (
-            chain       TEXT NOT NULL,
-            store_id    TEXT NOT NULL,
-            name        TEXT,
-            brand       TEXT,
-            street      TEXT,
-            postal_code TEXT,
-            city        TEXT,
-            lat         REAL,
-            lng         REAL,
-            phone       TEXT,
-            email       TEXT,
-            oh_today    TEXT,
-            open_now    INTEGER,
-            link_store  TEXT,
-            link_offers TEXT,
-            link_online TEXT,
-            tags        TEXT,
-            raw         TEXT,
-            native      TEXT,
-            method      TEXT,
-            fetched_at  TEXT,
-            PRIMARY KEY (chain, store_id)
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_stores_chain ON stores(chain)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_stores_city ON stores(city)")
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS offers (
-            chain            TEXT NOT NULL,
-            store_id         TEXT NOT NULL,
-            offer_id         TEXT NOT NULL,
-            name             TEXT,
-            brand            TEXT,
-            package          TEXT,
-            price            REAL,
-            price_text       TEXT,
-            comparison_price TEXT,
-            comparison_value REAL,
-            comparison_unit  TEXT,
-            category_raw     TEXT,
-            category_id      INTEGER,
-            mechanic_type    TEXT,
-            valid_to         TEXT,
-            eans             TEXT,
-            image            TEXT,
-            member_price     INTEGER,
-            savings          REAL,
-            fetched_at       TEXT,
-            PRIMARY KEY (chain, store_id, offer_id)
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_offers_store ON offers(chain, store_id)")
-    # Prishistorik (steg 4): append-only observationer av offers. offers churnar vid varje synk
-    # (replace), så historiken måste skrivas separat. En rad per offer NÄR priset/jämförpriset/
-    # valid_to ändrats sedan senaste observationen (dedup) -> en kompakt prisförändrings-logg.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS offer_observations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chain TEXT NOT NULL, store_id TEXT NOT NULL, offer_id TEXT NOT NULL,
-            ean TEXT, name TEXT, price REAL, comparison_value REAL, comparison_unit TEXT,
-            savings REAL, member_price INTEGER, valid_to TEXT, observed_at TEXT
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_offer ON offer_observations(chain, store_id, offer_id, id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_obs_ean ON offer_observations(ean)")
-    # Axfood code -> EAN, butiksoberoende och persistent (överlever offers-refresh).
-    # ean = "" markerar "resolvad, ingen EAN" så vi slipper hämta om.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS ean_cache (code TEXT PRIMARY KEY, ean TEXT, fetched_at TEXT)"
-    )
-    # Normaliserat offer -> EAN-index (inline för ICA/Coop/CG, Axfood-kod resolvat ur ean_cache).
-    # Fylls write-path i replace_store_offers; ersätter json_each-scans + Axfood-reverse-resolve i
-    # läsvägarna (stores_with_offer/offers_for_eans). Indexerat på ean.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS offer_eans (chain TEXT, store_id TEXT, offer_id TEXT, ean TEXT, "
-        "PRIMARY KEY (chain, store_id, offer_id, ean))"
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_offer_eans_ean ON offer_eans(ean)")
-    # Engångs-backfill ur befintliga offers (inline + Axfood via ean_cache) om tomt.
-    if conn.execute("SELECT COUNT(*) FROM offer_eans").fetchone()[0] == 0:
-        conn.execute(
-            "INSERT OR IGNORE INTO offer_eans SELECT o.chain, o.store_id, o.offer_id, je.value "
-            "FROM offers o, json_each(o.eans) je WHERE o.eans NOT IN ('','[]')"
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO offer_eans SELECT o.chain, o.store_id, o.offer_id, e.ean "
-            "FROM offers o JOIN ean_cache e ON o.offer_id=e.code "
-            "WHERE o.chain IN ('willys','hemkop') AND e.ean!=''"
-        )
-    # Fulla sortiment (steg 5): persistent produktkatalog per kedja (allt de säljer, ej bara offers).
-    # En rad per (chain, product_id); EAN-gruppering vid läsning. `origin` = JSON-lista. `available`
-    # = sedd i senaste fullständiga crawl (utgångna behålls). Kanonisk kategori härleds vid läsning.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS catalog_products (
-            chain TEXT NOT NULL, product_id TEXT NOT NULL,
-            ean TEXT, name TEXT, brand TEXT, image TEXT, origin TEXT,
-            price REAL, comparison_value REAL, comparison_unit TEXT,
-            package_size TEXT, package_value REAL, package_unit TEXT,
-            category_raw TEXT, available INTEGER DEFAULT 1,
-            first_seen TEXT, last_seen TEXT, fetched_at TEXT,
-            PRIMARY KEY (chain, product_id)
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_ean ON catalog_products(ean)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_catalog_chain_cat ON catalog_products(chain, category_raw)")
-    # Hyllpris-historik: append-only observation NÄR ett katalog-pris ändras vid en crawl (speglar
-    # offer_observations men för hyllpris). En rad per (chain, product_id) vid prisändring + första pris.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS catalog_price_observations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            chain TEXT, product_id TEXT, ean TEXT,
-            price REAL, comparison_value REAL, comparison_unit TEXT, observed_at TEXT
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_product ON catalog_price_observations(chain, product_id)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_ean ON catalog_price_observations(ean)")
-    # Engångs-baslinje: seeda nuvarande pris för redan cachade katalogprodukter (annars saknar de
-    # startpunkt tills priset ändras). Körs en gång (när observations-tabellen är tom).
-    if conn.execute("SELECT COUNT(*) FROM catalog_price_observations").fetchone()[0] == 0:
-        conn.execute(
-            "INSERT INTO catalog_price_observations "
-            "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
-            "SELECT chain, product_id, ean, price, comparison_value, comparison_unit, fetched_at "
-            "FROM catalog_products WHERE price IS NOT NULL"
-        )
-
-    # --- Steg 6: per-butik-priser (Fas 1 datamodell) ---
-    # Vilken butik en prisobservation gäller (NULL = nationellt/representativt, som idag). Per-butik-
-    # historik skrivs append-on-change med store satt.
-    _ensure_column(conn, "catalog_price_observations", "store", "TEXT")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_cpo_store ON catalog_price_observations(chain, product_id, store)")
-    # Senaste hyllpris PER BUTIK (en rad per (chain, product_id, store)). Historiken ligger i
-    # catalog_price_observations (store-kolumnen ovan); detta är snabb-uppslags-bordet för "billigast var".
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS catalog_store_prices (
-            chain TEXT NOT NULL, product_id TEXT NOT NULL, store TEXT NOT NULL,
-            ean TEXT, price REAL, comparison_value REAL, comparison_unit TEXT,
-            available INTEGER DEFAULT 1, first_seen TEXT, last_seen TEXT,
-            PRIMARY KEY (chain, product_id, store)
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_ean ON catalog_store_prices(ean)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_chain_store ON catalog_store_prices(chain, store)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_store ON catalog_store_prices(store)")
-    # Per-butik crawl-styrning: frågbarhet (queryable: NULL=omätt, 0=ej frågbar, 1=frågbar), admin-valt
-    # omfång (enabled), prioritet + rotations-metadata. Driver rotations-crawlern + admin-väljaren.
-    # `store` = kedjans butiks-id för pris-API:t (Coop ledger / ICA accountNumber).
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS store_crawl (
-            chain TEXT NOT NULL, store TEXT NOT NULL,
-            queryable INTEGER, enabled INTEGER DEFAULT 0, priority INTEGER DEFAULT 0,
-            last_crawled TEXT, product_count INTEGER, status TEXT, checked_at TEXT,
-            PRIMARY KEY (chain, store)
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_store_crawl_enabled ON store_crawl(enabled, priority)")
-    # Denormaliserat representativt butiksnamn/ort + antal fysiska butiker per ledger/account (fylls vid
-    # seeding ur stores) -> admin-urvalstabellen slipper en dyr json_extract-join mot stores.
-    _ensure_column(conn, "store_crawl", "name", "TEXT")
-    _ensure_column(conn, "store_crawl", "city", "TEXT")
-    _ensure_column(conn, "store_crawl", "store_count", "INTEGER")
-    # Materialiserat per-butik-prisaggregat på master-produkten (ICA/Coop: pris varierar per butik ->
-    # visa INTERVALL i bläddra-vyn i st.f. ett representativt pris). Fylls av recompute_store_aggregates
-    # ur catalog_store_prices. National-kedjor använder `price` (enkelt); dessa är NULL för dem.
-    _ensure_column(conn, "catalog_products", "price_min", "REAL")
-    _ensure_column(conn, "catalog_products", "price_max", "REAL")
-    _ensure_column(conn, "catalog_products", "price_stores", "INTEGER")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_csp_chain_product ON catalog_store_prices(chain, product_id)")
-    # Butiks-OBEROENDE union av ICA:s mainCategoryName (skördas vid varje '*'-walk). Stora butiker (>20k)
-    # cappas av offset-taket -> deras egen skörd är ofullständig; små butiker (<=20k, 89,6%) ger HELA sin
-    # kategorimängd ur en ocappad '*'-walk. Unionen konvergerar mot ICA:s fulla taxonomi och används som
-    # komplett term-lista när stora butiker kategori-walkas (se catalog_crawl._ica_fetch_store).
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS ica_walk_categories (name TEXT PRIMARY KEY, last_seen TEXT)"
-    )
-    # Materialiserat radantal i catalog_store_prices per kedja. catalog_store_prices växer mot ~17M rader
-    # -> COUNT(*) tar ~6s och blir värre; overview får inte räkna den per laddning. Uppdateras i stället
-    # EN gång per crawl (recompute_store_aggregates). store_prices_stats läser härifrån (cheap).
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS store_price_volume (chain TEXT PRIMARY KEY, price_rows INTEGER, "
-        "price_stores INTEGER, updated TEXT)"
-    )
-    # Beständig körnings-historik per crawl och kedja (motiveras av 22:12-incidenten: massfelet lämnade
-    # inget spår - all state låg i minnet). Täcker BÅDA systemen: kind='store_prices' (per-butik ICA/Coop)
-    # och kind='catalog' (master nationella). Skrivs vid körningens slut. Driver historik-vy + DURABLE
-    # "ändringar sedan senaste" (överlever omstart, till skillnad från CRAWL_STATE/STORE_PRICE_STATE).
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS crawl_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL, chain TEXT NOT NULL,
-            started TEXT, finished TEXT, status TEXT,
-            rows INTEGER DEFAULT 0, changed INTEGER DEFAULT 0, errors INTEGER DEFAULT 0,
-            stores_ok INTEGER, stores_total INTEGER, last_error TEXT
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_crawl_runs_chain ON crawl_runs(kind, chain, id)")
-    _ensure_column(conn, "crawl_runs", "error_summary", "TEXT")  # JSON {feltyp: antal} - fel-fördelning/körning
-
-    # Editerbar mappning råetikett -> lista av kanoniska typer (JSON, admin-override).
-    _cols = {r[1] for r in conn.execute("PRAGMA table_info(tag_map)")}
-    if _cols and "types" not in _cols:  # migrera bort gammalt enkel-typ-schema
-        conn.execute("DROP TABLE tag_map")
-    conn.execute("CREATE TABLE IF NOT EXISTS tag_map (label TEXT PRIMARY KEY, types TEXT)")
-    # Kategori-mappning (chain_key, raw_key) -> kanonisk; seedas första gången.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS category_map (chain_key TEXT, raw_key TEXT, canonical TEXT, "
-        "PRIMARY KEY (chain_key, raw_key))"
-    )
-    # Alltid INSERT OR IGNORE -> nya seed-nycklar (t.ex. coop_nav) läggs till vid
-    # uppgradering utan att skriva över admin-ändringar.
+    # Kategori-mappning: alltid (nya seed-nycklar t.ex. coop_nav läggs till).
     conn.executemany(
-        "INSERT OR IGNORE INTO category_map (chain_key, raw_key, canonical) VALUES (?,?,?)",
-        [(ck, rk, canon) for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()],
-    )
-    # Tillverkar-/varumärkesnormalisering: grupperingsnyckel -> kanoniskt display-namn (override).
-    # Auto-normalisering (skiftläge/legal-suffix) sker i koden; tabellen är manuella merges.
-    conn.execute("CREATE TABLE IF NOT EXISTS manufacturer_map (key TEXT PRIMARY KEY, canonical TEXT)")
-    # Editerbar kanonisk vokabulär; seedas med default-listan första gången.
-    conn.execute("CREATE TABLE IF NOT EXISTS tag_types (type TEXT PRIMARY KEY)")
-    # Tombstone: typer användaren tagit bort. Hindrar att inbyggda återskapas vid omstart.
-    conn.execute("CREATE TABLE IF NOT EXISTS tag_types_removed (type TEXT PRIMARY KEY)")
-    if not conn.execute("SELECT 1 FROM tag_types LIMIT 1").fetchone():
-        conn.executemany("INSERT INTO tag_types (type) VALUES (?)", [(t,) for t in DEFAULT_TAG_TYPES])
-    # Säkerställ att inbyggda (seed-producerade) typer finns - utom de användaren tagit bort.
-    _removed = {r[0] for r in conn.execute("SELECT type FROM tag_types_removed")}
-    conn.executemany(
-        "INSERT OR IGNORE INTO tag_types (type) VALUES (?)",
-        [(t,) for t in BUILTIN_TAG_TYPES if t not in _removed],
-    )
-    # Editerbar speditör-vokabulär (seedas en gång) + override-mappning label -> speditör.
-    conn.execute("CREATE TABLE IF NOT EXISTS providers (name TEXT PRIMARY KEY)")
-    if not conn.execute("SELECT 1 FROM providers LIMIT 1").fetchone():
-        conn.executemany("INSERT INTO providers (name) VALUES (?)", [(p,) for p in DEFAULT_PROVIDERS])
-    conn.execute("CREATE TABLE IF NOT EXISTS provider_map (label TEXT PRIMARY KEY, provider TEXT)")
-    # Persistent anropslogg: ring-buffer (feed, beskärs) + kumulativ statistik per host.
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS api_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL, "
-        "method TEXT, host TEXT, path TEXT, status INTEGER, ms REAL, chain TEXT)"
-    )
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS api_call_stats (host TEXT PRIMARY KEY, chain TEXT, "
-        "count INTEGER DEFAULT 0, errors INTEGER DEFAULT 0, total_ms REAL DEFAULT 0)"
-    )
-    # Konton + favoriter + nyckel/värde-settings.
-    conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            is_admin INTEGER DEFAULT 0,
-            created_at TEXT
-        )"""
-    )
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS favorites (
-            user_id INTEGER NOT NULL,
-            chain TEXT NOT NULL,
-            store_id TEXT NOT NULL,
-            PRIMARY KEY (user_id, chain, store_id)
-        )"""
-    )
-    # Admin-/konsolkonton är helt skilda från app-konton (users): egen tabell,
-    # egen session (admin_uid). En app-användare har aldrig admin-behörighet.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS admin_users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TEXT
-        )"""
-    )
-    # Editerbar private-label-vokabulär (brand-rötter per kedja); seedas en gång.
-    conn.execute("CREATE TABLE IF NOT EXISTS private_brands (chain TEXT, brand TEXT, PRIMARY KEY (chain, brand))")
-    if not conn.execute("SELECT 1 FROM private_brands LIMIT 1").fetchone():
-        conn.executemany(
-            "INSERT OR IGNORE INTO private_brands (chain, brand) VALUES (?,?)",
-            [(ch, b) for ch, bs in DEFAULT_PRIVATE_BRANDS.items() for b in bs],
-        )
-    # Manuell cross-chain-paring av märkesvaror. EAN-nycklad (stabil, överlever att
-    # offers uppdateras). Snapshot av namn/brand/pkg så posten kan visas även när
-    # erbjudandet försvunnit. En (chain, ean) tillhör som mest en grupp.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS product_matches (
-            group_id INTEGER NOT NULL,
-            chain TEXT NOT NULL,
-            ean TEXT NOT NULL,
-            name TEXT, brand TEXT, package TEXT,
-            PRIMARY KEY (chain, ean)
-        )"""
-    )
-    # Produktinfo per EAN (EAN-global: ingredienser/näring/ursprung), lazy-cachad.
-    # Källan står i datan (`source`). Regenererbar -> gamla per-kedje-cachen släpps.
-    conn.execute("DROP TABLE IF EXISTS product_details")
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS product_info (ean TEXT PRIMARY KEY, data TEXT, fetched_at TEXT)"
-    )
-    # Historik för produktinnehåll PER KÄLLA (recept-/närings-/ursprungsändringar). Append-on-change:
-    # en rad när Axf(Coop/ICA)s normaliserade ingredienser/näring/ursprung skiljer sig från den
-    # senaste för (ean, source) -> kompakt ändringslogg. Per källa (ej den mergade raden) så
-    # källvariation inte ser ut som receptändring (speglar offer_observations per butik). UI senare.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS product_info_observations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ean TEXT NOT NULL, source TEXT NOT NULL,
-            ingredients TEXT, nutrition TEXT, origin TEXT, observed_at TEXT
-        )"""
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_pinfo_obs ON product_info_observations(ean, source, id)")
-    # EAN(13) -> ICA consumerItemId (detalj-URL:en). Söket scopar på butikssortiment, så
-    # resolvern provar flera butiker; cid='' = försökt utan träff (negativ cache).
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS ica_item_map (ean TEXT PRIMARY KEY, cid TEXT, fetched_at TEXT)"
-    )
-    # Lokalt cachade produktbilder per (ean, storlek) (bytes på disk, metadata här) -
-    # CDN-oberoende + snabbare. Migrera bort gammalt ean-PK-schema (cache regenererbar).
-    _icols = {r[1] for r in conn.execute("PRAGMA table_info(product_images)")}
-    if _icols and "size" not in _icols:
-        conn.execute("DROP TABLE product_images")
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS product_images (ean TEXT, size TEXT, content_type TEXT, "
-        "source_url TEXT, fetched_at TEXT, PRIMARY KEY (ean, size))"
-    )
-    # Opaka bearer-tokens för slutanvändare (icke-webb-klienter). Lagras hashade.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS user_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            token_hash TEXT UNIQUE NOT NULL,
-            user_id INTEGER NOT NULL,
-            label TEXT, created_at TEXT, last_used TEXT
-        )"""
-    )
-    # API-nycklar för externa integratörer (utfärdas i konsolen). Lagras hashade;
-    # validering är valfri (gatar inte de öppna läs-endpoints) - ogiltig nyckel nekas dock.
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS api_keys (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key_hash TEXT UNIQUE NOT NULL,
-            prefix TEXT, label TEXT, created_at TEXT,
-            revoked INTEGER DEFAULT 0, last_used TEXT
-        )"""
-    )
-    # ALTER TABLE-guards för nya kolumner (ingen Alembic).
-    _ensure_column(conn, "offers", "member_price", "INTEGER")
-    _ensure_column(conn, "offers", "savings", "REAL")
-    _ensure_column(conn, "ean_cache", "category", "TEXT")  # Axfood googleAnalyticsCategory (förvärmd)
-    _ensure_column(conn, "ean_cache", "origin", "TEXT")  # Axfood ursprungsland (svenska, förvärmt)
-    _ensure_column(conn, "offer_observations", "savings", "REAL")  # för att spåra ordinarie pris
-    _ensure_column(conn, "offer_observations", "member_price", "INTEGER")
-    _ensure_column(conn, "stores", "hours", "TEXT")  # JSON {week, exceptions} - normaliserad veckoöppettid
-    # store: Coop-priser/sortiment är BUTIKSSPECIFIKA (perso-API:t scopar på ledger) - vi crawlar en
-    # fast COOP_DETAIL_STORE. Tagga raden med ledger:t så priset inte misstas för nationellt; NULL =
-    # nationellt/ej butiksscopat (Axfood/CG). ICA är också flaggskepps-scopat (se Kända datakälle-fakta).
-    _ensure_column(conn, "catalog_products", "store", "TEXT")
-    conn.execute("UPDATE catalog_products SET store=? WHERE chain='coop' AND store IS NULL",
-                 (COOP_DETAIL_STORE,))  # backfill (crawlat med fast butik innan kolumnen fanns)
+        text("INSERT INTO category_map (chain_key, raw_key, canonical) VALUES (:ck, :rk, :canon) "
+             "ON CONFLICT DO NOTHING"),
+        [{"ck": ck, "rk": rk, "canon": canon} for (ck, rk), canon in DEFAULT_CATEGORY_MAP.items()])
+    # Tagg-typer: seeda default-listan om tom; säkerställ sedan inbyggda (utom användar-borttagna).
+    removed = {r[0] for r in conn.execute(text("SELECT type FROM tag_types_removed"))}
+    if not conn.execute(text("SELECT 1 FROM tag_types LIMIT 1")).fetchone():
+        conn.executemany(text("INSERT INTO tag_types (type) VALUES (:t) ON CONFLICT DO NOTHING"),
+                         [{"t": t} for t in DEFAULT_TAG_TYPES])
+    conn.executemany(text("INSERT INTO tag_types (type) VALUES (:t) ON CONFLICT DO NOTHING"),
+                     [{"t": t} for t in BUILTIN_TAG_TYPES if t not in removed])
+    # Speditörer: seeda en gång.
+    if not conn.execute(text("SELECT 1 FROM providers LIMIT 1")).fetchone():
+        conn.executemany(text("INSERT INTO providers (name) VALUES (:n) ON CONFLICT DO NOTHING"),
+                         [{"n": p} for p in DEFAULT_PROVIDERS])
+    # Private-label-vokabulär: seeda en gång.
+    if not conn.execute(text("SELECT 1 FROM private_brands LIMIT 1")).fetchone():
+        conn.executemany(text("INSERT INTO private_brands (chain, brand) VALUES (:c, :b) "
+                              "ON CONFLICT DO NOTHING"),
+                         [{"c": ch, "b": b} for ch, bs in DEFAULT_PRIVATE_BRANDS.items() for b in bs])
     conn.commit()
     conn.close()
+
+
+def init_db():
+    if dialect_name() == "sqlite":
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    create_schema()
+    seed()

@@ -30,6 +30,11 @@ def get_engine():
             # sqlite3-mönstret (ingen delad pool-connection över trådar, ingen pool-svält i crawl).
             kwargs["connect_args"] = {"check_same_thread": False}
             kwargs["poolclass"] = NullPool
+        else:
+            # PG: QueuePool tilltaget för crawlen (upp till ~12 samtidiga upserts + API-läsningar).
+            kwargs["pool_size"] = 20
+            kwargs["max_overflow"] = 10
+            kwargs["pool_pre_ping"] = True
         _engine = create_engine(url, **kwargs)
         if is_sqlite:
 

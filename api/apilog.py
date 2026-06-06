@@ -3,16 +3,15 @@ eget /v1). En httpx-event-hook + middleware loggar varje anrop till SQLite: en r
 buffer (`api_calls`, beskärs) för feeden och kumulativ statistik per host
 (`api_call_stats`). Persistent - överlever omstart. Loggning får aldrig fälla anropet."""
 
-import sqlite3
 import time
 
 import httpx
+from sqlalchemy import text
 
-from .config import DB_PATH
+from .database import get_conn
 
 _MAX_CALLS = 2000  # ring-storlek för feeden (statistiken är kumulativ, beskärs ej)
 _starts = {}
-_conn = None
 _since_prune = 0
 
 # host-fragment -> vilken kedja/källa anropet hör till
@@ -41,34 +40,33 @@ def classify_source(host):
     return "other"
 
 
-def _db():
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(DB_PATH, check_same_thread=False, isolation_level=None)  # autocommit
-        _conn.row_factory = sqlite3.Row
-        _conn.execute("PRAGMA busy_timeout=3000")
-    return _conn
-
-
 def _record(ts, method, host, path, status, ms, chain):
-    """Skriv ett anrop till feeden + uppdatera kumulativ statistik. Sväljer fel."""
+    """Skriv ett anrop till feeden + uppdatera kumulativ statistik. Sväljer fel.
+    Egen kort transaktion per anrop (commit direkt) = samma effekt som gamla autocommit-loggern."""
     global _since_prune
     try:
-        c = _db()
+        c = get_conn()
         c.execute(
-            "INSERT INTO api_calls (ts, method, host, path, status, ms, chain) VALUES (?,?,?,?,?,?,?)",
-            (ts, method, host, path, status, ms, chain),
+            text("INSERT INTO api_calls (ts, method, host, path, status, ms, chain) "
+                 "VALUES (:ts, :method, :host, :path, :status, :ms, :chain)"),
+            {"ts": ts, "method": method, "host": host, "path": path,
+             "status": status, "ms": ms, "chain": chain},
         )
         c.execute(
-            "INSERT INTO api_call_stats (host, chain, count, errors, total_ms) VALUES (?,?,1,?,?) "
-            "ON CONFLICT(host) DO UPDATE SET count=count+1, chain=excluded.chain, "
-            "errors=errors+excluded.errors, total_ms=total_ms+excluded.total_ms",
-            (host, chain, 1 if status and status >= 400 else 0, ms or 0),
+            text("INSERT INTO api_call_stats (host, chain, count, errors, total_ms) "
+                 "VALUES (:host, :chain, 1, :errors, :ms) "
+                 "ON CONFLICT (host) DO UPDATE SET count=count+1, chain=excluded.chain, "
+                 "errors=errors+excluded.errors, total_ms=total_ms+excluded.total_ms"),
+            {"host": host, "chain": chain,
+             "errors": 1 if status and status >= 400 else 0, "ms": ms or 0},
         )
         _since_prune += 1
         if _since_prune >= 250:  # beskär feeden då och då (behåll de _MAX_CALLS senaste)
             _since_prune = 0
-            c.execute("DELETE FROM api_calls WHERE id <= (SELECT MAX(id) FROM api_calls) - ?", (_MAX_CALLS,))
+            c.execute(text("DELETE FROM api_calls WHERE id <= "
+                           "(SELECT MAX(id) FROM api_calls) - :max"), {"max": _MAX_CALLS})
+        c.commit()
+        c.close()
     except Exception:  # noqa: BLE001 - loggning får aldrig fälla anropet
         pass
 
@@ -109,10 +107,13 @@ def make_client(**kwargs):
 
 def recent(limit=120):
     try:
-        rows = _db().execute(
-            "SELECT ts, method, host, path, status, ms, chain FROM api_calls ORDER BY id DESC LIMIT ?",
-            (limit,),
+        conn = get_conn()
+        rows = conn.execute(
+            text("SELECT ts, method, host, path, status, ms, chain FROM api_calls "
+                 "ORDER BY id DESC LIMIT :limit"),
+            {"limit": limit},
         ).fetchall()
+        conn.close()
         return [dict(r) for r in rows]
     except Exception:  # noqa: BLE001
         return []
@@ -120,7 +121,10 @@ def recent(limit=120):
 
 def stats():
     try:
-        rows = _db().execute("SELECT host, chain, count, errors, total_ms FROM api_call_stats").fetchall()
+        conn = get_conn()
+        rows = conn.execute(text(
+            "SELECT host, chain, count, errors, total_ms FROM api_call_stats")).fetchall()
+        conn.close()
     except Exception:  # noqa: BLE001
         return []
     out = [
