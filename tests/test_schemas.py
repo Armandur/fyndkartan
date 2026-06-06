@@ -127,6 +127,27 @@ def test_catalog_manufacturers_matches_model():
     return len(items)
 
 
+def test_product_prices_scoped_matches_model():
+    """store_prices_geo-svar (per-butik-hyllpris, geo/favorit-scope) ska validera mot
+    ProductPricesScopedResponse. Tom om inga per-butik-priser crawlats -> hoppas."""
+    conn = database.get_conn()
+    row = conn.execute("SELECT ean FROM catalog_store_prices WHERE ean IS NOT NULL AND ean!='' "
+                       "AND price IS NOT NULL LIMIT 1").fetchone()
+    s = conn.execute("SELECT chain, store_id, lat, lng FROM stores WHERE chain IN ('ica','coop') "
+                     "AND lat IS NOT NULL AND lat!=0 LIMIT 1").fetchone()
+    conn.close()
+    if not row or not s:
+        return 0
+    ean = row["ean"]
+    near = database.store_prices_geo(ean, lat=s["lat"], lng=s["lng"], radius_km=2000)  # hela landet
+    schemas.ProductPricesScopedResponse.model_validate(
+        {"ean": ean, "scope": "near", "radius_km": 2000.0, "store_count": len(near), "stores": near})
+    pairs = database.store_prices_geo(ean, pairs=[(s["chain"], s["store_id"])])
+    schemas.ProductPricesScopedResponse.model_validate(
+        {"ean": ean, "scope": "stores", "radius_km": None, "store_count": len(pairs), "stores": pairs})
+    return len(near)
+
+
 if __name__ == "__main__":
     n, chains, deals = test_product_matches_model()
     print(f"OK: {n} produkter validerade mot Product | kedjor={chains} | deal_types={deals}")
@@ -135,3 +156,4 @@ if __name__ == "__main__":
     print(f"OK: {test_price_history_matches_model()} prishistorik-EAN validerade mot PriceHistoryResponse")
     print(f"OK: {test_product_stores_matches_model()} EAN validerade mot ProductStoresResponse")
     print(f"OK: {test_catalog_manufacturers_matches_model()} tillverkare validerade mot CatalogManufacturersResponse")
+    print(f"OK: {test_product_prices_scoped_matches_model()} butiker validerade mot ProductPricesScopedResponse")

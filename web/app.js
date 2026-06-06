@@ -427,19 +427,78 @@ async function openProductModal(ean, chain, name) {
   }
 }
 
-// Per-butik-pris-modal (Steg 6): klick på ICA/Coop-intervallet -> alla butikers hyllpris.
+// Per-butik-pris-modal (Steg 6): klick på ICA/Coop-intervallet -> butikers hyllpris, scopat (Steg 6-payoffen):
+// alla butiker (grupperat per pris), nära kartans mitt, eller mina favoritbutiker.
+let _spCtx = null;
 async function openStorePricesModal(ean, chain, name) {
-  const modal = document.getElementById("productModal");
+  _spCtx = { ean, chain, name };
   document.getElementById("productModalTitle").textContent = `${name || "Produkt"} – priser per butik`;
+  document.getElementById("productModal").classList.remove("d-none");
+  // Default "all" (visar alltid något); bläddra-vyn döljer kartan så map-center är ofta osatt -> "near"
+  // skulle ofta vara tomt här. Nära/favoriter ett klick bort (tabbarna near-först = upptäckbart).
+  loadStorePriceScope("all");
+}
+
+function spScopeTabs(scope) {
+  const tab = (s, lbl) => `<button class="btn btn-sm ${scope === s ? "btn-dark" : "btn-outline-dark"} sp-scope-btn" data-scope="${s}">${lbl}</button>`;
+  return `<div class="d-flex gap-1 mb-2 flex-wrap">${tab("near", "Nära kartans mitt")}${state.user ? tab("favorites", "&#9733; Mina favoriter") : ""}${tab("all", "Alla butiker")}</div>`;
+}
+
+async function loadStorePriceScope(scope) {
+  if (!_spCtx) return;
+  const { ean, chain } = _spCtx;
   const body = document.getElementById("productModalBody");
-  body.innerHTML = '<div class="text-muted small">Laddar butikspriser&hellip;</div>';
-  modal.classList.remove("d-none");
+  const tabs = spScopeTabs(scope);
+  body.innerHTML = tabs + '<div class="text-muted small">Laddar butikspriser&hellip;</div>';
   try {
-    const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/store-prices`)).json();
-    body.innerHTML = renderStorePrices(d, chain);
+    let html;
+    if (scope === "near") {
+      const c = map.getCenter();
+      const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/prices?lat=${c.lat.toFixed(5)}&lng=${c.lng.toFixed(5)}&radius=15`)).json();
+      html = renderScopedPrices(d, chain, "near");
+    } else if (scope === "favorites") {
+      const r = await fetch(`/v1/products/${encodeURIComponent(ean)}/prices?favorites=true`);
+      html = r.status === 401
+        ? '<div class="text-muted small p-2">Logga in för att se priser hos dina favoritbutiker.</div>'
+        : renderScopedPrices(await r.json(), chain, "favorites");
+    } else {
+      const d = await (await fetch(`/v1/products/${encodeURIComponent(ean)}/store-prices`)).json();
+      html = renderStorePrices(d, chain);
+    }
+    body.innerHTML = tabs + html;
   } catch (e) {
-    body.innerHTML = '<div class="text-danger small">Kunde inte hämta butikspriser.</div>';
+    body.innerHTML = tabs + '<div class="text-danger small">Kunde inte hämta butikspriser.</div>';
   }
+}
+
+// Per-FYSISK-butik (geo/favorit-scope) - lista sorterad billigast först, med avstånd; billigaste markeras.
+function renderScopedPrices(d, chain, scope) {
+  let stores = d.stores || [];
+  if (chain) stores = stores.filter((s) => s.chain === chain);
+  if (!stores.length) {
+    return scope === "near"
+      ? '<div class="text-muted small p-2">Inga prissatta butiker inom 15 km av kartans mitt. Flytta kartan dit du vill jämföra.</div>'
+      : '<div class="text-muted small p-2">Inga av dina favoritbutiker har prisdata för varan ännu.</div>';
+  }
+  const priced = stores.filter((s) => s.price != null);
+  const cheapest = priced.length ? priced[0].price : null;
+  const rows = stores.map((s) => {
+    const m = state.chains[s.chain] || {};
+    const cmp = s.comparison_value != null ? ` <span class="text-muted">&middot; ${kr(s.comparison_value)} kr/${esc(s.comparison_unit || "")}</span>` : "";
+    const dist = s.distance_km != null ? ` <span class="text-muted">&middot; ${s.distance_km} km</span>` : "";
+    const price = s.price != null
+      ? `<span class="fw-semibold${s.price === cheapest ? " text-success" : ""}">${kr(s.price)} kr</span>${s.price === cheapest ? ' <span class="badge bg-success">billigast</span>' : ""}`
+      : '<span class="text-muted">inget data</span>';
+    return `<div class="sp-level"><div class="sp-level-head">
+      <span class="o-chainchip" style="background:${m.color || "#666"}">${esc(m.label || s.chain)}</span>
+      <span>${esc(s.name || "")}${s.city ? ` <span class="text-muted">(${esc(s.city)})</span>` : ""}${dist}</span>
+      <span class="ms-auto text-nowrap">${price}${cmp}</span>
+    </div></div>`;
+  }).join("");
+  const head = scope === "near"
+    ? `${priced.length} prissatta butiker inom 15 km, billigast först`
+    : `${stores.length} favoritbutik${stores.length === 1 ? "" : "er"}`;
+  return `<div class="small text-muted mb-2">${head}.</div><div style="max-height:58vh;overflow-y:auto">${rows}</div>`;
 }
 
 function renderStorePrices(d, chain) {
@@ -682,8 +741,10 @@ function closeProductModal() { document.getElementById("productModal").classList
 document.getElementById("productClose").addEventListener("click", closeProductModal);
 document.getElementById("productModal").addEventListener("click", (e) => { if (e.target.id === "productModal") closeProductModal(); });
 document.getElementById("productModalBody").addEventListener("click", (e) => {
-  const head = e.target.closest(".sp-level-head");  // per-butik-pris-modalen: fäll ut/in butikerna på nivån
-  if (head) head.parentElement.querySelector(".sp-level-stores").classList.toggle("d-none");
+  const scopeBtn = e.target.closest(".sp-scope-btn");  // per-butik-pris-modalen: byt scope (nära/favoriter/alla)
+  if (scopeBtn) { loadStorePriceScope(scopeBtn.dataset.scope); return; }
+  const head = e.target.closest(".sp-level-head");  // "Alla butiker"-läget: fäll ut/in butikerna på nivån
+  if (head && head.parentElement.querySelector(".sp-level-stores")) head.parentElement.querySelector(".sp-level-stores").classList.toggle("d-none");
 });
 
 // Lightbox: klick på en produktbild visar den i full storlek (för att granska förpackningen).
