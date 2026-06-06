@@ -193,6 +193,15 @@ def json_is_true(col, key):
     return f"json_extract({col}, '$.{key}') = 1"
 
 
+def json_each_from(col):
+    """FROM-fragment som radifierar en JSON-array-kolumn till rader med kolumnen `value`.
+    Används i en cross join: `FROM tbl, {json_each_from('tbl.col')} WHERE ...`. Anroparen
+    måste filtrera bort icke-array-värden ('' / NULL) i WHERE (PG-casten tål inte tomt)."""
+    if dialect_name() == "postgresql":
+        return f"jsonb_array_elements_text({col}::jsonb) AS je(value)"
+    return f"json_each({col}) je"
+
+
 def _ensure_column(conn, table, col, coltype):
     cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
     if col not in cols:

@@ -1,7 +1,9 @@
 import json
 import re
 
-from ._conn import _now, get_conn
+from sqlalchemy import bindparam, text
+
+from ._conn import _now, get_conn, json_each_from
 from .ean import get_axfood_categories, get_axfood_origins, get_cached_eans
 from .products import get_product_categories, get_product_origins
 from ..categories import category_for, category_from_detail, category_from_name, raw_key
@@ -16,6 +18,8 @@ _OFFER_COLS = (
     "eans,image,member_price,savings,fetched_at"
 )
 _OFFER_PH = ",".join(f":{c}" for c in _OFFER_COLS.split(","))
+_OFFER_PK = ("chain", "store_id", "offer_id")
+_OFFER_UPDATE = ", ".join(f"{c}=excluded.{c}" for c in _OFFER_COLS.split(",") if c not in _OFFER_PK)
 
 
 def _norm_eans(eans):
@@ -46,10 +50,10 @@ def archive_offers(chain, store_id, offers):
         latest = {
             r["offer_id"]: (r["price"], r["comparison_value"], r["savings"], r["valid_to"])
             for r in conn.execute(
-                "SELECT offer_id, price, comparison_value, savings, valid_to FROM offer_observations "
-                "WHERE chain=? AND store_id=? AND id IN (SELECT MAX(id) FROM offer_observations "
-                "WHERE chain=? AND store_id=? GROUP BY offer_id)",
-                (chain, str(store_id), chain, str(store_id)),
+                text("SELECT offer_id, price, comparison_value, savings, valid_to FROM offer_observations "
+                     "WHERE chain=:chain AND store_id=:store AND id IN (SELECT MAX(id) FROM offer_observations "
+                     "WHERE chain=:chain AND store_id=:store GROUP BY offer_id)"),
+                {"chain": chain, "store": str(store_id)},
             )
         }
         now = _now()
@@ -61,14 +65,18 @@ def archive_offers(chain, store_id, offers):
                 continue
             eans = _norm_eans(o.get("eans"))
             ean = eans[0] if eans else (normalize_ean(code_eans[oid]) if code_eans.get(oid) else None)
-            rows.append((chain, str(store_id), oid, ean, o.get("name"),
-                         o.get("price"), o.get("comparison_value"), o.get("comparison_unit"),
-                         o.get("savings"), o.get("member_price"), o.get("valid_to"), now))
+            rows.append({"chain": chain, "store_id": str(store_id), "offer_id": oid, "ean": ean,
+                         "name": o.get("name"), "price": o.get("price"),
+                         "comparison_value": o.get("comparison_value"),
+                         "comparison_unit": o.get("comparison_unit"), "savings": o.get("savings"),
+                         "member_price": o.get("member_price"), "valid_to": o.get("valid_to"),
+                         "observed_at": now})
         if rows:
             conn.executemany(
-                "INSERT INTO offer_observations (chain, store_id, offer_id, ean, name, price, "
-                "comparison_value, comparison_unit, savings, member_price, valid_to, observed_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                text("INSERT INTO offer_observations (chain, store_id, offer_id, ean, name, price, "
+                     "comparison_value, comparison_unit, savings, member_price, valid_to, observed_at) "
+                     "VALUES (:chain, :store_id, :offer_id, :ean, :name, :price, :comparison_value, "
+                     ":comparison_unit, :savings, :member_price, :valid_to, :observed_at)"),
                 rows,
             )
             conn.commit()
@@ -79,10 +87,10 @@ def archive_offers(chain, store_id, offers):
 def offer_observations_stats():
     """(antal rader, distinkta produkter, äldsta observation) för prishistorik-tabellen."""
     conn = get_conn()
-    r = conn.execute(
+    r = conn.execute(text(
         "SELECT COUNT(*) c, COUNT(DISTINCT chain||store_id||offer_id) p, MIN(observed_at) o "
         "FROM offer_observations"
-    ).fetchone()
+    )).fetchone()
     conn.close()
     return {"rows": r["c"], "products": r["p"], "since": r["o"]}
 
@@ -97,17 +105,21 @@ def price_history(ean):
     vi reverse-resolvar därför koderna för denna EAN ur ean_cache och tar med dem - så historiken
     blir komplett även för Axfood (inkl. äldre rader arkiverade innan koden warmades)."""
     conn = get_conn()
-    codes = [r["code"] for r in conn.execute("SELECT code FROM ean_cache WHERE ean=?", (ean,)).fetchall()]
-    where, params = "ean=?", [ean]
+    codes = [r["code"] for r in conn.execute(
+        text("SELECT code FROM ean_cache WHERE ean=:ean"), {"ean": ean}).fetchall()]
+    where, params = "ean=:ean", {"ean": ean}
+    binds = []
     if codes:
-        where += f" OR (chain IN ('willys','hemkop') AND offer_id IN ({','.join('?' * len(codes))}))"
-        params.extend(codes)
-    rows = conn.execute(
+        where += " OR (chain IN ('willys','hemkop') AND offer_id IN :codes)"
+        params["codes"] = codes
+        binds.append(bindparam("codes", expanding=True))
+    stmt = text(
         "SELECT chain, store_id, name, price, comparison_value, comparison_unit, member_price, "
         f"valid_to, observed_at FROM offer_observations WHERE {where} "
-        "ORDER BY chain, observed_at, store_id",
-        params,
-    ).fetchall()
+        "ORDER BY chain, observed_at, store_id")
+    if binds:
+        stmt = stmt.bindparams(*binds)
+    rows = conn.execute(stmt, params).fetchall()
     conn.close()
     name = None
     by_chain = {}
@@ -144,11 +156,11 @@ def stores_with_offer(ean):
     inte hyllsortiment."""
     conn = get_conn()
     rows = conn.execute(
-        "SELECT o.chain, o.store_id, o.name, o.price, o.price_text, o.package, o.savings, "
-        "o.comparison_value, o.comparison_unit, o.valid_to, o.member_price FROM offer_eans oe "
-        "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
-        "WHERE oe.ean=?",
-        (ean,),
+        text("SELECT o.chain, o.store_id, o.name, o.price, o.price_text, o.package, o.savings, "
+             "o.comparison_value, o.comparison_unit, o.valid_to, o.member_price FROM offer_eans oe "
+             "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+             "WHERE oe.ean=:ean"),
+        {"ean": ean},
     ).fetchall()
     conn.close()
     best = {}
@@ -171,10 +183,10 @@ def on_offer_eans():
     Axfood redan resolvat) -> låter katalog-bläddringen filtrera 'bara erbjudanden' server-sida
     utan IN-vargräns."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT DISTINCT oe.ean FROM offer_eans oe "
         "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id"
-    ).fetchall()
+    )).fetchall()
     conn.close()
     return {r["ean"] for r in rows}
 
@@ -189,9 +201,11 @@ def eans_on_offer_at_stores(pairs):
     conn = get_conn()
     for i in range(0, len(pairs), 400):  # chunka (2 params per par -> < ~999)
         chunk = pairs[i:i + 400]
-        where = " OR ".join("(chain=? AND store_id=?)" for _ in chunk)
-        params = [x for pr in chunk for x in pr]
-        for r in conn.execute(f"SELECT DISTINCT ean FROM offer_eans WHERE {where}", params):
+        where = " OR ".join(f"(chain=:c{j} AND store_id=:s{j})" for j in range(len(chunk)))
+        params = {}
+        for j, (c, s) in enumerate(chunk):
+            params[f"c{j}"], params[f"s{j}"] = c, s
+        for r in conn.execute(text(f"SELECT DISTINCT ean FROM offer_eans WHERE {where}"), params):
             out.add(r["ean"])
     conn.close()
     return out
@@ -209,13 +223,12 @@ def offers_for_eans(eans):
     conn = get_conn()
     for i in range(0, len(eans), 900):  # chunka -> klarar hela kategorier (SQLite-vargräns ~999)
         chunk = eans[i:i + 900]
-        ph = ",".join("?" * len(chunk))
         for r in conn.execute(
-            f"SELECT oe.ean, o.chain, o.price, o.price_text, o.comparison_value, o.comparison_unit, "
-            f"o.valid_to, o.member_price FROM offer_eans oe "
-            f"JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
-            f"WHERE oe.ean IN ({ph})",
-            chunk,
+            text("SELECT oe.ean, o.chain, o.price, o.price_text, o.comparison_value, o.comparison_unit, "
+                 "o.valid_to, o.member_price FROM offer_eans oe "
+                 "JOIN offers o ON oe.chain=o.chain AND oe.store_id=o.store_id AND oe.offer_id=o.offer_id "
+                 "WHERE oe.ean IN :eans").bindparams(bindparam("eans", expanding=True)),
+            {"eans": chunk},
         ):
             slot = out.setdefault(r["ean"], {})
             cur = slot.get(r["chain"])
@@ -252,17 +265,22 @@ def replace_store_offers(chain, store_id, offers):
         if not eans and code_eans.get(oid):
             eans = _norm_eans([code_eans[oid]])
         for e in eans:
-            oe_rows.append((chain, str(store_id), oid, e))
+            oe_rows.append({"chain": chain, "store_id": str(store_id), "offer_id": oid, "ean": e})
     conn = get_conn()
     try:
-        conn.execute("DELETE FROM offers WHERE chain=? AND store_id=?", (chain, str(store_id)))
-        conn.execute("DELETE FROM offer_eans WHERE chain=? AND store_id=?", (chain, str(store_id)))
+        conn.execute(text("DELETE FROM offers WHERE chain=:chain AND store_id=:store"),
+                     {"chain": chain, "store": str(store_id)})
+        conn.execute(text("DELETE FROM offer_eans WHERE chain=:chain AND store_id=:store"),
+                     {"chain": chain, "store": str(store_id)})
         if rows:
             conn.executemany(
-                f"INSERT OR REPLACE INTO offers ({_OFFER_COLS}) VALUES ({_OFFER_PH})", rows
+                text(f"INSERT INTO offers ({_OFFER_COLS}) VALUES ({_OFFER_PH}) "
+                     f"ON CONFLICT (chain, store_id, offer_id) DO UPDATE SET {_OFFER_UPDATE}"), rows
             )
         if oe_rows:
-            conn.executemany("INSERT OR IGNORE INTO offer_eans VALUES (?,?,?,?)", oe_rows)
+            conn.executemany(
+                text("INSERT INTO offer_eans (chain, store_id, offer_id, ean) "
+                     "VALUES (:chain, :store_id, :offer_id, :ean) ON CONFLICT DO NOTHING"), oe_rows)
         conn.commit()
     finally:
         conn.close()
@@ -400,8 +418,8 @@ def _split_brand_origin(chain, brand):
 def get_store_offers(chain, store_id):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT * FROM offers WHERE chain=? AND store_id=? ORDER BY category_raw, name",
-        (chain, str(store_id)),
+        text("SELECT * FROM offers WHERE chain=:chain AND store_id=:store ORDER BY category_raw, name"),
+        {"chain": chain, "store": str(store_id)},
     ).fetchall()
     conn.close()
     out = []
@@ -458,11 +476,11 @@ def list_products(q=None, category=None, chain=None, limit=40):
     if q is not None and len(ql) < 2:
         return []
     conn = get_conn()
-    sql, params = "SELECT * FROM offers", []
+    sql, params = "SELECT * FROM offers", {}
     if chain:
-        sql += " WHERE chain=?"
-        params.append(chain)
-    rows = conn.execute(sql, params).fetchall()
+        sql += " WHERE chain=:chain"
+        params["chain"] = chain
+    rows = conn.execute(text(sql), params).fetchall()
     conn.close()
     hits = [dict(r) for r in rows if not ql or ql in (r["name"] or "").lower()]
     if not hits:
@@ -540,8 +558,8 @@ def offers_fetched_at(chain, store_id):
     """Senaste hämtningstidpunkt för en butiks erbjudanden, eller None."""
     conn = get_conn()
     row = conn.execute(
-        "SELECT MAX(fetched_at) AS t FROM offers WHERE chain=? AND store_id=?",
-        (chain, str(store_id)),
+        text("SELECT MAX(fetched_at) AS t FROM offers WHERE chain=:chain AND store_id=:store"),
+        {"chain": chain, "store": str(store_id)},
     ).fetchone()
     conn.close()
     return row["t"] if row else None
@@ -552,15 +570,16 @@ def ean_stats():
     json_each), Axfood code->EAN-cachen, product_info och product_images. Plus delsiffror för
     Axfood-resolve-cachen och hur många som har hämtad produktinfo."""
     conn = get_conn()
-    distinct = conn.execute(
+    distinct = conn.execute(text(
         "SELECT COUNT(*) FROM ("
-        "SELECT je.value AS ean FROM offers, json_each(offers.eans) je WHERE offers.eans NOT IN ('','[]') "
+        f"SELECT je.value AS ean FROM offers, {json_each_from('offers.eans')} "
+        "WHERE offers.eans NOT IN ('','[]') "
         "UNION SELECT ean FROM ean_cache WHERE ean!='' "
         "UNION SELECT ean FROM product_info WHERE ean IS NOT NULL "
-        "UNION SELECT ean FROM product_images WHERE ean IS NOT NULL)"
-    ).fetchone()[0]
-    axfood = conn.execute("SELECT COUNT(*) FROM ean_cache WHERE ean!=''").fetchone()[0]
-    with_info = conn.execute("SELECT COUNT(*) FROM product_info WHERE ean IS NOT NULL").fetchone()[0]
+        "UNION SELECT ean FROM product_images WHERE ean IS NOT NULL) sub"
+    )).fetchone()[0]
+    axfood = conn.execute(text("SELECT COUNT(*) FROM ean_cache WHERE ean!=''")).fetchone()[0]
+    with_info = conn.execute(text("SELECT COUNT(*) FROM product_info WHERE ean IS NOT NULL")).fetchone()[0]
     conn.close()
     return {"distinct": distinct, "axfood_cache": axfood, "with_info": with_info}
 
@@ -569,10 +588,10 @@ def offers_coverage():
     """Per kedja: antal butiker med cachade erbjudanden + totalt antal cachade erbjudanden.
     Visar hur komplett offers-cachen är per kedja (det bulk-sweepen fyller)."""
     conn = get_conn()
-    rows = conn.execute(
+    rows = conn.execute(text(
         "SELECT chain, COUNT(DISTINCT store_id) AS stores, COUNT(*) AS offers "
         "FROM offers GROUP BY chain"
-    ).fetchall()
+    )).fetchall()
     conn.close()
     return {r["chain"]: {"stores_with_offers": r["stores"], "offers": r["offers"]} for r in rows}
 
@@ -580,12 +599,11 @@ def offers_coverage():
 def offer_stores(chains):
     """Butiker (chain, store_id, link_offers, native) för givna kedjor - för bulk-sweep av
     erbjudanden. Returnerar en dict {chain: [rader]} så sweepen kan köra kedjor parallellt."""
-    qs = ",".join("?" for _ in chains)
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT chain, store_id, link_offers, native FROM stores WHERE chain IN ({qs}) "
-        "ORDER BY chain, store_id",
-        tuple(chains),
+        text("SELECT chain, store_id, link_offers, native FROM stores WHERE chain IN :chains "
+             "ORDER BY chain, store_id").bindparams(bindparam("chains", expanding=True)),
+        {"chains": list(chains)},
     ).fetchall()
     conn.close()
     out = {}
