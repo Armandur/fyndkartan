@@ -367,9 +367,21 @@ img.o-img { cursor: zoom-in; }
 .bk-cand.bk-best .bk-cand-tot { color: #137a4d; }
 .bk-miss { font-size: .68rem; font-weight: 700; background: #fde7e7; color: #b53a3a; padding: 1px 6px; border-radius: 10px; }
 .bk-nat { font-size: .64rem; font-weight: 700; background: #eef1f4; color: #5a6573; padding: 1px 6px; border-radius: 10px; cursor: help; }
-.bk-cand-stores { margin-top: .35rem; padding-top: .35rem; border-top: 1px dashed #e6e9ec; }
+.bk-cand-stores { margin-top: .35rem; padding-top: .35rem; border-top: 1px dashed #e6e9ec;
+  max-height: 240px; overflow-y: auto; }  /* långa kedje-butikslistor scrollar i kortet */
 .bk-cand-stores-h { font-size: .68rem; font-weight: 600; color: #8b95a4; margin-bottom: 2px; }
-.bk-store { font-size: .72rem; color: #46505c; padding: 1px 0; }
+.bk-store { font-size: .72rem; color: #46505c; padding: 2px 0; }
+.bk-jump { cursor: pointer; }
+.bk-store.bk-jump { display: flex; align-items: center; gap: .3rem; border-radius: 4px; padding: 2px 4px; }
+.bk-store.bk-jump:hover { background: #eef1f4; }
+.bk-jump-ic { margin-left: auto; opacity: .6; }
+.bk-mapbtn { margin-top: .4rem; background: none; border: 1px solid #d4dae0; color: #46505c;
+  font-size: .7rem; font-weight: 600; padding: 2px 9px; border-radius: 20px; cursor: pointer; }
+.bk-mapbtn:hover { background: #eef1f4; }
+/* Matkasse-panelens hanterings- och resultatvy fyller panelen + scrollar (många butiker i en stor zon) */
+#basketManage, #basketResults { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#basketManage #basketList { flex: 1; min-height: 0; }
+#basketResultsBody { flex: 1; min-height: 0; overflow-y: auto; }
 .bk-lines { padding: .2rem .6rem .5rem; border-top: 1px solid #eef1f4; }
 .bk-line { display: flex; justify-content: space-between; gap: .5rem; font-size: .74rem; color: #46505c; padding: 2px 0; }
 .bk-line-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

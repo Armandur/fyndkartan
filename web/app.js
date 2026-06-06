@@ -338,6 +338,16 @@ function fitToFavorites(keys) {
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
 }
 
+// Panorera kartan till en specifik butik (chain, store_id) + öppna dess popup.
+function focusStore(chain, storeId) {
+  const s = state.stores.find((x) => x.chain === chain && String(x.store_id) === String(storeId));
+  if (s && s.location) {
+    closeNav();
+    map.setView([s.location.lat, s.location.lng], 14);
+    if (s._marker) s._marker.openPopup();
+  }
+}
+
 // Zooma kartan så en lista butiker (med lat/lng) ryms i vyn (bbox).
 function fitStores(stores) {
   const pts = (stores || []).filter((s) => s.lat && s.lng).map((s) => [s.lat, s.lng]);
@@ -2051,16 +2061,20 @@ function renderBasketResults() {
       const via = l.used_name ? ` <span class="bk-via">via ${esc(l.used_name)}</span>` : "";  // private-label-substitut
       return `<div class="bk-line"><span class="bk-line-name">${esc(l.name || l.ean)}${via}</span><span>${pr}</span></div>`;
     }).join("");
-    // Nationell kedja: rada upp butikerna i zonen (samma pris) under prisuppställningen.
+    // Nationell kedja: rada upp butikerna i zonen (samma pris) under prisuppställningen, klickbara
+    // (-> hoppa till butiken på kartan).
     const storeList = (c.stores && c.stores.length)
       ? `<div class="bk-cand-stores"><div class="bk-cand-stores-h">${c.stores.length} butiker (samma pris):</div>`
-        + c.stores.map((s) => `<div class="bk-store">${esc(s.name || "")}${s.distance_km != null ? ` <span class="text-muted">${s.distance_km} km</span>` : ""}</div>`).join("")
+        + c.stores.map((s) => `<div class="bk-store bk-jump" data-chain="${esc(c.chain)}" data-store="${esc(s.store_id || "")}">${esc(s.name || "")}${s.distance_km != null ? ` <span class="text-muted">${s.distance_km} km</span>` : ""} <span class="bk-jump-ic">&#128205;</span></div>`).join("")
         + `</div>`
       : "";
+    // Enskild ICA/Coop-butik: knapp för att hoppa till den på kartan.
+    const jump = (c.store_id && !c.national)
+      ? `<button class="bk-mapbtn bk-jump" data-chain="${esc(c.chain)}" data-store="${esc(c.store_id)}">&#128205; Visa på kartan</button>` : "";
     return `<details class="bk-cand${best ? " bk-best" : ""}">
       <summary><span class="bk-cand-name">${esc(nm)}${dist}${share}${nat}${miss}${member}</span>
         <span class="bk-cand-tot">${kr(total)} kr</span></summary>
-      <div class="bk-lines">${lines}${storeList}</div></details>`;
+      <div class="bk-lines">${lines}${storeList}${jump}</div></details>`;
   }).join("");
   const unav = d.unavailable.length
     ? `<div class="bk-unav">Ingen butik i zonen har: ${d.unavailable.map((u) => esc(u.name || u.ean)).join(", ")}</div>` : "";
@@ -2104,6 +2118,10 @@ document.getElementById("basketModeShelf").addEventListener("click", () => {
 document.getElementById("basketCovFilter").addEventListener("change", (e) => {
   basketCov = e.target.value;  // alla / minst en vara / endast full täckning
   renderBasketResults();
+});
+document.getElementById("basketResultsBody").addEventListener("click", (e) => {
+  const j = e.target.closest(".bk-jump");  // hoppa till butiken på kartan (ICA/Coop-kort + nationella butiksrader)
+  if (j && j.dataset.store) focusStore(j.dataset.chain, j.dataset.store);
 });
 document.getElementById("basketList").addEventListener("click", (e) => {
   const inc = e.target.closest(".bk-inc"), dec = e.target.closest(".bk-dec"), rm = e.target.closest(".bk-rm");
