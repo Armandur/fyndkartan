@@ -5,11 +5,12 @@ behöver verklig data (stores_with_offer, offers_for_eans, price_history) hoppas
 saknar offers. Kör: `.venv/bin/python tests/test_logic.py`.
 """
 
-import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from sqlalchemy import text  # noqa: E402
 
 from api import database, matching  # noqa: E402
 from api.categories import category_from_name  # noqa: E402
@@ -85,18 +86,17 @@ def test_stores_with_offer_invariants():
     bara en rad per butik (billigaste)."""
     if not _has_offers():
         return 0
-    conn = sqlite3.connect(database.DB_PATH)
-    conn.row_factory = sqlite3.Row
-    eans = [r["ean"] for r in conn.execute(
-        "SELECT ean FROM offer_eans GROUP BY ean ORDER BY COUNT(*) DESC LIMIT 5")]
+    conn = database.get_conn()
+    eans = [r["ean"] for r in conn.execute(text(
+        "SELECT ean FROM offer_eans GROUP BY ean ORDER BY COUNT(*) DESC LIMIT 5"))]
     n = 0
     for ean in eans:
         res = database.stores_with_offer(ean)
         keys = [(s["chain"], s["store_id"]) for s in res]
         assert len(keys) == len(set(keys)), f"dubblett-butik för {ean}"
         for s in res[:10]:
-            row = conn.execute("SELECT 1 FROM stores WHERE chain=? AND store_id=?",
-                               (s["chain"], s["store_id"])).fetchone()
+            row = conn.execute(text("SELECT 1 FROM stores WHERE chain=:chain AND store_id=:store"),
+                               {"chain": s["chain"], "store": s["store_id"]}).fetchone()
             assert row, f"{s['chain']}:{s['store_id']} saknas i stores"
         n += 1
     conn.close()
@@ -107,11 +107,10 @@ def test_price_history_axfood():
     """Prishistorik ska komma åt Axfood-observationer via ean_cache-reverse (annars tomt)."""
     if not _has_offers():
         return 0
-    conn = sqlite3.connect(database.DB_PATH)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute(
+    conn = database.get_conn()
+    row = conn.execute(text(
         "SELECT e.ean FROM ean_cache e JOIN offer_observations o ON o.offer_id=e.code "
-        "AND o.chain IN ('willys','hemkop') WHERE e.ean LIKE '73%' GROUP BY e.ean LIMIT 1").fetchone()
+        "AND o.chain IN ('willys','hemkop') WHERE e.ean LIKE '73%' GROUP BY e.ean LIMIT 1")).fetchone()
     conn.close()
     if not row:
         return 0

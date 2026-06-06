@@ -1,0 +1,40 @@
+# Postgres-deploy (Fas B): app + Postgres-databas i stället för single-container/SQLite.
+# Avsteg från normalfallet (docker-compose.yml) - används när per-butik-pris-skalan
+# (~14M rader + zon-browse) motiverar Postgres. SQLite-deployen finns kvar i docker-compose.yml.
+#   docker compose -f docker-compose.pg.yml up -d   ->  http://<host>:8700
+# Migrera befintlig SQLite-data EN gång (se README/HANDOFF):
+#   DATABASE_URL=postgresql+psycopg://fyndkartan:<pw>@<host>:5432/fyndkartan \
+#     python -m api.migrate_to_pg
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: fyndkartan-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=fyndkartan
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-fyndkartan}
+      - POSTGRES_DB=fyndkartan
+    volumes:
+      - ${DATA_DIR:-./data}/pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fyndkartan"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: ghcr.io/armandur/fyndkartan:latest
+    container_name: fyndkartan
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8700:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://fyndkartan:${POSTGRES_PASSWORD:-fyndkartan}@db:5432/fyndkartan
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

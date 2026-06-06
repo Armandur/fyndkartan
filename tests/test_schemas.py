@@ -12,6 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from sqlalchemy import text  # noqa: E402
+
 from api import database, schemas  # noqa: E402
 
 
@@ -53,7 +55,8 @@ def test_store_matches_model():
     conn = database.get_conn()
     rows = []
     for ch in ("ica", "coop", "willys", "hemkop", "lidl"):
-        rows += conn.execute("SELECT * FROM stores WHERE chain=? LIMIT 40", (ch,)).fetchall()
+        rows += conn.execute(text("SELECT * FROM stores WHERE chain=:chain LIMIT 40"),
+                             {"chain": ch}).fetchall()
     conn.close()
     stores = [database.row_to_store(r) for r in rows]
     n = _validate_all(stores, schemas.Store)
@@ -97,10 +100,9 @@ def test_product_stores_matches_model():
     """stores_with_offer-svar ska validera mot ProductStoresResponse, för EAN:er som har
     erbjudanden i cachen. Tom om inga offers -> hoppas."""
     conn = database.get_conn()
-    eans = [r["ean"] for r in conn.execute(
-        "SELECT je.value AS ean FROM offers, json_each(offers.eans) je "
-        "WHERE offers.eans NOT IN ('','[]') GROUP BY je.value LIMIT 5"
-    ).fetchall()]
+    eans = [r["ean"] for r in conn.execute(text(
+        "SELECT ean FROM offer_eans GROUP BY ean LIMIT 5"
+    )).fetchall()]
     conn.close()
     if not eans:
         return 0
