@@ -887,6 +887,20 @@ Mycket större än offers-sweepen (tusentals paginerade anrop/kedja). Därför:
 - `last_seen` < senaste fullständiga crawl-runda -> sätt `available=0` (utgången vara behålls för historik).
 - INGEN crawl vid uppstart (skonar kedjorna); trigga via konsol-knapp + schema, som sweepen.
 
+### Konsol-UI: får ALDRIG blockera renderingen (TODO 2026-06-06)
+Inget i API-konsolen (`/admin`) ska göra att hela UI:t hänger sig (webbläsaren fast i "loading").
+UI-skalet + flikarna ska visas direkt; tunga datahämtningar laddas lazy/asynkront och blockerar inte.
+- **Konkret observerat:** Sortiment-fliken tog väldigt lång tid att öppna - gissningsvis för att den
+  hämtar HELA butikslistan för Coop+ICA (`store_crawl` ~2000 rader + `store_crawl_stats`) i förväg.
+- **Princip:** rendera fliken direkt; hämta varje tungt block i eget async-anrop med egen spinner, så
+  att en långsam del inte håller resten gisslan. En hämtning som tar tid ska ändå låta UI:t visas.
+- **Specifikt:** butiks-urvalstabellen (vilka butiker som ska crawlas) behöver INTE laddas förrän
+  användaren faktiskt vill ändra urvalet - lägg den bakom en "Hantera butiksurval"-knapp/utfällning
+  (lazy fetch vid öppning, ev. paginerad/sökstyrd i st.f. allt på en gång). Översikts-stat:en (antal
+  frågbara/valda/crawlade per kedja) kan visas direkt; den fulla raderbara listan on-demand.
+- Gäller generellt: gå igenom konsol-flikarnas initial-laddning och flytta allt som inte behövs för
+  första vyn till lazy/på-begäran.
+
 ### Crawl-prestanda - hävstänger att undersöka framöver (TODO, mätt 2026-06-05)
 Tidsprofil uppmätt efter sidstorleks-höjningen (per butik, produktions-pace 0.35s/sida): **~2/3 nätverk
 (HTTP-rundtur + JSON-parse), ~1/3 pace**. ICA stor (44k) ~179 req ~180s; ICA liten (<20k) ~14-20 req ~15-20s;
