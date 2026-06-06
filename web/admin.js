@@ -1199,19 +1199,22 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
             <h6 class="mb-0">Butiksurval för per-butik-priser (Steg 6)</h6>
             <span id="storeSelStats" class="small text-muted"></span>
+            <button id="storeSelToggle" class="btn btn-sm btn-outline-dark ms-auto">Hantera butiksurval</button>
           </div>
           <div class="text-muted small mb-2">Välj vilka butiker per-butik-pris-crawlern ska ta (<em>enabled</em>). Markera flera + bulk, eller "Aktivera alla frågbara". Bara frågbara butiker kan väljas. (Coop saknar produktantal - kräver department-crawl.)</div>
-          <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-            <select id="ssChain" class="form-select form-select-sm" style="width:auto"><option value="">Alla kedjor</option><option value="coop">Coop</option><option value="ica">ICA</option></select>
-            <select id="ssQueryable" class="form-select form-select-sm" style="width:auto"><option value="">Frågbar: alla</option><option value="1">Frågbara</option><option value="0">Ej frågbara</option></select>
-            <select id="ssEnabled" class="form-select form-select-sm" style="width:auto"><option value="">Vald: alla</option><option value="1">Valda</option><option value="0">Ej valda</option></select>
-            <input id="ssSearch" class="form-control form-control-sm" style="width:170px" placeholder="Sök namn/ort…">
-            <span class="ms-auto"></span>
-            <button id="ssEnableAllQ" class="btn btn-sm btn-dark">Aktivera alla frågbara</button>
-            <button id="ssDisableAll" class="btn btn-sm btn-outline-danger">Inaktivera alla</button>
+          <div id="storeSelBody" class="d-none">
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+              <select id="ssChain" class="form-select form-select-sm" style="width:auto"><option value="">Alla kedjor</option><option value="coop">Coop</option><option value="ica">ICA</option></select>
+              <select id="ssQueryable" class="form-select form-select-sm" style="width:auto"><option value="">Frågbar: alla</option><option value="1">Frågbara</option><option value="0">Ej frågbara</option></select>
+              <select id="ssEnabled" class="form-select form-select-sm" style="width:auto"><option value="">Vald: alla</option><option value="1">Valda</option><option value="0">Ej valda</option></select>
+              <input id="ssSearch" class="form-control form-control-sm" style="width:170px" placeholder="Sök namn/ort…">
+              <span class="ms-auto"></span>
+              <button id="ssEnableAllQ" class="btn btn-sm btn-dark">Aktivera alla frågbara</button>
+              <button id="ssDisableAll" class="btn btn-sm btn-outline-danger">Inaktivera alla</button>
+            </div>
+            <div id="storeSelTable" style="max-height:460px;overflow-y:auto"></div>
+            <div id="storeSelPager" class="small text-muted mt-2 d-flex align-items-center gap-2"></div>
           </div>
-          <div id="storeSelTable" style="max-height:460px;overflow-y:auto"><div class="text-muted small">Laddar…</div></div>
-          <div id="storeSelPager" class="small text-muted mt-2 d-flex align-items-center gap-2"></div>
         </div>
         <div class="card p-3 mb-3">
           <div class="d-flex align-items-center mb-1">
@@ -1312,10 +1315,17 @@
         const b = e.target.closest("[data-off]");
         if (b) loadStoreSelect(Number(b.dataset.off));
       });
-      loadStoreSelect(0);
+      // Lazy: butikslistan (~2000 rader) laddas först när användaren fäller ut urvalet - inte vid
+      // flik-öppning. Sammanfattningen (valda/frågbara) fylls ändå direkt ur measure-stats i loadCatalog.
+      document.getElementById("storeSelToggle").addEventListener("click", () => {
+        const body = document.getElementById("storeSelBody");
+        const open = !body.classList.toggle("d-none");
+        document.getElementById("storeSelToggle").textContent = open ? "Dölj butiksurval" : "Hantera butiksurval";
+        if (open && !ssLoaded) { ssLoaded = true; loadStoreSelect(0); }
+      });
     }
     let pcTimer = null;
-    let ssOffset = 0;
+    let ssOffset = 0, ssLoaded = false;
     const SS_PAGE = 200;
 
     async function loadStoreSelect(offset) {
@@ -1483,13 +1493,15 @@
     }
 
     async function loadCatalog() {
-      const d = await (await api("/v1/admin/catalog/crawl/status")).json();
-      const ms = await (await api("/v1/admin/store-prices/measure/status")).json();
-      const spc = await (await api("/v1/admin/store-prices/crawl/status")).json();
+      ensureCatalogSkeleton();  // rendera flikens layout DIREKT (status-anropen blockerar inte UI:t)
+      const [d, ms, spc] = await Promise.all([  // oberoende status-anrop -> parallellt, inte sekventiellt
+        api("/v1/admin/catalog/crawl/status").then(r => r.json()),
+        api("/v1/admin/store-prices/measure/status").then(r => r.json()),
+        api("/v1/admin/store-prices/crawl/status").then(r => r.json()),
+      ]);
       const _spcCh = spc.chains || {};
       const spcRun = !!(_spcCh.ica && _spcCh.ica.running) || !!(_spcCh.coop && _spcCh.coop.running);
       const spcStart = (_spcCh.ica && _spcCh.ica.started_at) || (_spcCh.coop && _spcCh.coop.started_at) || "";
-      ensureCatalogSkeleton();
       // Feeden delas av crawl, EAN-resolvning OCH partial-uppgradering. Ny körning -> nollställ.
       const warm = d.ean_warm || {};
       const pu = d.partial_upgrade || {};
@@ -1523,6 +1535,13 @@
       renderPartialUpgrade(pu, d.running || warm.running);
       renderStoreMeasure(ms, d.running || warm.running || pu.running);
       renderStorePriceCrawl(spc, ms.stats, d.running || warm.running || pu.running || ms.running);
+      // Butiksurval-sammanfattning (valda/frågbara) visas även när listan är kollapsad - cheap ur measure-stats.
+      // När listan väl laddats håller renderStoreSelect den aktuell i st.f.
+      const ssStatsEl = document.getElementById("storeSelStats");
+      if (ssStatsEl && !ssLoaded) ssStatsEl.innerHTML = ["coop", "ica"].map(c => {
+        const s = (ms.stats || {})[c] || {};
+        return `${chip(c)} <strong>${(s.enabled || 0).toLocaleString("sv-SE")}</strong> valda / ${(s.queryable || 0).toLocaleString("sv-SE")} frågbara`;
+      }).join(" &nbsp;&middot;&nbsp; ");
       // Live-uppdatera prisändrings-loggen under crawl - bara i "Senaste"-läge, ej medan man söker/skrollat.
       const pcEl = document.getElementById("priceChanges");
       const pcSortVal = document.getElementById("pcSort")?.value || "recent";
@@ -1865,6 +1884,11 @@
       clearTimeout(sweepTimer);
       clearTimeout(catalogTimer);
       if (tab !== "catalog") stopFeedPump();
+      // Visa direkt feedback i en ännu-tom flik så en långsam laddare aldrig ger en blank/"fastnad"
+      // skärm. Bara vid första besöket (tom sektion) -> ingen flimrande respinn vid återbesök/poll.
+      const sec = document.getElementById(tab);
+      if (sec && sec.children.length === 0)
+        sec.innerHTML = '<div class="text-muted p-3"><span class="spinner-border spinner-border-sm me-2"></span>Laddar…</div>';
       LOADERS[tab]().catch(() => {});
       if (tab === "calls") callsTimer = setInterval(refreshCalls, 5000);
     }
