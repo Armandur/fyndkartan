@@ -1171,6 +1171,41 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
   dialekt-konstruktioner men de skrivs avsiktligt. Stor men avgränsad refaktor; gör den FÖRE Postgres-bytet
   (annars är bytet en omskrivning, inte ett dialekt-byte). Migrationer fortsatt utan Alembic tills dess.
 
+### SQLAlchemy Core -> Postgres-refaktor (actionable plan)
+Mål: gör `api/database/` DB-oberoende (SQLAlchemy Core) och flytta till Postgres. Behåll den publika
+`database.X`-funktions-API:n EXAKT (callers i routes/services rörs inte) - bara implementationen byts.
+
+**Fas A - SQLAlchemy Core på SQLite (beteende-bevarande, ingen Postgres än):**
+1. Lägg `sqlalchemy` i `pyproject.toml`. Skapa en Engine i `api/database/_conn.py` (URL ur env
+   `DATABASE_URL`, default `sqlite:///stores.db`). Behåll `get_conn()`-signaturen men låt den ge en
+   SQLAlchemy-Connection (eller en tunn wrapper med samma `.execute(...).fetchall()/.fetchone()`/`row["x"]`
+   -> använd `Row._mapping`). PRAGMA (WAL/busy_timeout) sätts via en `connect`-event-listener (bara sqlite).
+2. Definiera tabellerna som `Table`-objekt (Core MetaData) i ETT ställe (`schema.py`) i st.f. CREATE-TEXT.
+   `init_db()` -> `metadata.create_all()`. ALTER-guards ersätts av Core-reflektion / create_all (idempotent).
+3. Konvertera modul för modul (ean, products, stores, offers, catalog, store_prices, crawl_runs...): byt
+   rå SQL-strängar mot Core-uttryck (`select()/insert()/update()`). Kör `tests/test_schemas.py` + import-test
+   efter varje modul (de fångar drift). De TUNGA/dialekt-specifika punkterna att hantera medvetet:
+   - **JSON-kolumner** (`tags/raw/hours/native` i stores, `eans` i offers, `error_summary` i crawl_runs):
+     idag JSON-i-TEXT + `json.loads/dumps` i Python + `json_each/json_extract` i SQL (t.ex. `ean_stats`
+     UNION över `json_each(offers.eans)`, favoriter). SQLAlchemy `JSON`-typ funkar på båda; men
+     `json_each`-frågorna måste skrivas om dialekt-medvetet (PG: `jsonb_array_elements_text`).
+   - **Upsert:** `INSERT OR REPLACE/IGNORE` + `ON CONFLICT DO UPDATE` (catalog_upsert, upsert_store_prices,
+     store_price_volume, category_map-seed) -> `sqlite.insert().on_conflict_do_*` vs `postgresql.insert()...`
+     (dialekt-grenat, eller en liten helper som väljer rätt).
+   - `lastrowid` -> Core `result.inserted_primary_key`. `AUTOINCREMENT` -> `Integer primary_key`.
+   - `LOWER()` (ASCII-only i sqlite) - `list_products` gör redan skiftläge i Python; behåll.
+4. apilog-anslutningen (egen `_conn` autocommit) + ev. andra direkt-sqlite3-användningar (sök globalt efter
+   `sqlite3.connect`/`get_conn(` i hela `api/`) tas med.
+**Fas B - Postgres:**
+5. `docker-compose`: lägg en `postgres`-service (avsteg från single-container -> app + db). `DATABASE_URL`
+   pekar dit. `psycopg`-driver.
+6. Data: regenererbart (crawl/sync) -> enklast TÖM och re-crawla i Postgres i st.f. att migrera rader.
+   Alternativt en engångs-dump/load om historiken ska bevaras.
+7. Index: lägg det täckande `(chain, store, product_id, price)` för zon-browse - PG väljer det via
+   bitmap-scan på IN-listan UTAN `INDEXED BY`-hint (det var SQLite-bräckligheten).
+8. Verifiera: `tests/test_schemas.py` mot Postgres + manuell rök-test av tunga vägar (crawl, browse, zon).
+**Fas C:** bygg zon-browse-endpoint + geo-first-UI ovanpå (se "Kart-appen / UI-OMTAG").
+
 ### Faser (resumerbart)
 1. ✅ **Datamodell + mät-sweep KLAR** (2026-06-05): `catalog_store_prices` + `store` i observationer +
    `store_crawl` (queryable/enabled/priority/product_count + denormaliserat namn/ort). `store_measure.py`
