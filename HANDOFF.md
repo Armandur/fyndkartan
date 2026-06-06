@@ -8,9 +8,10 @@ Senast uppdaterad: 2026-06-06.
 ## Var vi är nu
 
 Steg 6 (per-butik-pris för ICA/Coop, "var är varan/matkassen billigast nära mig / hos mina favoriter")
-är **insamling + konsument-läsväg BYGGD**. **Databas-omtaget (SQLite -> Postgres) är KLART + validerat**
-(SQLAlchemy Core Fas A+B, se "Nästa steg" 1-2) - kvar är CUTOVER (driftbeslut) och sedan **UI-omtaget**
-(zon-browse + geo-first kart-app, "Nästa steg" 3).
+är **insamling + konsument-läsväg + GEO-FIRST UI BYGGT**. **Databas-omtaget (SQLite -> Postgres) KLART +
+cutover gjord** (dev kör mot PG). **Zon-browse (Fas C) BYGGT** (2026-06-06): `GET /v1/products/catalog/zone`
+(`api/database/zone.py`) + kart-nål/radie-väljare i sidopanelen + bläddra-vyn i zon-läge + grupperad jämför-
+vy med multibuy-styckpris-normalisering. Nästa: matkasse-jämförelse, prisvärmekarta, perf-städ (se nedan).
 
 Beslut som styr allt (bekräftat med Rasmus): **vi spårar pris i ALLA frågbara ICA/Coop-butiker** (ICA
 100%, Coop ~43% - resten ej e-handelsindexerade). Det gamla "per butik = ogenomförbart"-antagandet är
