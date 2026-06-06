@@ -79,11 +79,21 @@ def _norm_unit(u):
     return _UNIT_CANON.get(first, first or None)
 
 
+def _eff_price(o):
+    """Jämförbart RÅpris per butik: styckpris för multibuy (price/qty) så 'ICA 3 för 100' (100)
+    inte jämförs mot en enstaka vara. Single-pris oförändrat."""
+    p = o.get("price")
+    q = o.get("multibuy_qty") or 1
+    if p is None:
+        return None
+    return p / q if q > 1 else p
+
+
 def _metric(o):
-    """Sorterings-/dedupvärde per butik: enhetspris om det finns, annars råpris."""
+    """Sorterings-/dedupvärde per butik: enhetspris om det finns, annars styckpris-normaliserat råpris."""
     v = o.get("comparison_value")
     if v is None:
-        v = o.get("price")
+        v = _eff_price(o)
     return v if v is not None else float("inf")
 
 
@@ -128,13 +138,15 @@ def build_comparisons(entries, min_chains=2, manual_groups=None, min_stores=1):
         if len(uvals) == len(stores) and len(units) == 1 and None not in units:
             compare_by, unit, vals = "unit_price", units.pop(), uvals
         else:
+            # Råpris-fallback: jämför STYCKPRIS (multibuy normaliserat) så '3 för 100' (100) inte
+            # ställs mot en enstaka vara -> rättvisande spridning/besparing.
             compare_by, unit = "price", "kr"
-            vals = [o["price"] for o in stores if o.get("price") is not None]
+            vals = [_eff_price(o) for o in stores if o.get("price") is not None]
         if len(vals) < 2:
             continue
 
-        key = "comparison_value" if compare_by == "unit_price" else "price"
-        stores.sort(key=lambda o: (o.get(key) is None, o.get(key) or 0, o.get("distance_km") or 0))
+        metric = (lambda o: o.get("comparison_value")) if compare_by == "unit_price" else _eff_price
+        stores.sort(key=lambda o: (metric(o) is None, metric(o) or 0, o.get("distance_km") or 0))
         named = next((o for o in stores if o.get("name")), stores[0])
         out.append(
             {
@@ -154,7 +166,8 @@ def build_comparisons(entries, min_chains=2, manual_groups=None, min_stores=1):
                 "min": round(min(vals), 2),
                 "max": round(max(vals), 2),
                 "spread": round(max(vals) - min(vals), 2),
-                "offers": [{k: o.get(k) for k in _OFFER_KEYS} for o in stores],
+                "offers": [{**{k: o.get(k) for k in _OFFER_KEYS},
+                            "price_per_item": _r(_eff_price(o))} for o in stores],
             }
         )
 
