@@ -111,7 +111,9 @@ def _zone_aggregate(pairs):
     ).bindparams(bindparam("ica", expanding=True), bindparam("coop", expanding=True))
     rows = conn.execute(sql, {"ica": ica or [""], "coop": coop or [""]}).fetchall()
     conn.close()
-    return {(r["chain"], r["product_id"]): (r["pmin"], r["pmax"], r["ns"]) for r in rows}
+    # Positionell läsning (chain, product_id, pmin, pmax, ns) - undviker _Row._mapping-overhead
+    # över ~60k rader (hett: bygger hela zon-aggregatet).
+    return {(r[0], r[1]): (r[2], r[3], r[4]) for r in rows}
 
 
 def catalog_zone_browse(lat, lng, radius_km=10.0, q=None, category=None, manufacturer=None,
@@ -132,10 +134,8 @@ def catalog_zone_browse(lat, lng, radius_km=10.0, q=None, category=None, manufac
     if diet in ("vegan", "vegetarian"):
         dmap = get_product_diets()
         okdiet = {"vegan"} if diet == "vegan" else {"vegan", "vegetarian"}
-    out, cats = [], {}
-    for g in _browse_groups().values():
-        # Pris-i-zonen FÖRST (billiga dict-lookups) -> hoppa varor utanför zonen innan de dyra
-        # kategori-/tillverkar-härledningarna. ICA/Coop zon-aggregat; nationellt vid zon-närvaro.
+    def _zone_prices(g):
+        """Full per-kedje-prislista (display) för en grupp - byggs bara för sidans varor (dyrt)."""
         prices = []
         for m in g:
             ch = m["chain"]
@@ -151,40 +151,64 @@ def catalog_zone_browse(lat, lng, radius_km=10.0, q=None, category=None, manufac
                                "price_stores": None, "comparison_value": m["comparison_value"],
                                "comparison_unit": m["comparison_unit"], "comparison_derived": False,
                                "store": None})
-        if not prices:
+        return sorted(prices, key=lambda p: p["price"])
+
+    out, cats = [], {}
+    for g in _browse_groups().values():
+        # LÄTT scan: bara pris-min/max + kedjor (inga dict-allokeringar/sort) -> hoppa varor utanför
+        # zonen tidigt. Fulla price-dicts + display-fält byggs bara för den paginerade SIDAN.
+        pmin = pmax = None
+        chains = set()
+        for m in g:
+            ch = m["chain"]
+            if ch in _PER_STORE:
+                a = agg.get((ch, m["product_id"]))
+                if a and a[0] is not None:
+                    lo, hi = a[0], (a[1] if a[1] is not None else a[0])
+                    chains.add(ch)
+                    if pmin is None or lo < pmin:
+                        pmin = lo
+                    if pmax is None or hi > pmax:
+                        pmax = hi
+            elif ch in national and m["price"] is not None:
+                p = m["price"]
+                chains.add(ch)
+                if pmin is None or p < pmin:
+                    pmin = p
+                if pmax is None or p > pmax:
+                    pmax = p
+        if not chains:
             continue  # varan finns inte i zonen
         rep = next((m for m in g if m.get("name")), g[0])
         if ql and ql not in (rep["name"] or "").lower() and not any(ql in (m["name"] or "").lower() for m in g):
             continue  # grupp-vis: någon kedjas namn matchar (olika ordordning ICA/Coop)
-        brand = _cat_pick(g, "brand")
-        if mkey and manufacturers.manufacturer_key(brand) != mkey:
-            continue
+        if mkey and manufacturers.manufacturer_key(_cat_pick(g, "brand")) != mkey:
+            continue  # brand bara när tillverkar-filter är aktivt
         cat = _cat_canonical(g)
         if dmap is not None and (dmap.get(rep["ean"]) not in okdiet or cat in _NONFOOD_DIET):
             continue
         cats[cat] = cats.get(cat, 0) + 1  # kategori-räknare över HELA zonen (före category-filtret)
         if category and cat != category:
             continue
-        pv = [p["price"] for p in prices]
-        pvmax = [p["price_max"] if p.get("price_max") is not None else p["price"] for p in prices]
-        out.append({
-            "ean": rep["ean"], "name": rep["name"], "brand": brand, "manufacturer": None,  # canonical sätts på sidan
-            "origin": _parse_origin(_cat_pick(g, "origin")),
-            "image": _cat_pick(g, "image"), "category": cat,
-            "package_size": _cat_pick(g, "package_size"), "package_value": rep["package_value"],
-            "package_unit": rep["package_unit"],
-            "chains": sorted({p["chain"] for p in prices}),
-            "prices": sorted(prices, key=lambda p: p["price"]),
-            "price_min": min(pv) if pv else None, "price_max": max(pvmax) if pvmax else None,
-            "_ax": [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")],
-        })
+        out.append({"ean": rep["ean"], "name": rep["name"], "category": cat,
+                    "chains": sorted(chains), "price_min": pmin, "price_max": pmax, "_g": g, "_rep": rep})
     out.sort(key=_BROWSE_SORTS.get(sort) or (lambda p: (
         -len(p["chains"]), p["price_min"] if p["price_min"] is not None else 9e9, (p["name"] or "").lower())))
     total = len(out)
     page = out[offset:offset + limit]
-    for p in page:  # normaliserad tillverkare bara på sidan (dyrt -> skjut upp från huvudloopen)
-        p["manufacturer"] = manufacturers.canonical(p["brand"])
-    _normalize_catalog_page(page)  # derive-at-read: bara sidan (förpackning/jämförenhet/ursprung)
+    for p in page:  # fulla priser + display-fält bara för sidan (derive-at-read)
+        g, rep = p.pop("_g"), p.pop("_rep")
+        brand = _cat_pick(g, "brand")
+        p["prices"] = _zone_prices(g)
+        p["brand"] = brand
+        p["manufacturer"] = manufacturers.canonical(brand)
+        p["origin"] = _parse_origin(_cat_pick(g, "origin"))
+        p["image"] = _cat_pick(g, "image")
+        p["package_size"] = _cat_pick(g, "package_size")
+        p["package_value"] = rep["package_value"]
+        p["package_unit"] = rep["package_unit"]
+        p["_ax"] = [m["product_id"] for m in g if m["chain"] in ("willys", "hemkop") and m.get("product_id")]
+    _normalize_catalog_page(page)  # förpackning/jämförenhet/ursprung (Axfood-backfill) - bara sidan
     return page, total, dict(sorted(cats.items(), key=lambda kv: -kv[1])), _zone_meta(z, lat, lng, radius_km)
 
 
