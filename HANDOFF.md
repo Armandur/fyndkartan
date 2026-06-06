@@ -82,11 +82,18 @@ med + ingen kall period. JSON-kolumner: behåll som TEXT (ingen jsonb-migrering 
 
 ## Drift / så kör man
 
+- **DEV KÖR MOT POSTGRES sedan 2026-06-06** (cutover gjord). `DATABASE_URL` i repo-rotens `.env`
+  (`postgresql+psycopg://fyndkartan:fyndkartan@localhost:5433/fyndkartan`) -> servern + alla
+  `.venv/bin/python`-anrop läser den via `config.load_dotenv`. PG-container: `matbutiker-pg-dev`
+  (durabel, volym `matbutiker_pgdev`, port 5433). Crawl/sync/sweep skriver nu till PG.
+  **`stores.db` (SQLite) är frusen pre-cutover-snapshot** - uppdateras inte längre; behåll som backup.
+  Vill man tillfälligt köra mot SQLite igen: kommentera bort DATABASE_URL i `.env`.
 - Dev-server (Claude äger start/stopp i detta projekt): från repo-roten
   `​.venv/bin/python -m uvicorn api.main:app --host 0.0.0.0 --port 8700 > dev.log 2>&1` (bakgrund). Reset =
   döda (`ps aux | grep api.main`) + starta om. Ingen `--reload` -> starta om efter kodändring.
+  Bekräfta vilken DB: `.venv/bin/python -c "import api.database as db; print(db.dialect_name())"`.
 - Verifiera efter ändring: `.venv/bin/python -c "from api.main import app; print('OK')"` +
-  `.venv/bin/python tests/test_schemas.py`.
+  `.venv/bin/python tests/test_schemas.py` (kör nu mot PG via .env).
 - Konsol: `/admin` (admin-auth, creds i `.env`). Kart-app: `/` (app-användar-auth, inloggnings-vägg).
 
 ## KÄND HARNESS-BUGG (inte i koden)
