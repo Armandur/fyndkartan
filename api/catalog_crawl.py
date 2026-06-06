@@ -248,11 +248,14 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
         done_q.add(qs)
         offset = 0
         while True:
-            r = await client.post(_ICA_URL, json={
-                "queryString": qs, "take": size, "offset": offset, "accountNumber": acct,
-                "searchDomain": "All", "sessionId": "catalog-crawl"},
-                headers={"User-Agent": _UA, "Authorization": f"Bearer {token}",
-                         "Content-Type": "application/json"}, timeout=30)
+            body = {"queryString": qs, "take": size, "offset": offset, "accountNumber": acct,
+                    "searchDomain": "All", "sessionId": "catalog-crawl"}
+            def _hdrs():
+                return {"User-Agent": _UA, "Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            r = await client.post(_ICA_URL, json=body, headers=_hdrs(), timeout=30)
+            if r.status_code == 401:  # token gick ut mitt i crawlen (stora butiker > token-livslängd) -> förnya + gör om
+                token = await ica_token.get_token(client, force=True)
+                r = await client.post(_ICA_URL, json=body, headers=_hdrs(), timeout=30)
             r.raise_for_status()
             prods = r.json().get("products") or {}
             docs = prods.get("documents") or []
