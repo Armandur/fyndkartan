@@ -148,7 +148,10 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         while (queue or tasks) and not ctl["abort"]:
             cooling = time.monotonic() < ctl["cooldown_until"]
             cs["cooldown"] = cooling
-            while queue and cs["active"] < cs["target"] and not cooling and not ctl["abort"]:
+            # Gate på ANTAL schemalagda tasks (len(tasks)), INTE cs["active"]: active ökas inuti _run_one
+            # som ännu inte körts efter create_task, så den står kvar tills loopen yield:ar -> annars startas
+            # HELA kön på en gång (-> pool-utmattning/PoolTimeout på allt vid full skala).
+            while queue and len(tasks) < cs["target"] and not cooling and not ctl["abort"]:
                 tasks.add(asyncio.create_task(_run_one(queue.pop(0))))
             if not tasks:
                 await asyncio.sleep(0.5)  # i cooldown utan aktiva -> vänta ut den
