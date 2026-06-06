@@ -8,7 +8,9 @@ Senast uppdaterad: 2026-06-06.
 ## Var vi är nu
 
 Steg 6 (per-butik-pris för ICA/Coop, "var är varan/matkassen billigast nära mig / hos mina favoriter")
-är **insamling + konsument-läsväg BYGGD**; nästa stora sak är ett **databas-/UI-omtag**.
+är **insamling + konsument-läsväg BYGGD**. **Databas-omtaget (SQLite -> Postgres) är KLART + validerat**
+(SQLAlchemy Core Fas A+B, se "Nästa steg" 1-2) - kvar är CUTOVER (driftbeslut) och sedan **UI-omtaget**
+(zon-browse + geo-first kart-app, "Nästa steg" 3).
 
 Beslut som styr allt (bekräftat med Rasmus): **vi spårar pris i ALLA frågbara ICA/Coop-butiker** (ICA
 100%, Coop ~43% - resten ej e-handelsindexerade). Det gamla "per butik = ogenomförbart"-antagandet är
@@ -55,12 +57,21 @@ browse är den analytiska/samtidiga-last-frågan där Postgres tjänar in sig. D
    SQLite-only. **OBS PG-fara dokumenterad i ROADMAP:** `json_each_from`/`ean_stats` + schema.py offer_eans-
    backfill kraschar på `eans=''` i PG (WHERE skyddar ej casten) - fixa när PG är uppe. Detaljer + de exakta
    kvarvarande punkterna: ROADMAP "SQLAlchemy Core -> Postgres-refaktor" (STATUS-blocket).
-2. **Postgres** (compose-service + `DATABASE_URL` + `psycopg`): konvertera schema.py + apilog.py, fixa
-   json_each-PG-faran, re-crawla data (eller engångs-dump/load - historik-tabellerna ~6,5M rader är EJ
-   återskapbara, se nedan), lägg det täckande indexet `(chain, store, product_id, price)`.
+2. ✅ **Postgres Fas B (2026-06-06): KLAR + VALIDERAD (ej cutover än).** `tables.py` (Table-objekt +
+   `create_all`, Float/Integer-typval, täckande `idx_csp_cover`), schema.py omskriven (`create_schema`/
+   `seed`/`init_db`, ALTER-guards borttagna), apilog -> engine, json_each-PG-faran fixad, `lastrowid` ->
+   `RETURNING id` (psycopg saknar lastrowid), PG QueuePool. `api/migrate_to_pg.py` = engångs bulk-kopia +
+   setval + ANALYZE. **Verifierat:** migrerade 13,8M rader till PG (~15 min), `test_schemas` grönt mot PG,
+   json-tunga/LAG/ON CONFLICT/expanding-IN + en-butiks-crawl körda skarpt, uvicorn-lifespan bootar rent mot
+   populerad PG, och **zon-browse-aggregatet använder `idx_csp_cover` UTAN hint (~1,3s mot SQLites 21s-footgun)
+   - migreringens vinst bekräftad**. Default (ingen `DATABASE_URL`) = SQLite, oförändrat. Deploy:
+   `docker-compose.pg.yml` + DOCKER.md "Postgres-deploy".
+   - **KVAR: CUTOVER-beslut (ditt).** Att flippa drift till PG: kör `migrate_to_pg` mot tom PG, sätt
+     `DATABASE_URL` på api-containern. En test-PG kör i docker-containern `matbutiker-pg` (port 5433) med
+     migrerad data + 2 test-crawlade butiker - kasta den och migrera färskt vid riktig cutover.
 3. **Zon-browse + geo-first UI** (ROADMAP "Kart-appen / UI-OMTAG"): kart-pil + radie-cirkel + "Bläddra
    zonens sortiment". Semantik bekräftad: union (varor i MINST EN zon-butik), per vara billigast-i-zonen +
-   intervall + antal butiker, sorterbart.
+   intervall + antal butiker, sorterbart. Bygg zon-aggregat-frågan ovanpå `idx_csp_cover`.
 
 ### Datamigrering SQLite -> Postgres (en gång, Fas B)
 Datan delar sig: **färska snapshots** (catalog_store_prices ~6M, catalog_products, offers, stores, ean_cache,

@@ -1175,26 +1175,25 @@ partial-/EAN-warm-korten (status + manuell trigger). Ej-frågbara visas men kan 
 Mål: gör `api/database/` DB-oberoende (SQLAlchemy Core) och flytta till Postgres. Behåll den publika
 `database.X`-funktions-API:n EXAKT (callers i routes/services rörs inte) - bara implementationen byts.
 
-**STATUS (2026-06-06): Fas A i princip KLAR.** Bryggan + alla query-moduler + routes/services är
-konverterade till `text()` + namngivna params (dialekt-portabelt). Avsteg från "Core-uttryck" i planen
-nedan: default-mål blev `text()`+named-params (lägre drift-risk på fungerande analytisk SQL); Core/
-dialekt-grenat reserverat för det icke-portabla (upserts -> `ON CONFLICT`, JSON-funktioner -> helpers i
-`_conn.py`, dynamisk IN -> `bindparam(expanding=True)`). Verifierat per modul: statisk grind (0 kvar-
-varande `?`/`INSERT OR`/`json_each`) + funktionstest + `tests/test_schemas.py` + live auth-test av routes
-+ EN riktig en-butiks ICA-crawl (~15k rader upsertade skarpt). **KVAR till Fas B (kräver Postgres att
-testa mot):**
-- **`schema.py`** (init_db DDL): `PRAGMA journal_mode=WAL`, `AUTOINCREMENT`, `PRAGMA table_info`-baserade
-  ALTER-guards, `json_each`-engångsbackfill -> kräver `Table`-objekt + `metadata.create_all()` + dialekt-
-  DDL. Detta är "biten som gör init_db portabel" - gör den med Postgres uppe.
-- **`apilog.py`**: egen autocommit-`sqlite3`-connection (tråd-delad, cachad). Flytta till
-  `engine.connect().execution_options(isolation_level="AUTOCOMMIT")` - testa trådsemantik mot PG.
-- **PG-FARA att fixa i `json_each_from`-frågorna:** PG evaluerar set-returning-funktioner i FROM FÖRE
-  WHERE, så `ean_stats`-frågan (`FROM offers, jsonb_array_elements_text(offers.eans::jsonb) WHERE
-  offers.eans NOT IN ('','[]')`) kraschar på rader med `eans=''` (`''::jsonb` = invalid). WHERE skyddar
-  INTE (SQLite tål det -> testet passerade). Fix: filtrera till giltig JSON FÖRE casten (derived table
-  eller `WHERE eans LIKE '[%'` inskjutet). Samma mönster i `schema.py` offer_eans-backfillen (~rad 102).
-  `json_get`/`json_is_true` på `product_info.data`/`catalog_products.origin` är säkra (alltid giltig
-  JSON eller NULL) - faran är lokal till `offers.eans`.
+**STATUS (2026-06-06): Fas A + Fas B KLARA + VALIDERADE (cutover ej gjord).** Datalagret är
+DB-oberoende och bevisat på Postgres. Default (ingen `DATABASE_URL`) = SQLite, oförändrat.
+
+- **Fas A (klar):** Bryggan (`_conn.py`-shim) + alla query-moduler + routes/services konverterade till
+  `text()` + namngivna params. Avsteg från "Core-uttryck": default `text()`+named (lägre drift-risk);
+  Core/dialekt-grenat bara för upserts (`ON CONFLICT`), JSON-funktioner (helpers `json_get`/`json_is_true`/
+  `json_array_len`/`json_each_from` i `_conn.py`) och dynamisk IN (`bindparam(expanding=True)`).
+- **Fas B (klar):** `tables.py` (MetaData + Table-objekt, Float/Integer-typval, `server_default`, alla index
+  + täckande `idx_csp_cover`). schema.py -> `create_schema`(create_all)/`seed`/`init_db` (ALTER-guards +
+  engångsbackfills borttagna). apilog -> engine. json_each-PG-faran fixad (filtrera tomma eans i derived
+  table FÖRE casten - PG kör FROM-funktioner före WHERE). `lastrowid` -> `RETURNING id` (psycopg saknar
+  lastrowid). PG QueuePool (pool_size=20). `api/migrate_to_pg.py` = bulk-kopia + setval + ANALYZE.
+- **Verifierat på Postgres:** migrerade 13,8M rader (~15 min); `test_schemas` grönt; json-tunga/LAG/
+  ON CONFLICT/expanding-IN + en-butiks-crawl skarpt; uvicorn-lifespan bootar rent mot populerad PG; och
+  **zon-browse-aggregatet väljer `idx_csp_cover` UTAN hint (~1,3s mot SQLites planerar-flip på 21s)** -
+  exakt bräckligheten som motiverade bytet är borta.
+- **KVAR: cutover (driftbeslut).** Kör `migrate_to_pg` mot tom PG + sätt `DATABASE_URL`. Deploy:
+  `docker-compose.pg.yml` (se DOCKER.md "Postgres-deploy" för Unraid-uppsättning: api-container +
+  db-container på gemensamt nät; frontend-container valfri SENARE).
 
 **Fas A - SQLAlchemy Core på SQLite (beteende-bevarande, ingen Postgres än):**
 1. Lägg `sqlalchemy` i `pyproject.toml`. Skapa en Engine i `api/database/_conn.py` (URL ur env

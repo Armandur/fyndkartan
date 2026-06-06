@@ -45,6 +45,79 @@ docker compose -f docker-compose.hetzner.yml up -d
 Caddy (`Caddyfile`) proxar `{$DOMAIN}` -> `app:8000`. Har du redan en delad Caddy:
 ta bort `caddy`-tjänsten och proxa dit `app:8000` därifrån.
 
+## Postgres-deploy: app + databas (Steg 6-skalan)
+
+När per-butik-pris-skalan (~14M rader + zon-browse-aggregat) motiverar det körs appen
+mot **Postgres** i stället för SQLite. Datalagret är DB-oberoende (SQLAlchemy Core), så
+det enda som byter är `DATABASE_URL`. SQLite-deployen ovan finns kvar oförändrad.
+
+### Container-topologi (separationen)
+
+```
+[ db ]  Postgres 16           <- persistent volym (pgdata)
+   ^
+   | DATABASE_URL (internt nät)
+[ api ]  ghcr.io/armandur/fyndkartan   <- FastAPI + serverar web/ statiskt, port 8700
+   ^
+   | (idag: API:t serverar web/ självt - ingen separat frontend-container behövs)
+[ webbläsare ]
+```
+
+- **db-container** (Postgres): egen container + volym. Klart rätt - en DB-server hör inte
+  ihop med app-processen.
+- **api-container** (FastAPI/uvicorn): kör API:t. **Serverar i dagsläget även `web/`
+  statiskt** (kart-app + konsol), så ingen separat frontend-container krävs ännu.
+- **frontend-container (SENARE, valfritt):** att bryta ut `web/` till en egen container
+  (t.ex. nginx som serverar statiska filer + proxar `/v1` -> api) är billigt att göra
+  senare (REST-ytan är redan ren, frontend är bundler-lös statisk) men ger lite NU för en
+  enanvändar-homelab. Gör splitten när det finns ett konkret skäl: en andra konsument, en
+  byggpipeline för frontend, eller api/app/admin-separation som säkerhetsgräns. Tills dess
+  = en moving part mindre.
+
+### Med compose (rekommenderat på Unraid - Compose Manager-pluginet)
+
+```bash
+echo "POSTGRES_PASSWORD=<välj-ett>" > .env
+docker compose -f docker-compose.pg.yml up -d   # -> http://<host>:8700
+```
+
+`docker-compose.pg.yml` definierar `db` + `app` på ett gemensamt Docker-nät: appen når
+DB:n på hostnamnet `db` (`DATABASE_URL=postgresql+psycopg://fyndkartan:<pw>@db:5432/...`).
+Compose sköter nätet + DNS automatiskt - därför är det enklare än att handkoppla i GUI:t
+för en flercontainer-app.
+
+### Via Unraids Docker-GUI (utan compose)
+
+Går också, men de två containrarna måste kunna prata med varandra över ett **gemensamt
+Docker-nät** (annars hittar api:t inte db:n på namn):
+
+1. Skapa ett custom Docker-nät i Unraid (t.ex. `fyndkartan-net`).
+2. **db-container:** image `postgres:16-alpine`, nät `fyndkartan-net`, namn `db`,
+   - env: `POSTGRES_USER=fyndkartan`, `POSTGRES_PASSWORD=<pw>`, `POSTGRES_DB=fyndkartan`
+   - volym: `/mnt/user/appdata/fyndkartan-db` -> `/var/lib/postgresql/data`
+   - (ingen port behöver exponeras till hosten om bara api:t pratar med den)
+3. **api-container:** image `ghcr.io/armandur/fyndkartan:latest`, nät `fyndkartan-net`,
+   - port `8700` -> `8000`
+   - env: `DATABASE_URL=postgresql+psycopg://fyndkartan:<pw>@db:5432/fyndkartan`
+   - (ingen `/data`-volym behövs - datan ligger i db-containern)
+
+Alternativ utan custom nät: exponera Postgres port `5432` på hosten och sätt
+`DATABASE_URL=...@<host-ip>:5432/...` - funkar men mindre rent.
+
+### Migrera befintlig SQLite-data EN gång
+
+Datan är mestadels regenererbar (crawl/sync), MEN prishistoriken (~6,5M observationer)
+byggs upp över tid och kan inte återskapas -> kopiera ALLT en gång:
+
+```bash
+DATABASE_URL=postgresql+psycopg://fyndkartan:<pw>@<host>:5432/fyndkartan \
+  .venv/bin/python -m api.migrate_to_pg
+```
+
+Skriptet skapar schemat på Postgres (`create_all`), bulk-kopierar alla tabeller, nollställer
+SERIAL-sekvenserna och kör `ANALYZE`. Kör mot en TOM Postgres (annars PK-krockar). ~15 min
+för ~14M rader. Efter migreringen: starta api-containern med samma `DATABASE_URL`.
+
 ## Dev (`docker-compose.dev.yml`)
 
 Bygger lokalt, bind-mountar `api/` + `web/` och kör med `--reload`, exponerar `8700`:
