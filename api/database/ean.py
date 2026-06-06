@@ -1,5 +1,7 @@
 import json
 
+from sqlalchemy import bindparam, text
+
 from ._conn import _now, get_conn
 
 
@@ -9,7 +11,9 @@ def get_cached_eans(codes):
         return {}
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT code, ean FROM ean_cache WHERE code IN ({','.join('?' * len(codes))})", codes
+        text("SELECT code, ean FROM ean_cache WHERE code IN :codes").bindparams(
+            bindparam("codes", expanding=True)),
+        {"codes": codes},
     ).fetchall()
     conn.close()
     return {r["code"]: r["ean"] for r in rows}
@@ -22,9 +26,12 @@ def save_eans(mapping):
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = get_conn()
+    # INSERT OR REPLACE-semantik: ospecificerade kolumner (category/origin) nollas vid konflikt.
     conn.executemany(
-        "INSERT OR REPLACE INTO ean_cache (code, ean, fetched_at) VALUES (?,?,?)",
-        [(c, e or "", now) for c, e in mapping.items()],
+        text("INSERT INTO ean_cache (code, ean, fetched_at) VALUES (:code, :ean, :fetched_at) "
+             "ON CONFLICT (code) DO UPDATE SET ean=excluded.ean, fetched_at=excluded.fetched_at, "
+             "category=NULL, origin=NULL"),
+        [{"code": c, "ean": e or "", "fetched_at": now} for c, e in mapping.items()],
     )
     conn.commit()
     conn.close()
@@ -37,9 +44,12 @@ def save_ean_meta(mapping):
         return
     conn = get_conn()
     conn.executemany(
-        "INSERT OR REPLACE INTO ean_cache (code, ean, category, origin, fetched_at) VALUES (?,?,?,?,?)",
-        [(c, m.get("ean") or "", m.get("category") or None, m.get("origin") or None, _now())
-         for c, m in mapping.items()],
+        text("INSERT INTO ean_cache (code, ean, category, origin, fetched_at) VALUES "
+             "(:code, :ean, :category, :origin, :fetched_at) "
+             "ON CONFLICT (code) DO UPDATE SET ean=excluded.ean, category=excluded.category, "
+             "origin=excluded.origin, fetched_at=excluded.fetched_at"),
+        [{"code": c, "ean": m.get("ean") or "", "category": m.get("category") or None,
+          "origin": m.get("origin") or None, "fetched_at": _now()} for c, m in mapping.items()],
     )
     conn.commit()
     conn.close()
@@ -52,9 +62,10 @@ def codes_missing_category(codes):
         return []
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT code FROM ean_cache WHERE code IN ({','.join('?' * len(codes))}) "
-        f"AND category IS NOT NULL AND category != ''",
-        codes,
+        text("SELECT code FROM ean_cache WHERE code IN :codes "
+             "AND category IS NOT NULL AND category != ''").bindparams(
+            bindparam("codes", expanding=True)),
+        {"codes": codes},
     ).fetchall()
     conn.close()
     have = {r["code"] for r in rows}
@@ -68,9 +79,9 @@ def get_axfood_categories(codes):
         return {}
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT code, category FROM ean_cache WHERE category IS NOT NULL AND category != '' "
-        f"AND code IN ({','.join('?' * len(codes))})",
-        codes,
+        text("SELECT code, category FROM ean_cache WHERE category IS NOT NULL AND category != '' "
+             "AND code IN :codes").bindparams(bindparam("codes", expanding=True)),
+        {"codes": codes},
     ).fetchall()
     conn.close()
     return {r["code"]: r["category"] for r in rows}
@@ -83,9 +94,9 @@ def get_axfood_origins(codes):
         return {}
     conn = get_conn()
     rows = conn.execute(
-        f"SELECT code, origin FROM ean_cache WHERE origin IS NOT NULL AND origin != '' "
-        f"AND code IN ({','.join('?' * len(codes))})",
-        codes,
+        text("SELECT code, origin FROM ean_cache WHERE origin IS NOT NULL AND origin != '' "
+             "AND code IN :codes").bindparams(bindparam("codes", expanding=True)),
+        {"codes": codes},
     ).fetchall()
     conn.close()
     return {r["code"]: r["origin"] for r in rows}
@@ -94,7 +105,9 @@ def get_axfood_origins(codes):
 def coop_offer_eans():
     """Distinkta EAN ur Coop-erbjudanden (för kategori-förvärmning av product_info)."""
     conn = get_conn()
-    rows = conn.execute("SELECT DISTINCT eans FROM offers WHERE chain='coop' AND eans NOT IN ('','[]')").fetchall()
+    rows = conn.execute(
+        text("SELECT DISTINCT eans FROM offers WHERE chain='coop' AND eans NOT IN ('','[]')")
+    ).fetchall()
     conn.close()
     out = set()
     for r in rows:
@@ -108,7 +121,9 @@ def coop_offer_eans():
 def ica_offer_eans():
     """Distinkta 13-siffriga EAN ur ICA-erbjudanden (för ICA-kategori-förvärmning)."""
     conn = get_conn()
-    rows = conn.execute("SELECT DISTINCT eans FROM offers WHERE chain='ica' AND eans NOT IN ('','[]')").fetchall()
+    rows = conn.execute(
+        text("SELECT DISTINCT eans FROM offers WHERE chain='ica' AND eans NOT IN ('','[]')")
+    ).fetchall()
     conn.close()
     out = set()
     for r in rows:
@@ -125,7 +140,8 @@ def axfood_offer_codes():
     15-butikers-samplingen i warm_axfood_eans missar). {chain: [codes]}."""
     conn = get_conn()
     rows = conn.execute(
-        "SELECT chain, offer_id FROM offers WHERE chain IN ('willys','hemkop') GROUP BY chain, offer_id"
+        text("SELECT chain, offer_id FROM offers WHERE chain IN ('willys','hemkop') "
+             "GROUP BY chain, offer_id")
     ).fetchall()
     conn.close()
     out = {}
@@ -139,6 +155,6 @@ def product_info_eans():
     'redan försökt'-filter i förvärmning - utgångna negativa ska INTE re-warmas (TTL-vägen
     är den lazy route:n), annars äter döda EAN upp förvärmnings-capen i all evighet."""
     conn = get_conn()
-    rows = conn.execute("SELECT ean FROM product_info").fetchall()
+    rows = conn.execute(text("SELECT ean FROM product_info")).fetchall()
     conn.close()
     return {r["ean"] for r in rows}
