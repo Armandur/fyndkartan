@@ -575,8 +575,16 @@ def _overview_stats():
         except OSError:
             return 0
 
-    db_bytes = sum(_file_size(config.DB_PATH.with_name(config.DB_PATH.name + suf))
-                   for suf in ("", "-wal", "-shm"))  # inkl. WAL/SHM-sidofiler
+    # Databasstorlek dialekt-medvetet: Postgres -> faktisk DB-storlek (pg_database_size); SQLite ->
+    # filsumman (+ WAL/SHM). Efter PG-cutovern är stores.db-filen en fryst snapshot, så fil-summan
+    # vore missvisande.
+    if database.dialect_name() == "postgresql":
+        dconn = get_conn()
+        db_bytes = dconn.execute(text("SELECT pg_database_size(current_database())")).fetchone()[0] or 0
+        dconn.close()
+    else:
+        db_bytes = sum(_file_size(config.DB_PATH.with_name(config.DB_PATH.name + suf))
+                       for suf in ("", "-wal", "-shm"))  # inkl. WAL/SHM-sidofiler
     img_bytes = img_count = 0
     if images.IMG_DIR.exists():
         for f in images.IMG_DIR.iterdir():
