@@ -34,7 +34,7 @@
       const jobs = [
         { name: "Butikssynk", next: (d.scheduler || {}).next_run, cron: (d.scheduler || {}).cron },
         { name: "Erbjudande-sweep", next: sw.next_run, cron: sw.cron },
-        { name: "Sortiment-crawl", next: (d.catalog_crawl || {}).next_run, cron: (d.catalog_crawl || {}).cron },
+        { name: "Pris-crawl (sortiment + ICA/Coop-butikspris)", next: (d.catalog_crawl || {}).next_run, cron: (d.catalog_crawl || {}).cron },
         { name: "Partial-uppgradering", next: pu.next_run, cron: pu.cron },
       ].filter(j => j.next).sort((a, b) => a.next.localeCompare(b.next));
       const catTot = Object.values(d.catalog || {}).reduce((a, s) => a + (s.total || 0), 0);
@@ -1716,7 +1716,7 @@
       const r = live
         ? { running: !!s.running, done: s.done, total: s.total, stores_ok: s.stores_ok, rows: s.rows,
             changed: s.changed, errors: s.errors, target: s.target, active: s.active, cooldown: s.cooldown,
-            finished: s.finished_at, last_error: s.last_error,
+            retrying: s.retrying, finished: s.finished_at, last_error: s.last_error,
             status: s.errors ? "ok_med_fel" : "ok" }
         : (lastRun
           ? { running: false, done: lastRun.stores_ok, total: lastRun.stores_total, stores_ok: lastRun.stores_ok,
@@ -1731,12 +1731,14 @@
       const running = r.running;
       const pct = r.total ? Math.round((r.done / r.total) * 100) : 0;
       const statusClass = running ? "running" : r.errors ? "error" : (r.status === "avbruten" ? "error" : "ok");
-      const statusTxt = running ? "crawlar" : (r.status === "avbruten" ? "avbruten" : (r.errors ? "klar (med fel)" : "klar"));
+      const statusTxt = running ? (r.retrying ? "omkörning" : "crawlar") : (r.status === "avbruten" ? "avbruten" : (r.errors ? "klar (med fel)" : "klar"));
       const cd = r.cooldown ? ' <span class="badge bg-warning text-dark">cooldown (WAF)</span>' : "";
+      // Omkörningsfasen: huvudkön klar (done=100%) men felade butiker körs om -> visa det så kortet inte ser hängt ut.
+      const rt = r.retrying ? ' <span class="badge bg-info text-dark">omkörning av felade butiker</span>' : "";
       const bar = (running || r.total)
         ? `<div class="progress" style="height:6px"><div class="progress-bar ${r.cooldown ? "bg-warning" : "bg-success"}" style="width:${pct}%;transition:width .5s ease"></div></div>` : "";
       const sub = `<div class="small text-muted mt-1">${r.done || 0}/${r.total || 0} butiker${r.stores_ok ? ` &middot; ${r.stores_ok} ok` : ""}`
-        + (running ? ` &middot; <span title="adaptiv AIMD">mål ${r.target}, ${r.active} aktiva</span>${cd}` : (r.finished ? ` &middot; senast ${esc(fmtTs(r.finished))}` : "")) + `</div>`;
+        + (running ? ` &middot; <span title="adaptiv AIMD">mål ${r.target}, ${r.active} aktiva</span>${cd}${rt}` : (r.finished ? ` &middot; senast ${esc(fmtTs(r.finished))}` : "")) + `</div>`;
       return `<div class="card p-3 mb-2">
         <div class="d-flex align-items-center mb-1">${chip(c)}
           <span class="ms-2 stat" style="font-size:1.2rem">${(r.rows || 0).toLocaleString("sv-SE")}</span>
@@ -1808,7 +1810,7 @@
     const CRON_FIELDS = [
       { key: "sync_cron", name: "Butikssynk" },
       { key: "offers_sweep_cron", name: "Erbjudande-sweep" },
-      { key: "catalog_crawl_cron", name: "Sortiment-crawl" },
+      { key: "catalog_crawl_cron", name: "Pris-crawl (sortiment + ICA/Coop-butikspris)" },
       { key: "partial_upgrade_cron", name: "Partial-uppgradering" },
     ];
     let settingsPreviewTimer = null;

@@ -112,8 +112,10 @@ async def lifespan(app: FastAPI):
     offers_scheduler = asyncio.create_task(
         run_scheduler(lambda: settings.get("offers_sweep_cron"), _tz, sweep_offers, "erbjudande-sweep"))
     # Fulla sortiment-crawlen (tung) har egen gles cadence (default veckovis). Tomt cron = av.
+    # Schemalägger BÅDE nationell sortiment-crawl (Axfood/CG) OCH per-butik-pris för ICA/Coop (vars pris
+    # är butiksspecifikt -> egen crawler) på SAMMA cadence/inställning.
     crawl_scheduler = asyncio.create_task(
-        run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, crawl_and_warm, "sortiment-crawl"))
+        run_scheduler(lambda: settings.get("catalog_crawl_cron"), _tz, scheduled_crawl, "pris-crawl"))
     # Riktad uppgradering av glesa partial-rader till full merge (egen, strypt cadence). Tomt cron = av.
     partial_scheduler = asyncio.create_task(
         run_scheduler(lambda: settings.get("partial_upgrade_cron"), _tz, upgrade_sparse_partials, "partial-uppgradering"))
@@ -888,7 +890,11 @@ async def store_price_crawl_status(_=Depends(require_admin)):
     # + DURABLE last_runs ur crawl_runs så korten visar "ändringar sedan senaste" även efter omstart
     # (in-memory STORE_PRICE_STATE nollställs då).
     runs = database.last_crawl_runs(kind="store_prices")
+    # Delar cadence med sortiment-crawlen (catalog_crawl_cron) -> visa samma schema så konsolen speglar
+    # att ICA/Coop nu är schemalagda.
     return {**store_crawl.STORE_PRICE_STATE,
+            "cron": settings.get("catalog_crawl_cron"),
+            "next_run": _next_cron(settings.get("catalog_crawl_cron")),
             "last_runs": {c: runs.get(("store_prices", c)) for c in ("ica", "coop")}}
 
 
@@ -935,6 +941,20 @@ async def crawl_and_warm(limit_categories=None, chains=None):
         await warm_axfood_catalog_eans(cap=config.CATALOG_EAN_WARM_CAP)
     except Exception:  # noqa: BLE001
         log.exception("Axfood-katalog-EAN-warming efter crawl misslyckades")
+
+
+async def scheduled_crawl():
+    """Schemalagt pris-crawl-jobb (catalog_crawl_cron): nationell sortiment-crawl (Axfood/CG via
+    crawl_and_warm) FÖLJT av per-butik-pris för ICA/Coop (store_crawl, vars pris är butiksspecifikt).
+    Benen körs SEKVENTIELLT (SQLite enkel-skrivare -> undvik 'database is locked' av två tunga
+    skriv-jobb samtidigt) och var för sig skyddat -> ett krasch i ena benet hoppar inte över det andra.
+    Endast schemaläggaren använder denna; manuella endpoints triggar respektive crawl var för sig."""
+    for label, fn in (("sortiment-crawl (Axfood/CG)", crawl_and_warm),
+                      ("per-butik-pris (ICA/Coop)", lambda: store_crawl.crawl_store_prices(chain="both"))):
+        try:
+            await fn()
+        except Exception:  # noqa: BLE001
+            log.exception("Schemalagd %s misslyckades", label)
 
 
 @app.post("/v1/admin/catalog/warm-eans")

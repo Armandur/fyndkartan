@@ -1,7 +1,9 @@
 """Steg 6 Fas 3: per-butik-pris-crawler. Roterar över de admin-valda (enabled) frågbara butikerna och
 skriver catalog_store_prices + per-butik append-on-change-historik. Återanvänder katalog-crawlens walk
-(catalog_crawl._ica_fetch_store) - samma walk, per-butik write-target. Admin-triggat bakgrundsjobb (ingen
-auto-körning vid uppstart), rate-limitat + circuit-breaker.
+(catalog_crawl._ica_fetch_store) - samma walk, per-butik write-target. Körs schemalagt (main.scheduled_crawl
+på catalog_crawl_cron, samma cadence som sortiment-crawlen) ELLER admin-triggat; ingen auto-körning vid
+uppstart, rate-limitat + circuit-breaker. Felade butiker körs om EN gång i slutet (transient WAF/5xx) om
+körningen inte breaker-avbröts.
 
 ICA (`*` + empirisk kategori-walk) och Coop (department-rötter via by-attribute) - båda parametriserade på
 butik. Skippar masterbutik (ingen catalog_products-skrivning än; per-butik-pris är sanningskällan, allmänt
@@ -29,7 +31,7 @@ _BREAKER = 8         # totalt antal WAF/fel i rad -> avbryt hela körningen
 def _blank_chain():
     return {"running": False, "done": 0, "total": 0, "stores_ok": 0, "rows": 0, "changed": 0,
             "errors": 0, "last_error": None, "current": None, "target": 0, "active": 0,
-            "cooldown": False, "started_at": None, "finished_at": None}
+            "cooldown": False, "retrying": False, "started_at": None, "finished_at": None}
 
 
 # Per-kedja sub-state så ICA + Coop kan köra PARALLELLT (olika API:er -> ingen kontention). Delad
@@ -119,11 +121,13 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
     cs.update(running=True, done=0, total=len(queue), stores_ok=0, rows=0, changed=0, errors=0,
               last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
-              started_at=_now(), finished_at=None)
+              retrying=False, started_at=_now(), finished_at=None)
     ctl = {"ok_streak": 0, "waf_streak": 0, "cooldown_until": 0.0, "abort": False}
-    err_counts = {}  # fel-fördelning {feltyp: antal} -> beständig i crawl_runs (se vad som gick fel)
+    err_counts = {}  # fel-HÄNDELSE-histogram {feltyp: antal} -> beständigt i crawl_runs (se VAD som gick fel;
+                     # räknar varje fel-tillfälle, kan därför överstiga len(failed) om en butik felar två ggr)
+    failed = {}      # acct -> senaste felsträng. Sanningskälla för "kvar felande" (cs["errors"] = len(failed))
 
-    async def _run_one(acct):
+    async def _run_one(acct, retry=False):
         cs["active"] += 1
         try:
             if chain == "ica":
@@ -132,14 +136,19 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             else:  # coop - nyckeln resolvas i _coop_post (cachad, re-key vid 401/403)
                 await _crawl_one_coop(client, acct, cs)
             cs["stores_ok"] += 1
+            failed.pop(acct, None)        # lyckad omkörning -> faller ur felmängden
+            cs["errors"] = len(failed)
+            if not failed:                # alla fel lösta (t.ex. omkörningen lyckades) -> ingen inaktuell last_error
+                cs["last_error"] = None
             ctl["waf_streak"] = 0
             ctl["ok_streak"] += 1
             if ctl["ok_streak"] >= _RAMP_AFTER and cs["target"] < ceiling:  # additiv ökning
                 cs["target"] += 1
                 ctl["ok_streak"] = 0
         except Exception as e:  # noqa: BLE001
-            cs["errors"] += 1
-            cs["last_error"] = f"{type(e).__name__}: {e}"[:200]  # transport-fel har tom str(e) -> ta med typen
+            failed[acct] = f"{type(e).__name__}: {e}"[:200]  # transport-fel har tom str(e) -> ta med typen
+            cs["errors"] = len(failed)
+            cs["last_error"] = failed[acct]
             err_counts[_err_key(e)] = err_counts.get(_err_key(e), 0) + 1  # fördelning per feltyp
             ctl["ok_streak"] = 0
             if _is_waf(e):
@@ -151,27 +160,45 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
                     log.warning("store_crawl: %s circuit-breaker (%d WAF i rad) - avbryter", chain, _BREAKER)
         finally:
             cs["active"] -= 1
-            cs["done"] += 1
+            if not retry:        # omkörning räknas inte om i done (butiken är redan med i total/done)
+                cs["done"] += 1
 
-    try:
+    async def _drain(accts, retry=False):
+        """Töm en kö av butiker med AIMD-styrd samtidighet. Delas av huvudpasset och omkörningen."""
+        q = list(accts)
         tasks = set()
-        while (queue or tasks) and not ctl["abort"]:
+        while (q or tasks) and not ctl["abort"]:
             cooling = time.monotonic() < ctl["cooldown_until"]
             cs["cooldown"] = cooling
             # Gate på ANTAL schemalagda tasks (len(tasks)), INTE cs["active"]: active ökas inuti _run_one
             # som ännu inte körts efter create_task, så den står kvar tills loopen yield:ar -> annars startas
             # HELA kön på en gång (-> pool-utmattning/PoolTimeout på allt vid full skala).
-            while queue and len(tasks) < cs["target"] and not cooling and not ctl["abort"]:
-                tasks.add(asyncio.create_task(_run_one(queue.pop(0))))
+            while q and len(tasks) < cs["target"] and not cooling and not ctl["abort"]:
+                tasks.add(asyncio.create_task(_run_one(q.pop(0), retry=retry)))
             if not tasks:
                 await asyncio.sleep(0.5)  # i cooldown utan aktiva -> vänta ut den
                 continue
             _done, tasks = await asyncio.wait(tasks, timeout=0.5, return_when=asyncio.FIRST_COMPLETED)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    try:
+        await _drain(queue)
+        # Omkörning av felade butiker EN gång: WAF-backoff/5xx är oftast transient. Sker INTE om körningen
+        # breaker-avbröts (då stryper vi medvetet, breakern ska inte kringgås). Butiker som ändå förblir
+        # felande mark_store_crawlas aldrig -> nästa schemalagda körning (max_age_hours) tar dem igen.
+        if failed and not ctl["abort"]:
+            retry_accts = list(failed)
+            log.info("store_crawl: %s omkörning av %d felade butiker", chain, len(retry_accts))
+            await asyncio.sleep(_WAF_COOLDOWN)  # låt källan återhämta sig innan vi försöker igen
+            ctl.update(waf_streak=0, ok_streak=0, cooldown_until=0.0)  # nollställ AIMD/breaker för passet
+            cs["target"] = min(2, ceiling)  # försiktig omstart
+            cs["retrying"] = True
+            await _drain(retry_accts, retry=True)
+            cs["retrying"] = False
         database.recompute_store_aggregates(chain)  # materialisera intervall-aggregatet (price_min/max/stores)
     finally:
-        cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False)
+        cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False, retrying=False)
         status = "avbruten" if ctl["abort"] else ("ok_med_fel" if cs["errors"] else "ok")
         database.record_crawl_run("store_prices", chain, started=cs["started_at"],
                                   finished=cs["finished_at"], status=status, rows=cs["rows"],
