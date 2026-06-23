@@ -25,8 +25,11 @@ _MAX_CONC = 12       # HÅRD säkerhetsgräns (mot katastrofal overshoot). AIMD 
                      # backoffen som hittar den FAKTISKA gränsen under - inte ett handsatt tak.
 _MIN_CONC = 1
 _RAMP_AFTER = 4      # additiv ökning (+1 mål) efter så här många butiker i rad utan WAF
-_WAF_COOLDOWN = 30   # sek paus efter WAF innan nya butiker startas
-_BREAKER = 8         # totalt antal WAF/fel i rad -> avbryt hela körningen
+_WAF_COOLDOWN = 30   # sek paus efter WAF/fel innan nya butiker startas
+_BREAKER_WAF = 8     # äkta WAF (403/429/503) i rad -> avbryt: källan blockerar oss medvetet
+_BREAKER_NET = 20    # transienta transport-fel i rad -> avbryt FÖRST här (nätet/källan nere, inte en blip).
+                     # Mycket högre än WAF-tröskeln: ett timeout-kluster ska throttla (AIMD + cooldown),
+                     # inte fälla en flertimmarscrawl. Bara ihållande fel vid concurrency=1 når hit.
 
 def _blank_chain():
     return {"running": False, "done": 0, "total": 0, "stores_ok": 0, "rows": 0, "changed": 0,
@@ -40,15 +43,19 @@ STORE_PRICE_STATE = {"recent": [], "chains": {"ica": _blank_chain(), "coop": _bl
 _FEED_CAP = 60
 
 
-def _is_waf(e):
-    """True om felet ska trigga back-off/breaker: WAF/rate-limit (429/403/503) ELLER vilket som helst
-    transport-/anslutningsfel. httpx.TransportError täcker ConnectError, ConnectTimeout, ReadError,
+def _is_hard_block(e):
+    """True bara för äkta WAF/rate-limit: 403/429/503. Källan blockerar oss medvetet -> snabb abort."""
+    return isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (429, 403, 503)
+
+
+def _should_backoff(e):
+    """True om felet ska trigga back-off (AIMD-minskning + cooldown): WAF/rate-limit ELLER vilket som
+    helst transport-/anslutningsfel. httpx.TransportError täcker ConnectError, ConnectTimeout, ReadError,
     ReadTimeout, WriteError, PoolTimeout, RemoteProtocolError m.fl. - dvs nät-/last-strul som vi ska
-    backa av på (tidigare missades ReadError/ConnectTimeout/PoolTimeout -> breakern slog aldrig till och
-    crawlen brände igenom alla butiker när nätet var mättat)."""
-    if isinstance(e, httpx.HTTPStatusError):
-        return e.response.status_code in (429, 403, 503)
-    return isinstance(e, httpx.TransportError)
+    backa av på (tidigare missades ReadError/ConnectTimeout/PoolTimeout -> crawlen brände igenom alla
+    butiker när nätet var mättat). Transport-fel throttlar men avbryter först vid _BREAKER_NET i rad;
+    bara äkta block (_is_hard_block) avbryter redan vid _BREAKER_WAF."""
+    return _is_hard_block(e) or isinstance(e, httpx.TransportError)
 
 
 def _err_key(e):
@@ -122,7 +129,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
     cs.update(running=True, done=0, total=len(queue), stores_ok=0, rows=0, changed=0, errors=0,
               last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
               retrying=False, started_at=_now(), finished_at=None)
-    ctl = {"ok_streak": 0, "waf_streak": 0, "cooldown_until": 0.0, "abort": False}
+    ctl = {"ok_streak": 0, "waf_streak": 0, "net_streak": 0, "cooldown_until": 0.0, "abort": False}
     err_counts = {}  # fel-HÄNDELSE-histogram {feltyp: antal} -> beständigt i crawl_runs (se VAD som gick fel;
                      # räknar varje fel-tillfälle, kan därför överstiga len(failed) om en butik felar två ggr)
     failed = {}      # acct -> senaste felsträng. Sanningskälla för "kvar felande" (cs["errors"] = len(failed))
@@ -141,6 +148,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             if not failed:                # alla fel lösta (t.ex. omkörningen lyckades) -> ingen inaktuell last_error
                 cs["last_error"] = None
             ctl["waf_streak"] = 0
+            ctl["net_streak"] = 0
             ctl["ok_streak"] += 1
             if ctl["ok_streak"] >= _RAMP_AFTER and cs["target"] < ceiling:  # additiv ökning
                 cs["target"] += 1
@@ -151,13 +159,23 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             cs["last_error"] = failed[acct]
             err_counts[_err_key(e)] = err_counts.get(_err_key(e), 0) + 1  # fördelning per feltyp
             ctl["ok_streak"] = 0
-            if _is_waf(e):
-                ctl["waf_streak"] += 1
+            if _should_backoff(e):
                 cs["target"] = max(_MIN_CONC, cs["target"] // 2)  # multiplikativ minskning
                 ctl["cooldown_until"] = time.monotonic() + _WAF_COOLDOWN
-                if ctl["waf_streak"] >= _BREAKER:
-                    ctl["abort"] = True
-                    log.warning("store_crawl: %s circuit-breaker (%d WAF i rad) - avbryter", chain, _BREAKER)
+                if _is_hard_block(e):  # äkta WAF (403/429/503): källan blockerar -> avbryt snabbt
+                    ctl["waf_streak"] += 1
+                    ctl["net_streak"] = 0
+                    if ctl["waf_streak"] >= _BREAKER_WAF:
+                        ctl["abort"] = True
+                        log.warning("store_crawl: %s circuit-breaker (%d WAF i rad) - avbryter",
+                                    chain, _BREAKER_WAF)
+                else:  # transient transport-fel: throttla hårt, avbryt först vid ihållande outage
+                    ctl["net_streak"] += 1
+                    ctl["waf_streak"] = 0
+                    if ctl["net_streak"] >= _BREAKER_NET:
+                        ctl["abort"] = True
+                        log.warning("store_crawl: %s circuit-breaker (%d transport-fel i rad, nätet nere?)"
+                                    " - avbryter", chain, _BREAKER_NET)
         finally:
             cs["active"] -= 1
             if not retry:        # omkörning räknas inte om i done (butiken är redan med i total/done)
@@ -191,7 +209,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             retry_accts = list(failed)
             log.info("store_crawl: %s omkörning av %d felade butiker", chain, len(retry_accts))
             await asyncio.sleep(_WAF_COOLDOWN)  # låt källan återhämta sig innan vi försöker igen
-            ctl.update(waf_streak=0, ok_streak=0, cooldown_until=0.0)  # nollställ AIMD/breaker för passet
+            ctl.update(waf_streak=0, net_streak=0, ok_streak=0, cooldown_until=0.0)  # nollställ för passet
             cs["target"] = min(2, ceiling)  # försiktig omstart
             cs["retrying"] = True
             await _drain(retry_accts, retry=True)
