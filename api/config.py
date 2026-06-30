@@ -64,8 +64,13 @@ CATALOG_EAN_MAX_BLOCKS = int(os.getenv("CATALOG_EAN_MAX_BLOCKS", "3"))
 CATALOG_CRAWL_PAGE = int(os.getenv("CATALOG_CRAWL_PAGE", "100"))      # produkter per sida (take)
 # ICA:s globalsearch CAPPAR numera take HÅRT vid 100 (2026-06-25: take=101 -> HTTP 400; tidigare gick
 # take=2000). Klampas därför till <=100 oavsett env - högre värde ger 400 på varje request. Innebär ~10x
-# fler requests/butik än den gamla take=1000-eran; crawlen är därmed långsammare men korrekt.
+# fler requests/butik än den gamla take=1000-eran; kompenseras av parallell sidhämtning (ICA_MAX_INFLIGHT).
 ICA_CRAWL_PAGE = min(int(os.getenv("ICA_CRAWL_PAGE", "100")), 100)
+# Adaptivt tak för antal SAMTIDIGA ICA-sidrequests (delad AIMD-grind, _AdaptiveGate). Tar tillbaka tiden
+# take=100-capen kostar genom att paginera parallellt i st.f. sekventiellt. Grinden rampar upp mot detta
+# tak och backar av på 403/429/transport-fel - taket är bara en säkerhets-guardrail. Mätt rent t.o.m.
+# conc=24 mot ICA (inga 403), throughput planar ~conc=20. Hård cap 32.
+ICA_MAX_INFLIGHT = min(int(os.getenv("ICA_MAX_INFLIGHT", "20")), 32)
 # Coops by-attribute cappar take vid ~400-499 (take<=400 OK, 500 ger tomt 200-svar) -> 300 = säker 3x.
 COOP_CRAWL_PAGE = int(os.getenv("COOP_CRAWL_PAGE", "300"))
 # City Gross Loop54 har INGET take-cap (verifierat take=5000 ger hela kategorin) -> 1000 = 10x färre

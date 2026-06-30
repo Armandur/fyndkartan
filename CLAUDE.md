@@ -319,15 +319,20 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   sidstorleks-vinst, lämnas på `CATALOG_CRAWL_PAGE`=100. Ingen page-cap (täckning komplett till
   numberOfPages); 19 topp-avdelningar, summa ~12,5k. Obs: Axfoods `/search/campaigns` tar size=1000, men
   katalog-browse-endpointen `/c/<slug>` gör det inte.
-- **Per-butik-crawlens tidsprofil (uppmätt 2026-06-05, efter sidstorleks-höjningen):** dominansen är nu
-  **~2/3 nätverk (HTTP-rundtur + JSON-parse av stora sidor), ~1/3 pace** (`store_crawl._PAGE_PACE`=0.35s/sida).
-  Sidstorleks-höjningen tog bort *antalet* requests men gjorde varje tyngre (~0,65-0,70s/req även vid take=1000),
-  så mer take ger nu avtagande nytta. Uppmätt/butik: ICA stor (44k) ~179 req ~180s; ICA liten (<20k) ~14-20 req
-  ~15-20s; Coop (~12-15k) ~56 req ~59s. **De ~134 stora ICA-butikerna (>20k) = ~60% av ICA:s totaltid** trots
-  10% av butikerna (hela kategori-walken). Extrapolerat enkeltrådat: ICA (1288) ~11h, Coop (214) ~3,5h; med
-  AIMD-parallellism (tak `_MAX_CONC`=12, ICA+Coop parallellt) ~1-1,5h för full bägge-kedjor-crawl. Inkrementellt
-  mycket billigare (`stores_to_crawl(max_age_hours)` hoppar nyligen crawlade). Hävstänger ej utnyttjade (se
-  ROADMAP "Crawl-prestanda"): lägre pace, droppa breda termer på stora butiker, inom-butik-parallellism.
+- **ICA within-store sidparallellism (`_AdaptiveGate`, 2026-06-30):** efter att ICA capade take vid 100
+  (10x fler sidor) paginerar ICA-walken sidorna PARALLELLT i st.f. sekventiellt. En delad AIMD-grind
+  (`catalog_crawl._AdaptiveGate`, en per kedje-körning) bundnar total ICA-in-flight: `target` rampar +1
+  per 6 lyckade sidrequests, HALVERAS på 403/429/transport-fel, bunden `[1, ICA_MAX_INFLIGHT]` (default 20,
+  mätt rent t.o.m. conc=24). Grinden ÄR throttlen -> ingen per-sida-pace för ICA (Coop paginerar fortf.
+  sekventiellt med `_PAGE_PACE`). Sidhämtaren retar EN gång på transient fel. Uppmätt: liten butik (19,5k)
+  ~13s (mot ~160s sekventiellt, ~12x), stor butik (24k, kategori-walk) ~72s, 97,8% täckning. Aggregerad
+  throughput är grind-bunden (~20 req/s = ICA:s per-IP-tak), maximalt givet take=100. Delad av master-
+  och per-butik-crawlern; `_crawl_one_ica`/`_crawl_ica` skapar/skickar grinden.
+- **Per-butik-crawlens tidsprofil (Coop, uppmätt 2026-06-05):** Coop paginerar sekventiellt per butik
+  (`_PAGE_PACE`=0.35s/sida) med cross-store-AIMD (tak `_MAX_CONC`=12). Uppmätt/butik: Coop (~12-15k) ~56 req
+  ~59s. Full Coop (214) ~3,5h enkeltrådat, ~1h med AIMD-parallellism. Inkrementellt mycket billigare
+  (`stores_to_crawl(max_age_hours)` hoppar nyligen crawlade). ICA-tider: se grind-stycket ovan. Outnyttjad
+  hävstång (ROADMAP "Crawl-prestanda"): sänk ICA cross-store-concurrency så storbutiker får mer grind-share.
 - **Per-butik-pris konsument-läsväg (Steg 6-payoffen, `GET /v1/products/{ean}/prices`):** SCOPAR
   hyllpriset till det användaren bryr sig om - `lat`/`lng`/`radius` (billigast nära en plats), `favorites=true`
   (inloggad användares favoritbutiker) eller `stores=chain:id,...` (explicit). Skild från

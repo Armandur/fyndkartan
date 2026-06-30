@@ -12,6 +12,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import httpx
+
 from . import apilog, catalog, config, database, details, matching
 from .adapters import ica_token
 
@@ -223,8 +225,91 @@ _ICA_OFFSET_CAP = 20000
 # HELA sortimentet (samma totalHits som gamla '*'). Används som "hämta allt"-seed i walken.
 _ICA_WILDCARD = "**"
 
+_GATE_RAMP = 6  # additiv ökning (+1 mål) efter så här många lyckade sidrequests i rad
 
-async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, deep=True):
+
+def _ica_backoff(e):
+    """True om felet ska sänka grindens mål: WAF/rate-limit (403/429/503) ELLER transport-/anslutningsfel
+    (timeout, reset...). 400/401/404 är INTE last-signaler -> rör inte grinden."""
+    if isinstance(e, httpx.HTTPStatusError):
+        return e.response.status_code in (429, 403, 503)
+    return isinstance(e, httpx.TransportError)
+
+
+class _AdaptiveGate:
+    """AIMD-styrd in-flight-grind för ICA-sidrequests, delad över alla butiker i EN crawl-körning.
+    Ersätter en fast samtidighets-siffra: `target` rampar additivt upp på lyckade requests och HALVERAS
+    på WAF/transport-fel (multiplikativ minskning). Self-tunar mot ICA:s faktiska tak och backar av om
+    ICA stramar åt - precis som store_crawls breaker, fast på sid-nivå. Bunden [lo, hi]."""
+
+    def __init__(self, start=4, lo=1, hi=None):
+        self.hi = hi or config.ICA_MAX_INFLIGHT
+        self.lo = lo
+        self.target = max(lo, min(start, self.hi))
+        self.active = 0
+        self._ok = 0
+        self._cond = asyncio.Condition()
+
+    async def acquire(self):
+        async with self._cond:
+            while self.active >= self.target:
+                await self._cond.wait()
+            self.active += 1
+
+    async def done(self, outcome):
+        """outcome: 'ok' (ramp), 'waf' (halvera) eller 'rel' (bara släpp - ej last-signal)."""
+        async with self._cond:
+            self.active = max(0, self.active - 1)
+            if outcome == "ok":
+                self._ok += 1
+                if self._ok >= _GATE_RAMP and self.target < self.hi:
+                    self.target += 1
+                    self._ok = 0
+            elif outcome == "waf":
+                self._ok = 0
+                self.target = max(self.lo, self.target // 2)
+            self._cond.notify(self.hi)  # väck väntare så de kan se nytt target
+
+
+async def _ica_page(client, gate, body, retries=1):
+    """Hämta EN ICA-sökresultatsida genom grinden. Förnyar token vid 401 (token < storbutik-walk-tid),
+    backar av grinden + retar EN gång vid transient fel (WAF/transport) så en blip inte fäller butiken.
+    Returnerar (docs, totalHits). Höjer vid slutgiltigt fel (store_crawl markerar butiken felad)."""
+    attempt = 0
+    while True:
+        await gate.acquire()
+        outcome = "ok"
+        try:
+            token = await ica_token.get_token(client)
+            r = await client.post(_ICA_URL, json=body, headers=_ica_hdrs(token), timeout=30)
+            if r.status_code == 401:  # token gick ut mitt i walken -> förnya + gör om
+                token = await ica_token.get_token(client, force=True)
+                r = await client.post(_ICA_URL, json=body, headers=_ica_hdrs(token), timeout=30)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:  # noqa: BLE001
+            outcome = "waf" if _ica_backoff(e) else "rel"
+            await gate.done(outcome)
+            if outcome == "waf" and attempt < retries:
+                attempt += 1
+                await asyncio.sleep(1.0 + attempt)  # kort återhämtning innan retry
+                continue
+            raise
+        await gate.done(outcome)
+        prods = data.get("products") or {}
+        return prods.get("documents") or [], (prods.get("stats") or {}).get("totalHits") or 0
+
+
+def _ica_hdrs(token):
+    return {"User-Agent": _UA, "Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _ica_body(qs, offset, acct):
+    return {"queryString": qs, "take": config.ICA_CRAWL_PAGE, "offset": offset, "accountNumber": acct,
+            "searchDomain": "All", "sessionId": "catalog-crawl"}
+
+
+async def _ica_fetch_store(client, acct, gate=None, limit_pages=None, deep=True):
     """Async generator: paginerar en ICA-butiks katalog och yield:ar (rows, store_total, page) per sida.
     rows = _ica_row-normaliserade, deduplicerade på gtin ÖVER hela walken. DELAD walk - master- och
     per-butik-crawlern ger samma walk olika write-target. `store_total` = '*'-totalHits (ärligt även när
@@ -240,52 +325,51 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
       Uppmätt: ~99,7% täckning på en 44k-butik (44268/44422) med ~52-kategori-union, ~179 requests.
       `deep=False` = bara '*' (snabbtest, max 20k)."""
     seen, page, size = set(), 0, config.ICA_CRAWL_PAGE
-    pace = config.CATALOG_CRAWL_PACE if pace is None else pace
+    gate = gate or _AdaptiveGate()  # delas av master- (en butik) och per-butik-crawlern (alla butiker)
     store_total = 0
     harvested = set()      # mainCategoryName-värden ur walken = ICA:s faktiska kategorinamn
     done_q, queue = set(), [_ICA_WILDCARD]
+
+    def _collect(docs):
+        """Dedup på gtin ÖVER hela walken + skörda kategorinamn. -> _ica_row-rader."""
+        out = []
+        for d in docs:
+            mc = d.get("mainCategoryName")
+            if mc:
+                harvested.add(mc)
+            pid = str(d.get("gtin") or "")
+            if pid and pid not in seen:
+                seen.add(pid)
+                out.append(_ica_row(d, acct))
+        return out
+
     while queue:
         qs = queue.pop(0)
         if qs in done_q:
             continue
         done_q.add(qs)
-        offset = 0
-        while True:
-            # offset >= taket ger numera HTTP 400 (förut tomt svar) -> stoppa FÖRE requesten. Svansen
-            # bortom taket fångas av kategori-walken nedan (store_total > _ICA_OFFSET_CAP).
-            if offset >= _ICA_OFFSET_CAP:
-                break
-            body = {"queryString": qs, "take": size, "offset": offset, "accountNumber": acct,
-                    "searchDomain": "All", "sessionId": "catalog-crawl"}
-            def _hdrs():
-                return {"User-Agent": _UA, "Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-            r = await client.post(_ICA_URL, json=body, headers=_hdrs(), timeout=30)
-            if r.status_code == 401:  # token gick ut mitt i crawlen (stora butiker > token-livslängd) -> förnya + gör om
-                token = await ica_token.get_token(client, force=True)
-                r = await client.post(_ICA_URL, json=body, headers=_hdrs(), timeout=30)
-            r.raise_for_status()
-            prods = r.json().get("products") or {}
-            docs = prods.get("documents") or []
-            qtotal = (prods.get("stats") or {}).get("totalHits") or 0
-            if qs == _ICA_WILDCARD and offset == 0:
-                store_total = qtotal  # bara första sidan: speglar butikens fulla sortimentsstorlek
-            if not docs:
-                break
-            rows = []
-            for d in docs:
-                mc = d.get("mainCategoryName")
-                if mc:
-                    harvested.add(mc)
-                pid = str(d.get("gtin") or "")
-                if pid and pid not in seen:
-                    seen.add(pid)
-                    rows.append(_ica_row(d, acct))
-            cat = ("Hela sortimentet", qtotal) if qs == _ICA_WILDCARD else (qs, qtotal)
-            yield rows, store_total, page, cat
-            offset += len(docs)
-            page += 1
-            await asyncio.sleep(pace)
-            if offset >= qtotal or (limit_pages and page >= limit_pages):
+        cat = ("Hela sortimentet", 0) if qs == _ICA_WILDCARD else (qs, 0)
+        # Sida 0 sekventiellt -> lär totalHits; sedan fan-out av resten parallellt genom grinden.
+        docs, qtotal = await _ica_page(client, gate, _ica_body(qs, 0, acct))
+        cat = (cat[0], qtotal)
+        if qs == _ICA_WILDCARD:
+            store_total = qtotal  # speglar butikens fulla sortimentsstorlek
+        page += 1
+        yield _collect(docs), store_total, page, cat
+        # Resterande offsets upp till min(totalHits, offset-cap). offset >= taket ger HTTP 400 (förut tomt
+        # svar) -> sluta FÖRE den; svansen bortom taket fångas av kategori-walken (store_total > taket).
+        offsets = list(range(size, min(qtotal, _ICA_OFFSET_CAP), size))
+        stop = False
+        for i in range(0, len(offsets), gate.hi):  # fönster = grindtak; grinden self-tunar in-flight inom
+            results = await asyncio.gather(
+                *[_ica_page(client, gate, _ica_body(qs, o, acct)) for o in offsets[i:i + gate.hi]])
+            for docs, _qt in results:
+                page += 1
+                yield _collect(docs), store_total, page, cat
+                if limit_pages and page >= limit_pages:
+                    stop = True
+                    break
+            if stop:
                 break
         # Efter '*': mata kategori-unionen (den här butikens skörd). Kategori-walk behövs BARA om '*'
         # cappades (>tak) - små butiker fick redan hela sortimentet (89,6%). Stora butiker: använd den
@@ -308,14 +392,15 @@ async def _crawl_ica(client, limit_pages):
     started = _now()
     st.update(status="running", started_at=started, finished_at=None, limited=bool(limit_pages))
     try:
-        token = await ica_token.get_token(client)
+        await ica_token.get_token(client)  # förvalidera token-API:t (sidhämtaren hämtar token internt)
     except Exception as e:  # noqa: BLE001
         st["status"] = "ok_med_fel"; st["last_errors"].append(f"token: {e}"); return
     acct = (database.ica_resolve_accounts() or [None])[0]
     if not acct:
         st["status"] = "ok_med_fel"; st["last_errors"].append("ingen ICA-butiksprofil"); return
     try:
-        async for rows, total, page, _cat in _ica_fetch_store(client, acct, token, limit_pages):
+        async for rows, total, page, _cat in _ica_fetch_store(client, acct, gate=_AdaptiveGate(),
+                                                               limit_pages=limit_pages):
             st["total"] = total
             pages_full = max(1, -(-total // config.ICA_CRAWL_PAGE))  # antal sidor för hela katalogen
             st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full

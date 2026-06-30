@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 import httpx
 
 from . import apilog, catalog_crawl, database
-from .adapters import ica_token
 
 log = logging.getLogger("matbutiker")
 
@@ -78,11 +77,12 @@ def _emit(chain, sname, cat_label, cat_total):
     STORE_PRICE_STATE["recent"] = ([item] + STORE_PRICE_STATE["recent"])[:_FEED_CAP]
 
 
-async def _crawl_one_ica(client, token, acct, cs):
-    """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter."""
+async def _crawl_one_ica(client, gate, acct, cs):
+    """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter.
+    `gate` = delad AIMD-grind (parallell sidhämtning + back-off) över alla butiker i körningen."""
     sname = database.store_name("ica", acct)
     total_rows, prev = 0, None  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
-    async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, token, pace=_PAGE_PACE):
+    async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, gate=gate):
         if prev and cat[0] != prev[0]:
             _emit("ica", sname, prev[0], prev[1])
         prev = cat
@@ -130,6 +130,10 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
               last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
               retrying=False, started_at=_now(), finished_at=None)
     ctl = {"ok_streak": 0, "waf_streak": 0, "net_streak": 0, "cooldown_until": 0.0, "abort": False}
+    # ICA: en delad AIMD-grind för PARALLELL sidhämtning (within-store) + back-off, över hela kedje-
+    # körningen. Total ICA-in-flight bunden av grindens target (self-tunar mot ICA:s tak). Coop paginerar
+    # fortfarande sekventiellt per butik (cross-store-AIMD räcker; ingen take-cap-press där).
+    ica_gate = catalog_crawl._AdaptiveGate() if chain == "ica" else None
     err_counts = {}  # fel-HÄNDELSE-histogram {feltyp: antal} -> beständigt i crawl_runs (se VAD som gick fel;
                      # räknar varje fel-tillfälle, kan därför överstiga len(failed) om en butik felar två ggr)
     failed = {}      # acct -> senaste felsträng. Sanningskälla för "kvar felande" (cs["errors"] = len(failed))
@@ -138,8 +142,7 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         cs["active"] += 1
         try:
             if chain == "ica":
-                token = await ica_token.get_token(client)  # cachad + auto-förnyad
-                await _crawl_one_ica(client, token, acct, cs)
+                await _crawl_one_ica(client, ica_gate, acct, cs)
             else:  # coop - nyckeln resolvas i _coop_post (cachad, re-key vid 401/403)
                 await _crawl_one_coop(client, acct, cs)
             cs["stores_ok"] += 1
