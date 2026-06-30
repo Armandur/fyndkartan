@@ -331,10 +331,17 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   - **Skrivningar batchas + offloadas till tråd (KRITISKT för responsivitet):** den parallella hämtningen
     ger sidor ~20x tätare; synkrona per-sida-DB-commits på event-loopen gjorde HELA API:t oresponsivt under
     crawl (healthz timeout, servern svarade inte ens på SIGTERM). `_crawl_one_ica`/`_crawl_one_coop` ackar
-    nu rader och skriver var `_FLUSH_ROWS` (=1000) via `asyncio.to_thread` (DB-lagret är trådsäkert:
-    `check_same_thread=False` + `NullPool`, ny conn/anrop; `busy_timeout=3000` serialiserar samtidiga
-    skrivningar). Coop offloadas också - annars kan dess loop-skrivning vänta på skrivlåset som ICA-tråden
-    håller och hänga loopen vid kombinerad crawl.
+    nu rader och skriver var `_FLUSH_ROWS` (=1000) via `asyncio.to_thread` (`get_conn()` ger ny conn/anrop
+    -> trådsäkert mot SQLAlchemy-poolen, oavsett SQLite/Postgres). Coop offloadas också - annars kan dess
+    loop-skrivning vänta på låset som ICA-tråden håller och hänga loopen vid kombinerad crawl.
+  - **DESIGNPRINCIP (gäller alla async-bakgrundsjobb):** synkrona DB-skrivningar/tunga queries i async-
+    kontext (`async def`, asyncio-tasks) MÅSTE gå via `asyncio.to_thread` - annars blockerar de event-loopen
+    och hela API:t. Gäller även: master-katalogcrawlen (`catalog_crawl._crawl_axfood/_cg/_coop/_ica`:
+    per-sida `catalog_upsert` + `catalog_mark_unseen` vid slutet), offers-sweepen (`offers._sweep_one_store`:
+    `replace_store_offers`), och de tunga engångs-queriesna (`recompute_store_aggregates`). Offload är säkert
+    där skrivningarna träffar olika rader (chain-partitionerat / per-butik) -> ingen lås-trängsel mellan
+    trådar; var försiktig när flera trådar skriver SAMMA rader. KVAR ej offloadat (lägre allvar, nätverks-
+    interfolierat -> loopen får luft): `sync.warm_*`-funktionernas per-EAN `save_product_info`.
   - **ICA cross-store-tak lågt (`_ICA_STORE_CONC`=4):** parallellismen ligger nu WITHIN-store (grinden,
     gate-bunden throughput), så fler samtidiga butiker ger ingen vinst men ökar SQLite-lås-trängsel. Färre
     butiker -> storbutiker får mer grind-andel + klar fortare. Coop behåller `_MAX_CONC`=12.

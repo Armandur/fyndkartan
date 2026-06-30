@@ -158,7 +158,7 @@ async def _cg_crawl_category(client, cid, st, seen):
                 seen.add(pid)
                 rows.append(_cg_row(it))
         if rows:
-            new, known, changed = database.catalog_upsert("citygross", rows)
+            new, known, changed = await asyncio.to_thread(database.catalog_upsert, "citygross", rows)
             st["new"] += new
             st["known"] += known
             st["changed"] += changed
@@ -191,7 +191,7 @@ async def _crawl_citygross(client, limit_categories):
         st["categories_done"] += 1
     st["current_category"] = None
     if not limit_categories:  # full crawl -> markera utgångna; partiell skulle felmarkera
-        database.catalog_mark_unseen("citygross", started)
+        await asyncio.to_thread(database.catalog_mark_unseen, "citygross", started)
     st["status"] = "ok" if not st["errors"] else "ok_med_fel"
     st["finished_at"] = _now()
 
@@ -405,7 +405,7 @@ async def _crawl_ica(client, limit_pages):
             pages_full = max(1, -(-total // config.ICA_CRAWL_PAGE))  # antal sidor för hela katalogen
             st["categories_total"] = min(limit_pages, pages_full) if limit_pages else pages_full
             if rows:
-                new, known, changed = database.catalog_upsert("ica", rows)
+                new, known, changed = await asyncio.to_thread(database.catalog_upsert, "ica", rows)
                 st["new"] += new; st["known"] += known; st["changed"] += changed
                 st["products"] += len(rows)
                 _feed("ica", rows)
@@ -417,7 +417,7 @@ async def _crawl_ica(client, limit_pages):
             st["last_errors"].append(str(e))
     st["current_category"] = None
     if not limit_pages:
-        database.catalog_mark_unseen("ica", started)
+        await asyncio.to_thread(database.catalog_mark_unseen, "ica", started)
     if st["status"] == "running":
         st["status"] = "ok" if not st["errors"] else "ok_med_fel"
     st["finished_at"] = _now()
@@ -526,7 +526,7 @@ async def _coop_browse(client, code, st, seen, max_pages):
                 seen.add(ean)
                 rows.append(_coop_row(it))
         if rows:
-            new, known, changed = database.catalog_upsert("coop", rows)
+            new, known, changed = await asyncio.to_thread(database.catalog_upsert, "coop", rows)
             st["new"] += new; st["known"] += known; st["changed"] += changed
             st["products"] += len(rows)
             _feed("coop", rows)
@@ -600,7 +600,7 @@ async def _crawl_coop(client, limit_categories):
         st["categories_done"] += 1
     st["current_category"] = None
     if not limit_categories:
-        database.catalog_mark_unseen("coop", started)
+        await asyncio.to_thread(database.catalog_mark_unseen, "coop", started)
     st["status"] = "ok" if not st["errors"] else "ok_med_fel"
     st["finished_at"] = _now()
 
@@ -664,7 +664,7 @@ async def _axfood_browse(client, chain, slug, title, st, seen, max_pages):
             seen.add(code)
             rows.append(_axfood_row(it, code_eans.get(code) or None, title))
         if rows:
-            new, known, changed = database.catalog_upsert(chain, rows)
+            new, known, changed = await asyncio.to_thread(database.catalog_upsert, chain, rows)
             st["new"] += new; st["known"] += known; st["changed"] += changed
             st["products"] += len(rows)
             _feed(chain, rows)
@@ -696,7 +696,7 @@ async def _crawl_axfood(client, limit_categories, chain):
         st["categories_done"] += 1
     st["current_category"] = None
     if not limit_categories:
-        database.catalog_mark_unseen(chain, started)
+        await asyncio.to_thread(database.catalog_mark_unseen, chain, started)
     st["status"] = "ok" if not st["errors"] else "ok_med_fel"
     st["finished_at"] = _now()
 

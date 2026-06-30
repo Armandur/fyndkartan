@@ -103,7 +103,9 @@ async def _sweep_one_store(client, chain, store, force):
     for attempt in range(config.OFFERS_SWEEP_RETRIES):
         try:
             offers = await _fetch_offers_for(client, chain, sid, store["link_offers"], store["native"])
-            replace_store_offers(chain, sid, offers)
+            # offloada till tråd: parallella sweep-workers landar annars sina (tunga: archive+DELETE+
+            # INSERT) skrivningar tätt på event-loopen. Per-butik-rader -> ingen lås-trängsel mellan workers.
+            await asyncio.to_thread(replace_store_offers, chain, sid, offers)
             return "fetched", None
         except Exception as e:  # noqa: BLE001
             if attempt + 1 >= config.OFFERS_SWEEP_RETRIES:
