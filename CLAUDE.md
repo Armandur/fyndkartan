@@ -328,6 +328,16 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   ~13s (mot ~160s sekventiellt, ~12x), stor butik (24k, kategori-walk) ~72s, 97,8% täckning. Aggregerad
   throughput är grind-bunden (~20 req/s = ICA:s per-IP-tak), maximalt givet take=100. Delad av master-
   och per-butik-crawlern; `_crawl_one_ica`/`_crawl_ica` skapar/skickar grinden.
+  - **Skrivningar batchas + offloadas till tråd (KRITISKT för responsivitet):** den parallella hämtningen
+    ger sidor ~20x tätare; synkrona per-sida-DB-commits på event-loopen gjorde HELA API:t oresponsivt under
+    crawl (healthz timeout, servern svarade inte ens på SIGTERM). `_crawl_one_ica`/`_crawl_one_coop` ackar
+    nu rader och skriver var `_FLUSH_ROWS` (=1000) via `asyncio.to_thread` (DB-lagret är trådsäkert:
+    `check_same_thread=False` + `NullPool`, ny conn/anrop; `busy_timeout=3000` serialiserar samtidiga
+    skrivningar). Coop offloadas också - annars kan dess loop-skrivning vänta på skrivlåset som ICA-tråden
+    håller och hänga loopen vid kombinerad crawl.
+  - **ICA cross-store-tak lågt (`_ICA_STORE_CONC`=4):** parallellismen ligger nu WITHIN-store (grinden,
+    gate-bunden throughput), så fler samtidiga butiker ger ingen vinst men ökar SQLite-lås-trängsel. Färre
+    butiker -> storbutiker får mer grind-andel + klar fortare. Coop behåller `_MAX_CONC`=12.
 - **Per-butik-crawlens tidsprofil (Coop, uppmätt 2026-06-05):** Coop paginerar sekventiellt per butik
   (`_PAGE_PACE`=0.35s/sida) med cross-store-AIMD (tak `_MAX_CONC`=12). Uppmätt/butik: Coop (~12-15k) ~56 req
   ~59s. Full Coop (214) ~3,5h enkeltrådat, ~1h med AIMD-parallellism. Inkrementellt mycket billigare

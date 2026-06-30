@@ -19,9 +19,13 @@ from . import apilog, catalog_crawl, database
 
 log = logging.getLogger("matbutiker")
 
-_PAGE_PACE = 0.35    # paus mellan sidor i EN butik (varje parallell butik throttlas separat)
+_PAGE_PACE = 0.35    # paus mellan sidor i EN butik (Coop; ICA paginerar parallellt via grinden)
+_FLUSH_ROWS = 1000   # ICA: batcha så här många rader innan en (tråd-offloadad) DB-skrivning
 _MAX_CONC = 12       # HÅRD säkerhetsgräns (mot katastrofal overshoot). AIMD rampar mot den; det är WAF-
                      # backoffen som hittar den FAKTISKA gränsen under - inte ett handsatt tak.
+_ICA_STORE_CONC = 4  # ICA: lågt cross-store-tak. Parallellismen ligger nu WITHIN-store (grinden, gate-
+                     # bunden throughput) -> fler samtidiga butiker ger ingen vinst men ökar SQLite-skriv-
+                     # lås-trängsel; färre butiker -> storbutiker får mer grind-andel + klar fortare.
 _MIN_CONC = 1
 _RAMP_AFTER = 4      # additiv ökning (+1 mål) efter så här många butiker i rad utan WAF
 _WAF_COOLDOWN = 30   # sek paus efter WAF/fel innan nya butiker startas
@@ -77,46 +81,72 @@ def _emit(chain, sname, cat_label, cat_total):
     STORE_PRICE_STATE["recent"] = ([item] + STORE_PRICE_STATE["recent"])[:_FEED_CAP]
 
 
+def _write_ica(acct, buf):
+    """Synkron DB-skrivning (catalog_store_prices + union-metadata) - körs i tråd via to_thread så
+    event-loopen inte blockeras. Returnerar antal ändrade rader."""
+    _new, changed = database.upsert_store_prices("ica", acct, buf)
+    database.catalog_upsert_metadata("ica", buf)  # union-metadata -> bläddra-vyn behåller produkten
+    return changed
+
+
 async def _crawl_one_ica(client, gate, acct, cs):
     """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter.
-    `gate` = delad AIMD-grind (parallell sidhämtning + back-off) över alla butiker i körningen."""
+    `gate` = delad AIMD-grind (parallell sidhämtning + back-off) över alla butiker i körningen.
+    Skrivningarna BATCHAS (_FLUSH_ROWS) och offloadas till tråd: den parallella hämtningen ger sidor
+    ~20x tätare än förut, och synkrona per-sida-commits på loopen gjorde annars hela API:t oresponsivt
+    under crawl."""
     sname = database.store_name("ica", acct)
-    total_rows, prev = 0, None  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
+    total_rows, prev, buf = 0, None, []  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
     async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, gate=gate):
         if prev and cat[0] != prev[0]:
             _emit("ica", sname, prev[0], prev[1])
         prev = cat
         if rows:
-            _new, changed = database.upsert_store_prices("ica", acct, rows)
-            database.catalog_upsert_metadata("ica", rows)  # union-metadata -> bläddra-vyn behåller produkten
+            buf.extend(rows)
             total_rows += len(rows)
             cs["rows"] += len(rows)
-            cs["changed"] += changed
+            if len(buf) >= _FLUSH_ROWS:
+                cs["changed"] += await asyncio.to_thread(_write_ica, acct, buf)
+                buf = []
         cs["current"] = f"ICA {sname}: {total_rows}/{total}"
+    if buf:
+        cs["changed"] += await asyncio.to_thread(_write_ica, acct, buf)
     if prev:
         _emit("ica", sname, prev[0], prev[1])
-    database.mark_store_crawled("ica", acct, total_rows)
+    await asyncio.to_thread(database.mark_store_crawled, "ica", acct, total_rows)
     return total_rows
 
 
+def _write_coop(ledger, buf):
+    """Synkron Coop-DB-skrivning - körs i tråd via to_thread. Returnerar antal ändrade rader."""
+    _new, changed = database.upsert_store_prices("coop", ledger, buf)
+    database.catalog_upsert_metadata("coop", buf)  # union-metadata -> bläddra-vyn behåller produkten
+    return changed
+
+
 async def _crawl_one_coop(client, ledger, cs):
-    """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal."""
+    """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal.
+    Skrivningarna batchas + offloadas till tråd (som ICA) - vid kombinerad ICA+Coop-crawl ligger annars
+    en loop-skrivning här och väntar på SQLite-skrivlåset (busy_timeout) som ICA-tråden håller -> hänger."""
     sname = database.store_name("coop", ledger)
-    total_rows, prev = 0, None
+    total_rows, prev, buf = 0, None, []
     async for rows, _t, _p, cat in catalog_crawl._coop_fetch_store(client, ledger, pace=_PAGE_PACE):
         if prev and cat[0] != prev[0]:
             _emit("coop", sname, prev[0], prev[1])
         prev = cat
         if rows:
-            _new, changed = database.upsert_store_prices("coop", ledger, rows)
-            database.catalog_upsert_metadata("coop", rows)  # union-metadata -> bläddra-vyn behåller produkten
+            buf.extend(rows)
             total_rows += len(rows)
             cs["rows"] += len(rows)
-            cs["changed"] += changed
+            if len(buf) >= _FLUSH_ROWS:
+                cs["changed"] += await asyncio.to_thread(_write_coop, ledger, buf)
+                buf = []
         cs["current"] = f"Coop {sname}: {total_rows}"
+    if buf:
+        cs["changed"] += await asyncio.to_thread(_write_coop, ledger, buf)
     if prev:
         _emit("coop", sname, prev[0], prev[1])
-    database.mark_store_crawled("coop", ledger, total_rows)
+    await asyncio.to_thread(database.mark_store_crawled, "coop", ledger, total_rows)
     return total_rows
 
 
@@ -126,6 +156,8 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
     cs = STORE_PRICE_STATE["chains"][chain]
     queue = [a for _, a in database.stores_to_crawl(chain=chain, cap=cap, max_age_hours=max_age_hours)]
     ceiling = max(_MIN_CONC, min(concurrency or _MAX_CONC, _MAX_CONC))
+    if chain == "ica":  # within-store-grinden ÄR ICA:s parallellism -> håll cross-store lågt
+        ceiling = min(ceiling, _ICA_STORE_CONC)
     cs.update(running=True, done=0, total=len(queue), stores_ok=0, rows=0, changed=0, errors=0,
               last_error=None, current=None, target=min(2, ceiling), active=0, cooldown=False,
               retrying=False, started_at=_now(), finished_at=None)
@@ -217,7 +249,9 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
             cs["retrying"] = True
             await _drain(retry_accts, retry=True)
             cs["retrying"] = False
-        database.recompute_store_aggregates(chain)  # materialisera intervall-aggregatet (price_min/max/stores)
+        # Tung korrelerad-subquery-UPDATE (~5 min på full catalog_products) -> offloada till tråd, annars
+        # FRYSER den hela event-loopen/API:t de minuterna (sett: healthz timeout + ingen request-progress).
+        await asyncio.to_thread(database.recompute_store_aggregates, chain)  # materialisera price_min/max/stores
     finally:
         cs.update(running=False, finished_at=_now(), current=None, active=0, cooldown=False, retrying=False)
         status = "avbruten" if ctl["abort"] else ("ok_med_fel" if cs["errors"] else "ok")
