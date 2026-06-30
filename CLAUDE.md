@@ -285,15 +285,17 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   specifika kategorivokabulärer (CG superCategory, ICA mainCategoryName) seedade i `category_map`.
   Bara API (ingen frontend än). Auth via `require_consumer` som övriga `/v1`.
 - **ICA-crawlens täckning (`catalog_crawl._ica_fetch_store`, storleks-villkorlig):** ICA:s globalsearch
-  cappar offset HÅRT vid 20000 (`*` returnerar 0 docs vid offset >= 20000; `totalHits` är dock ärligt
-  även när svaret cappas - en 44k-butik rapporterar 44422). Crawlen är därför villkorlig på butiksstorlek
-  (`_ICA_OFFSET_CAP`):
-  - **Butiker med totalHits <= 20000 (89,6% av ICA-butikerna, 1155/1289): `*`-walken ger HELA sortimentet
-    -> ingen kategori-walk, ~100% täckning.** Sidstorlek `ICA_CRAWL_PAGE` (default 1000, verifierat take=2000
-    funkar) -> ~10x färre requests än gamla take=100.
-  - **Butiker > 20000 (~10%): `*` + kategori-walk för att nå bortom taket.** Kategorinamnen är den
+  cappar offset HÅRT vid 20000 (`_ICA_OFFSET_CAP`); `totalHits` är dock ärligt även när svaret cappas -
+  en 44k-butik rapporterar 44422. **OBS ICA-API-ändring 2026-06-25:** (1) `queryString='*'` ger numera
+  HTTP 400 -> wildcard är nu `**` (`_ICA_WILDCARD`, samma fulla totalHits); (2) `take` cappas HÅRT vid
+  100 (take=101 -> 400; tidigare gick take=2000) -> `ICA_CRAWL_PAGE` klampas till <=100, ~10x fler
+  requests/butik; (3) offset >= 20000 ger numera 400 (förut tomt svar) -> walken stoppar FÖRE den offseten.
+  Crawlen är villkorlig på butiksstorlek:
+  - **Butiker med totalHits <= 20000 (89,6% av ICA-butikerna, 1155/1289): `**`-walken ger HELA sortimentet
+    -> ingen kategori-walk, ~100% täckning.** Sidstorlek `ICA_CRAWL_PAGE` (=100, ICA:s cap).
+  - **Butiker > 20000 (~10%): `**` + kategori-walk för att nå bortom taket.** Kategorinamnen är den
     KOMPLETTA butiks-oberoende `mainCategoryName`-unionen (`database.ica_walk_categories`, skördad vid
-    varje `*`-walk; små butikers ocappade walk bidrar med sin fulla kategorimängd -> unionen konvergerar
+    varje `**`-walk; små butikers ocappade walk bidrar med sin fulla kategorimängd -> unionen konvergerar
     mot ICA:s taxonomi) + en hårdkodad bred lista (`_ICA_CATEGORIES`) som säkerhetsnät. **Mätt empiriskt:**
     `mainCategoryName` saknas på ~0% av produkterna (ecom-nivåerna på ~6%), och queryString på kategorinamn
     är textsök med 100% recall (låg precision -> dedup på gtin). Flaskhalsen var kategori-UPPTÄCKT, inte
@@ -378,7 +380,9 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
 - **ICA produktsök (NÅBART server-side, bekräftat):** `POST apimgw-pub.ica.se/sverige/digx/
   globalsearch/v1/search/quicksearch` med **public-access-token (Bearer, vi hämtar redan)** +
   `accountNumber` (butikens, ur native), body `{queryString, take, offset, accountNumber,
-  searchDomain:"All", sessionId}` -> `products.documents[]` (`stats` har total). Item: `gtin`
+  searchDomain:"All", sessionId}` -> `products.documents[]` (`stats` har total). **2026-06-25-caps:**
+  `take` <= 100 (101 -> 400), `offset` < 20000 (>= 20000 -> 400), och "hämta allt"-query är `**`
+  (enkel `*` -> 400). Item: `gtin`
   (EAN), `displayName`/`title`, `price` (sträng, per butik), `image` (resizebar cloudinary),
   `mainCategoryName`, `countryOfOriginName`. INGET jämförpris i söket. Via API-gatewayen, INTE
   den WAF-blockade ehandeln - så ICA:s katalog ÄR sökbar server-side (till skillnad från

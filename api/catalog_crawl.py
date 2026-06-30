@@ -219,6 +219,9 @@ _ICA_CATEGORIES = (
 # <= taket fick HELA sortimentet ur '*' -> ingen kategori-walk behövs (89,6% av ICA-butikerna). Bara
 # butiker > taket tappar en svans och behöver gå bortom via kategori-frågor.
 _ICA_OFFSET_CAP = 20000
+# ICA avvisar numera queryString='*' med HTTP 400 (2026-06-25). '**' (eller '"*"') matchar fortfarande
+# HELA sortimentet (samma totalHits som gamla '*'). Används som "hämta allt"-seed i walken.
+_ICA_WILDCARD = "**"
 
 
 async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, deep=True):
@@ -240,7 +243,7 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
     pace = config.CATALOG_CRAWL_PACE if pace is None else pace
     store_total = 0
     harvested = set()      # mainCategoryName-värden ur walken = ICA:s faktiska kategorinamn
-    done_q, queue = set(), ["*"]
+    done_q, queue = set(), [_ICA_WILDCARD]
     while queue:
         qs = queue.pop(0)
         if qs in done_q:
@@ -248,6 +251,10 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
         done_q.add(qs)
         offset = 0
         while True:
+            # offset >= taket ger numera HTTP 400 (förut tomt svar) -> stoppa FÖRE requesten. Svansen
+            # bortom taket fångas av kategori-walken nedan (store_total > _ICA_OFFSET_CAP).
+            if offset >= _ICA_OFFSET_CAP:
+                break
             body = {"queryString": qs, "take": size, "offset": offset, "accountNumber": acct,
                     "searchDomain": "All", "sessionId": "catalog-crawl"}
             def _hdrs():
@@ -260,8 +267,8 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
             prods = r.json().get("products") or {}
             docs = prods.get("documents") or []
             qtotal = (prods.get("stats") or {}).get("totalHits") or 0
-            if qs == "*" and offset == 0:
-                store_total = qtotal  # bara första sidan: vid offset>=20000 svarar ICA totalHits=0
+            if qs == _ICA_WILDCARD and offset == 0:
+                store_total = qtotal  # bara första sidan: speglar butikens fulla sortimentsstorlek
             if not docs:
                 break
             rows = []
@@ -273,7 +280,7 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
                 if pid and pid not in seen:
                     seen.add(pid)
                     rows.append(_ica_row(d, acct))
-            cat = ("Hela sortimentet", qtotal) if qs == "*" else (qs, qtotal)
+            cat = ("Hela sortimentet", qtotal) if qs == _ICA_WILDCARD else (qs, qtotal)
             yield rows, store_total, page, cat
             offset += len(docs)
             page += 1
@@ -284,7 +291,7 @@ async def _ica_fetch_store(client, acct, token, limit_pages=None, pace=None, dee
         # cappades (>tak) - små butiker fick redan hela sortimentet (89,6%). Stora butiker: använd den
         # KOMPLETTA butiks-oberoende unionen (skördad över alla butiker) i st.f. denna butiks cappade
         # skörd, så kategorier som bara finns ovanför taket ändå crawlas. + breda termer som säkerhetsnät.
-        if qs == "*" and deep:
+        if qs == _ICA_WILDCARD and deep:
             database.record_ica_categories(harvested)
             if store_total > _ICA_OFFSET_CAP:
                 for c in sorted(database.ica_walk_category_list() | harvested | set(_ICA_CATEGORIES)):
