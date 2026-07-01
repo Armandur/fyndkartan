@@ -1506,10 +1506,11 @@
 
     async function loadCatalog() {
       ensureCatalogSkeleton();  // rendera flikens layout DIREKT (status-anropen blockerar inte UI:t)
-      const [d, ms, spc] = await Promise.all([  // oberoende status-anrop -> parallellt, inte sekventiellt
+      const [d, ms, spc, ecom] = await Promise.all([  // oberoende status-anrop -> parallellt, inte sekventiellt
         api("/v1/admin/catalog/crawl/status").then(r => r.json()),
         api("/v1/admin/store-prices/measure/status").then(r => r.json()),
         api("/v1/admin/store-prices/crawl/status").then(r => r.json()),
+        api("/v1/admin/store-prices/crawl-ecom/status").then(r => r.json()).catch(() => ({})),
       ]);
       const _spcCh = spc.chains || {};
       const spcRun = !!(_spcCh.ica && _spcCh.ica.running) || !!(_spcCh.coop && _spcCh.coop.running);
@@ -1595,7 +1596,10 @@
             (${st.available || 0} tillgängliga, ${st.eans || 0} EAN)${st.last_crawl ? ` &middot; senast ${esc(fmtTs(st.last_crawl))}` : ""}</div>
           ${(s.last_errors || []).length ? `<div class="small text-danger mt-1">${s.last_errors.map(esc).join("; ")}</div>` : ""}
         </div>`;
-      }).join("") + ["ica", "coop"].map(c => storePriceCard(c, (spc.chains || {})[c], (spc.last_runs || {})[c])).join("");
+      }).join("") + ["ica", "coop"].map(c => storePriceCard(c, (spc.chains || {})[c], (spc.last_runs || {})[c])).join("")
+        + icaEcomCard(ecom || {});
+      const ecomBtn = document.getElementById("ecomRun");
+      if (ecomBtn) ecomBtn.onclick = triggerIcaEcom;
       const anyCrawlRunning = !!(d.running || spcRun);  // crawl just klar -> uppdatera historik-loggen
       if (_crawlRunningPrev && !anyCrawlRunning) loadCrawlHistory();
       _crawlRunningPrev = anyCrawlRunning;
@@ -1774,6 +1778,33 @@
       const qs = new URLSearchParams({ chain });
       if (cap) qs.set("cap", cap);
       await api(`/v1/admin/store-prices/crawl?${qs}`, { method: "POST" });
+      loadCatalog();
+    }
+
+    // ICA ecom-pris-crawl (parallell-fasen): kompakt täcknings-/status-kort. Skriver ica_ecom_prices
+    // (separat tabell, ej i appen än - se ROADMAP Steg 6 läsvägs-TODO).
+    function icaEcomCard(e) {
+      const cov = e.coverage || {};
+      const pct = cov.rows ? Math.round((cov.mapped / cov.rows) * 100) : 0;
+      const run = !!e.running;
+      const sched = (e.cron && e.cron.trim() && e.cron !== "off")
+        ? `Schemalagd: <strong>${esc(fmtTs(e.next_run))}</strong> <span class="mono">${esc(e.cron)}</span>` : "Manuell";
+      const lr = e.last_run;
+      return `<div class="border rounded p-2 mb-2">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">${chip("ica")} ecom-pris <span class="badge bg-info text-dark">parallell-fas</span></h6>
+          <button class="btn btn-sm btn-outline-dark py-0" id="ecomRun" ${run ? "disabled" : ""}>${run ? "crawlar…" : "Crawla (cap 300)"}</button>
+        </div>
+        <div class="small text-muted mt-1">handlaprivatkund.ica.se &rarr; <code>ica_ecom_prices</code> (separat, ej i appen än).</div>
+        <div class="small mt-1">Täckning: <strong>${(cov.rows || 0).toLocaleString("sv-SE")}</strong> rader &middot; <strong>${cov.stores || 0}</strong> butiker &middot; <strong>${(cov.priced || 0).toLocaleString("sv-SE")}</strong> prissatta &middot; <strong>${(cov.promos || 0).toLocaleString("sv-SE")}</strong> reapris</div>
+        <div class="small mt-1">EAN-mappning: <strong>${pct}%</strong> (${(cov.mapped || 0).toLocaleString("sv-SE")}/${(cov.rows || 0).toLocaleString("sv-SE")}) &middot; <span class="text-muted">fylls av quicksearch</span></div>
+        ${run ? `<div class="small st-running mt-1">● ${esc(e.current || "")} &mdash; ${e.done || 0}/${e.total || 0} butiker (${e.errors || 0} fel)</div>` : ""}
+        <div class="small text-muted mt-1">${sched}${lr ? ` &middot; senast <strong>${esc(lr.status)}</strong> ${lr.stores_ok || 0}/${lr.stores_total || 0}` : ""}</div>
+      </div>`;
+    }
+
+    async function triggerIcaEcom() {
+      await api("/v1/admin/store-prices/crawl-ecom?cap=300", { method: "POST" });
       loadCatalog();
     }
 
