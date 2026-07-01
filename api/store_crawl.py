@@ -88,6 +88,13 @@ def _write_ica_prices(acct, buf):
     return changed
 
 
+def _write_ica_meta(buf):
+    """Delade-rad-skrivningar (serialiseras via meta_lock): union-metadata (catalog_products) + consumerItemId
+    -> gtin-mappningen (ica_cid_ean) som ecom-pris-crawlen joinar mot."""
+    database.catalog_upsert_metadata("ica", buf)
+    database.save_ica_cid_eans((r.get("consumer_item_id"), r.get("ean")) for r in buf)
+
+
 async def _crawl_one_ica(client, gate, meta_lock, acct, cs):
     """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter.
     `gate` = delad AIMD-grind (parallell sidhämtning). Skrivningarna BATCHAS (_FLUSH_ROWS) och offloadas
@@ -102,8 +109,8 @@ async def _crawl_one_ica(client, gate, meta_lock, acct, cs):
         if not buf:
             return
         cs["changed"] += await asyncio.to_thread(_write_ica_prices, acct, buf)  # concurrent (disjunkt)
-        async with meta_lock:  # serialiserad (delade catalog_products-rader -> annars deadlock)
-            await asyncio.to_thread(database.catalog_upsert_metadata, "ica", buf)
+        async with meta_lock:  # serialiserad (delade catalog_products/ica_cid_ean-rader -> annars deadlock)
+            await asyncio.to_thread(_write_ica_meta, buf)
         buf = []
 
     async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, gate=gate):

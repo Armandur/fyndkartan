@@ -267,6 +267,43 @@ def save_ica_cid(ean, cid):
     conn.close()
 
 
+def save_ica_cid_eans(pairs):
+    """Batch-upsert consumerItemId -> gtin (`ica_cid_ean`). `pairs` = iterable av (cid, ean). Byggs av
+    quicksearch-crawlen; ecom-pris-crawlen (api/ica_ecom.py) joinar retailerProductId(==cid) -> ean."""
+    rows = [{"cid": str(c), "ean": str(e), "fetched_at": _now()}
+            for c, e in pairs if c and e]
+    if not rows:
+        return 0
+    conn = get_conn()
+    conn.execute(
+        text("INSERT INTO ica_cid_ean (cid, ean, fetched_at) VALUES (:cid, :ean, :fetched_at) "
+             "ON CONFLICT (cid) DO UPDATE SET ean=excluded.ean, fetched_at=excluded.fetched_at"),
+        rows)
+    conn.commit()
+    conn.close()
+    return len(rows)
+
+
+def ica_ean_for_cids(cids):
+    """{cid: ean} för givna consumerItemId/retailerProductId ur `ica_cid_ean` (fallback: `ica_item_map`)."""
+    ids = [str(c) for c in cids if c]
+    if not ids:
+        return {}
+    conn = get_conn()
+    q1 = text("SELECT cid, ean FROM ica_cid_ean WHERE cid IN :ids").bindparams(
+        bindparam("ids", expanding=True))
+    out = {r["cid"]: r["ean"] for r in conn.execute(q1, {"ids": ids})}
+    # komplettera ur ica_item_map (detalj-hämtade) för cids vi ännu inte sett i quicksearch-crawlen
+    missing = [c for c in ids if c not in out]
+    if missing:
+        q2 = text("SELECT cid, ean FROM ica_item_map WHERE cid IN :ids AND cid != ''").bindparams(
+            bindparam("ids", expanding=True))
+        for r in conn.execute(q2, {"ids": missing}):
+            out.setdefault(r["cid"], r["ean"])
+    conn.close()
+    return out
+
+
 def ica_resolve_accounts(limit=4):
     """Upp till `limit` ICA-accountNumber, ett per butiksprofil (störst format först), för
     butiks-scopad EAN->consumerItemId-resolv. Söket returnerar bara butikens sortiment, så

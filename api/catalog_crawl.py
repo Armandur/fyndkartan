@@ -204,7 +204,9 @@ def _ica_row(doc, acct):
     # Återanvänd katalog-sökets normalisering; lägg product_id (gtin) + category_raw (mainCategoryName).
     # ICA-pris är butiksspecifikt (per accountNumber) -> tagga med butiksprofilen vi crawlade med.
     return {**catalog._norm_ica(doc), "product_id": str(doc.get("gtin") or ""),
-            "category_raw": doc.get("mainCategoryName"), "store": acct}
+            "category_raw": doc.get("mainCategoryName"), "store": acct,
+            # consumerItemId -> gtin-bryggan för ecom-pris-crawlen (api/ica_ecom.py); persisteras i store_crawl
+            "consumer_item_id": str(doc.get("consumerItemId") or "")}
 
 
 # ICA globalsearch cappar offset HÅRT vid 20000 -> '*' når bara de första 20k av ev. ~45k. Vägen förbi:

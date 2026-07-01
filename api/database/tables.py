@@ -275,6 +275,14 @@ ica_item_map = Table(
     Column("ean", Text, primary_key=True), Column("cid", Text), Column("fetched_at", Text),
 )
 
+# ICA consumerItemId -> gtin (EAN). Fylls av quicksearch-crawlen (som ser båda per produkt) och används
+# av ecom-pris-crawlen (api/ica_ecom.py) för att brygga ecom:s `retailerProductId` (== consumerItemId)
+# till EAN - ecom-plattformen exponerar aldrig gtin. cid som PK -> snabb reverse-lookup.
+ica_cid_ean = Table(
+    "ica_cid_ean", metadata,
+    Column("cid", Text, primary_key=True), Column("ean", Text), Column("fetched_at", Text),
+)
+
 product_images = Table(
     "product_images", metadata,
     Column("ean", Text, primary_key=True), Column("size", Text, primary_key=True),
