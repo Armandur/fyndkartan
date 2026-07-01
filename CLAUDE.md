@@ -421,16 +421,30 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
     `accountId` (= samma ICA-kontonummer vi redan crawlar), `retailerSiteId`, `slug`. Att välja butik i UI:t
     sätter cookies `basePath=/stores/{accountId}`, `store-cookie`, `aws-waf-token`, och ett butiks-scopat
     `regionId`.
-  - Pris-endpoint: `GET handlaprivatkund.ica.se/stores/{accountId}/api/webproductpagews/v5/product-pages
-    ?decoratedOnly=true&limit=27&tag=web&tag=lohp` (startsidans produktrutnät med pris; sök-varianter finns).
-    Butiken är i pathen (`/stores/{accountId}/`) -> passar vår per-butik-modell perfekt.
-  - **BLOCKERARE: den endpointen returnerar 403 (AWS-WAF/CloudFront "Request blocked") även i riktig
-    headless-Chromium i det fulla butiksvals-flödet**, medan syskon-endpoints (`search/v1/suggestions`,
-    `search/v1/redirects`) ger 200. ICA:s WAF blockar alltså specifikt produkt/pris-endpointen mot
-    automation/headless. En crawl kräver därför WAF-bypass (`aws-waf-token`-lösning, ömtålig katt-och-råtta)
-    eller icke-headless riktig browser på ren/residential IP - väsentligt svårare än gamla gateway-API:t.
-    Metod som fungerade för fångsten: Playwright + riktig Chromium, butiksval via ort-listan
-    ("Hitta butik efter ort" -> ort-länk -> "Välj butik"-knapp), fånga XHR mot handlaprivatkund.ica.se.
+  - **Pris-endpoints** (butik i pathen `/stores/{accountId}/` -> passar per-butik-modellen):
+    - LISTA (ingen CSRF, bara cookies): `GET .../api/webproductpagews/v6/product-pages?filters=brands%3DMax
+      &includeAdditionalPageInfo=true&maxPageSize=300&maxProductsToDecorate=50&tag=web&tag=category-item`
+      -> produktlista (upp till 300) filtrerad på brand/kategori, med pris "decorated" för första N.
+      Startsidans variant: `?decoratedOnly=true&limit=27&tag=web&tag=lohp`.
+    - PRISER för specifika (KRÄVER `X-CSRF-TOKEN`): `PUT .../api/webproductpagews/v6/products` med body =
+      JSON-array av `productId` (UUID) -> `{products:[{productId, retailerProductId, name, brand,
+      packSizeDescription, price:{amount,currency}, unitPrice:{price:{amount},unitName:"PER_LITRE"...},
+      categoryPath, image...}]}`. Priser + jämförpris finns; INGEN gtin/EAN i svaret.
+  - **EAN-MAPPNING LÖST (bekräftad 2026-07-01):** ecom-svarets `retailerProductId` == quicksearchens
+    `consumerItemId` (verifierat: Orientdressing Rydbergs 1025671==1025671, gtin 07313161404956; Gurkmajo
+    Sibylla 2510673). Gamla quicksearchen (gateway, EJ WAF-blockad) ger fortfarande `consumerItemId`+`gtin`
+    per butik. -> Crawl-plan: (1) quicksearch per butik = {consumerItemId -> gtin} (redan implementerat),
+    (2) ecom product-pages/products = {retailerProductId -> pris}, (3) joina på consumerItemId==retailerProductId
+    -> per-butik-pris nyckelbart på gtin. Integration GENOMFÖRBAR.
+  - **KVARVARANDE BLOCKERARE: AWS-WAF på ecom-originet.** `handlaprivatkund.ica.se`-endpoints ger 403
+    (CloudFront "Request blocked") mot headless-Chromium / server-side-requests; syskon-endpoints
+    (`search/v1/suggestions`) ger 200. Din curl fungerar för att du har en FÄRSK `aws-waf-token` från en
+    RIKTIG (icke-headless) browser som löst WAF-JS-challengen. En crawler behöver alltså skaffa/förnya en
+    giltig `aws-waf-token` + `X-CSRF-TOKEN` (för PUT) via icke-headless browser (`headless=False`+xvfb /
+    stealth) - och sen anropa endpoints SAME-ORIGIN (SPA:n kör PÅ handlaprivatkund; cross-origin fetch från
+    handla.ica.se CORS-blockas). Metod för butiksval-fångst: Playwright + riktig Chromium, ort-listan
+    ("Hitta butik efter ort" -> ortlänk -> "Välj butik"-knapp). ICA visar SLUMPVIS två cookie-dialoger
+    (OneTrust ELLER egen "Godkänn kakor") - acceptera båda.
 - **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
   scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
   sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
