@@ -1051,9 +1051,11 @@ mappning stiger mot ~100% när mappen fylls. Byggt: fetch + skriv + trigger. Kva
       scope) mot `ica_ecom_prices` för ICA, eller merga in i `catalog_store_prices`, när täckningen
       mognat. Just nu skriver ecom-crawlen bara sin egen tabell - INTE synligt i appen än. Detta är den
       sista biten för att ICA-per-butik-pris ska nå slutanvändaren igen.
-- [ ] Cron-schemaläggning + konsol-UI-kort för ecom-passet (byggs 2026-07-01).
-- [ ] Ev. `aws-waf-token`-lager (headed browser) om vi vill köra snabbare/nå de envist WAF-challengeade
-      butikerna (byggs 2026-07-01).
+- [x] Cron-schemaläggning (`ica_ecom_cron`, 05:00, cap-roterat) + konsol-UI-kort (Sortiment-fliken). (2026-07-01)
+- [~] `aws-waf-token`-lager UTVÄRDERAT och AVFÄRDAT (2026-07-01): värde-test visade att även en giltig
+      token från headed browser bara ger ~7/15 butiker vid hög samtidighet (en delmängd challengeas envist
+      oavsett token). Tungt browser-beroende för marginell vinst -> behåll låg-takt + retry + rotation
+      (fyller täckning över flera nätter; challengeade butiker retas nästa varv).
 
 Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), så vi kan svara
 "var är varan/matkassen billigast - hos mina favoritbutiker / nära mig". Bygger ovanpå Steg 5
