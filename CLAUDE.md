@@ -405,10 +405,17 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   searchDomain:"All", sessionId}` -> `products.documents[]` (`stats` har total). **2026-06-25-caps:**
   `take` <= 100 (101 -> 400), `offset` < 20000 (>= 20000 -> 400), och "hämta allt"-query är `**`
   (enkel `*` -> 400). Item: `gtin`
-  (EAN), `displayName`/`title`, `price` (sträng, per butik), `image` (resizebar cloudinary),
-  `mainCategoryName`, `countryOfOriginName`. INGET jämförpris i söket. Via API-gatewayen, INTE
-  den WAF-blockade ehandeln - så ICA:s katalog ÄR sökbar server-side (till skillnad från
-  produktdetaljen som är WAF-skyddad).
+  (EAN), `displayName`/`title`, `image` (resizebar cloudinary), `mainCategoryName`,
+  `countryOfOriginName`. Via API-gatewayen, INTE den WAF-blockade ehandeln - så ICA:s katalog ÄR
+  sökbar server-side (till skillnad från produktdetaljen som är WAF-skyddad).
+  **VIKTIGT 2026-06-16-regression: `price`-fältet är numera ALLTID `null`** (ICA slutade returnera pris
+  i quicksearch-svaret; fältet finns kvar men tomt, oavsett query/butik - verifierat 0/20 med pris).
+  Ingen jämförpris heller. -> per-butik-priscrawlen (`store_crawl`) skriver sedan dess produkt-NÄRVARO
+  per butik men NULL-priser (18,7M av 18,8M ICA-rader är prislösa; enda ifyllda är 06-05..06-15). Följd:
+  `catalog_store_prices.price` NULL -> `upsert_store_prices` `changed=0` alltid för ICA (pris-vakten
+  hoppar över ändrings-/historik-blocket) OCH `/v1/products/{ean}/prices` ger prislösa ICA-poster.
+  **Steg 6 per-butik-pris är alltså trasigt för ICA tills en alternativ priskälla hittas** (ICA:s
+  pris ligger nu troligen bakom en separat pricing-endpoint / den WAF-skyddade ehandeln - kräver research).
 - **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
   scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
   sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
