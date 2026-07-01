@@ -436,15 +436,18 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
     per butik. -> Crawl-plan: (1) quicksearch per butik = {consumerItemId -> gtin} (redan implementerat),
     (2) ecom product-pages/products = {retailerProductId -> pris}, (3) joina på consumerItemId==retailerProductId
     -> per-butik-pris nyckelbart på gtin. Integration GENOMFÖRBAR.
-  - **KVARVARANDE BLOCKERARE: AWS-WAF på ecom-originet.** `handlaprivatkund.ica.se`-endpoints ger 403
-    (CloudFront "Request blocked") mot headless-Chromium / server-side-requests; syskon-endpoints
-    (`search/v1/suggestions`) ger 200. Din curl fungerar för att du har en FÄRSK `aws-waf-token` från en
-    RIKTIG (icke-headless) browser som löst WAF-JS-challengen. En crawler behöver alltså skaffa/förnya en
-    giltig `aws-waf-token` + `X-CSRF-TOKEN` (för PUT) via icke-headless browser (`headless=False`+xvfb /
-    stealth) - och sen anropa endpoints SAME-ORIGIN (SPA:n kör PÅ handlaprivatkund; cross-origin fetch från
-    handla.ica.se CORS-blockas). Metod för butiksval-fångst: Playwright + riktig Chromium, ort-listan
-    ("Hitta butik efter ort" -> ortlänk -> "Välj butik"-knapp). ICA visar SLUMPVIS två cookie-dialoger
-    (OneTrust ELLER egen "Godkänn kakor") - acceptera båda.
+  - **AWS-WAF-lösning VALIDERAD (prototyp 2026-07-01, driftbar):** ecom-originet är AWS-WAF-gatat (403
+    CloudFront mot headless/server-side), MEN en **headed Chromium under xvfb** (`headless=False`, riktig
+    Firefox-UA, `--disable-blink-features=AutomationControlled`) löser WAF-JS-challengen automatiskt vid
+    sidladdning. Bekräftat: `page.goto("https://handlaprivatkund.ica.se/stores/{accountId}/")` -> 200
+    "Startsida ICA Handla Online" + `aws-waf-token`-cookie satt. **Butiksvals-UI:t behövs INTE** - navigera
+    direkt till `/stores/{accountId}/` (accountId har vi ur butiksdatan). **En WAF-lösning betjänar ALLA
+    butiker:** efter en goto räcker det att byta accountId i fetch-URL:en (API:et är same-origin, accountId
+    i pathen) - testat 3 butiker med olika priser ur samma kontext, alla 200. GET product-pages behöver
+    INGEN CSRF; bara PUT products gör det (fångas ur SPA:ns egna request-headers vid behov). Anropen MÅSTE
+    vara same-origin (page.evaluate(fetch) på handlaprivatkund; cross-origin från handla.ica.se CORS-blockas,
+    ctx.request WAF-403:as). **Bonus: product-pages ger även ERBJUDANDEN** (`promotions[]`, `promoPrice`,
+    `promoUnitPrice`) utöver ordinarie pris + jämförpris. Token har TTL -> re-goto vid 403.
 - **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
   scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
   sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
