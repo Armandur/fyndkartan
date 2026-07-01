@@ -1040,6 +1040,21 @@ crawl-körningshistorik = BYGGT. KVAR (den faktiska konsumentnyttan): geo-/favor
 (`/{ean}/prices?near=`, `/compare/basket`, butiks-scope i browse/compare) + kadens/färskhet i drift. -->
 
 
+### ICA-priskälla flyttad till e-handeln (2026-07-01) - ny ecom-crawler, parallell-fas
+
+ICA tog bort pris ur globalsearch/quicksearch (~2026-06-16). Per-butik-pris för ICA hämtas nu från
+e-handeln `handlaprivatkund.ica.se` via `api/ica_ecom.py` -> separat tabell `ica_ecom_prices` (parallellt
+med quicksearch-crawlen). EAN-brygga: ecom:s `retailerProductId == quicksearch consumerItemId`, quicksearch
+bygger `ica_cid_ean`-mappen. Se `ICA-ECOM-API.md`. Validerat: 100% pris + jämförpris + erbjudanden,
+mappning stiger mot ~100% när mappen fylls. Byggt: fetch + skriv + trigger. Kvar på denna crawler:
+- [ ] **Läsvägs-integration (TODO, återkom):** peka appens `/{ean}/prices` (och browse/compare/basket-
+      scope) mot `ica_ecom_prices` för ICA, eller merga in i `catalog_store_prices`, när täckningen
+      mognat. Just nu skriver ecom-crawlen bara sin egen tabell - INTE synligt i appen än. Detta är den
+      sista biten för att ICA-per-butik-pris ska nå slutanvändaren igen.
+- [ ] Cron-schemaläggning + konsol-UI-kort för ecom-passet (byggs 2026-07-01).
+- [ ] Ev. `aws-waf-token`-lager (headed browser) om vi vill köra snabbare/nå de envist WAF-challengeade
+      butikerna (byggs 2026-07-01).
+
 Spåra hyllpris PER BUTIK för de kedjor som är butiksprissatta (Coop + ICA), så vi kan svara
 "var är varan/matkassen billigast - hos mina favoritbutiker / nära mig". Bygger ovanpå Steg 5
 (katalog) men är ett eget, tyngre subsystem. **Beslut 2026-06-05: vi siktar på ALLA frågbara butiker

@@ -50,6 +50,10 @@ CATALOG_CRAWL_CRON = os.getenv("CATALOG_CRAWL_CRON", "0 3 * * *")
 # Bredd kommer ur crawl/warm; detta fyller bara de verkliga närings-luckorna över tid. 'off' = av.
 PARTIAL_UPGRADE_CRON = os.getenv("PARTIAL_UPGRADE_CRON", "0 2 * * *")  # dagligen 02:00
 PARTIAL_UPGRADE_CAP = int(os.getenv("PARTIAL_UPGRADE_CAP", "300"))     # max EAN/körning
+# ICA ecom-pris-crawl (api/ica_ecom.py). Dagligen 05:00 - EFTER katalog/quicksearch (03:00) så cid->gtin-
+# mappen är färsk. Cap/körning -> rotation över dagar (WAF-rate-känslig, låg takt). 'off' = av.
+ICA_ECOM_CRON = os.getenv("ICA_ECOM_CRON", "0 5 * * *")
+ICA_ECOM_CRON_CAP = int(os.getenv("ICA_ECOM_CRON_CAP", "300"))        # max butiker/natt (~4-5 nätter/varv)
 PARTIAL_UPGRADE_CONC = int(os.getenv("PARTIAL_UPGRADE_CONC", "3"))     # samtidiga hämtningar
 PARTIAL_UPGRADE_PACE = float(os.getenv("PARTIAL_UPGRADE_PACE", "0.25"))  # paus (s) mellan starter
 # Max Axfood-katalogkoder/kedja som EAN-resolvas efter en crawl (cross-chain-merge). Engångs-bulken

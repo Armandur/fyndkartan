@@ -182,7 +182,7 @@ async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
     st = ECOM_STATE
     if st["running"]:
         return {"status": "running"}
-    queue = [a for _, a in database.stores_to_crawl(chain="ica", cap=cap, max_age_hours=max_age_hours)]
+    queue = database.ica_ecom_stores_to_crawl(cap=cap, max_age_hours=max_age_hours)
     st.update(running=True, done=0, total=len(queue), stores_ok=0, products=0, mapped=0, errors=0,
               current=None, last_error=None, started_at=_now(), finished_at=None)
     sem = asyncio.Semaphore(concurrency or _STORE_CONC)

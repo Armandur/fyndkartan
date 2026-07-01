@@ -448,3 +448,26 @@ def ica_ecom_coverage():
     conn.close()
     return {"rows": r["rows"], "stores": r["stores"], "mapped": r["mapped"],
             "priced": r["priced"], "promos": r["promos"], "last": r["last"]}
+
+
+def ica_ecom_stores_to_crawl(cap=None, max_age_hours=None):
+    """ICA-butiker (enabled=1) att ecom-pris-crawla, ROTATION härledd ur ica_ecom_prices.fetched_at (senast
+    ecom-crawlad) - egen rotation skild från quicksearchens last_crawled. Aldrig-ecom-crawlad först, sedan
+    äldst. `max_age_hours` > 0 -> hoppa butiker ecom-crawlade nyligare än så. Returnerar butiks-id (accountId)."""
+    conn = get_conn()
+    sql = ("SELECT sc.store, MAX(ep.fetched_at) AS last FROM store_crawl sc "
+           "LEFT JOIN ica_ecom_prices ep ON ep.store = sc.store "
+           "WHERE sc.chain='ica' AND sc.enabled=1 GROUP BY sc.store")
+    args = {}
+    if max_age_hours and max_age_hours > 0:
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sql = f"SELECT * FROM ({sql}) s WHERE s.last IS NULL OR s.last < :cutoff"
+        args["cutoff"] = cutoff
+    sql += " ORDER BY (last IS NOT NULL), last"
+    if cap:
+        sql += " LIMIT :cap"
+        args["cap"] = int(cap)
+    rows = conn.execute(text(sql), args).fetchall()
+    conn.close()
+    return [r["store"] for r in rows]

@@ -119,11 +119,15 @@ async def lifespan(app: FastAPI):
     # Riktad uppgradering av glesa partial-rader till full merge (egen, strypt cadence). Tomt cron = av.
     partial_scheduler = asyncio.create_task(
         run_scheduler(lambda: settings.get("partial_upgrade_cron"), _tz, upgrade_sparse_partials, "partial-uppgradering"))
+    # ICA ecom-pris-crawl (egen cadence, default 05:00 efter katalog/quicksearch). Cap/natt -> rotation.
+    ecom_scheduler = asyncio.create_task(
+        run_scheduler(lambda: settings.get("ica_ecom_cron"), _tz, scheduled_ica_ecom, "ICA ecom-pris"))
     yield
     scheduler.cancel()
     offers_scheduler.cancel()
     crawl_scheduler.cancel()
     partial_scheduler.cancel()
+    ecom_scheduler.cancel()
 
 
 app = FastAPI(
@@ -914,6 +918,8 @@ async def trigger_ica_ecom_crawl(cap: int | None = None, concurrency: int | None
 async def ica_ecom_crawl_status(_=Depends(require_admin)):
     runs = database.last_crawl_runs(kind="ecom_prices")
     return {**ica_ecom.ECOM_STATE, "coverage": database.ica_ecom_coverage(),
+            "cron": settings.get("ica_ecom_cron"),
+            "next_run": _next_cron(settings.get("ica_ecom_cron")),
             "last_run": runs.get(("ecom_prices", "ica"))}
 
 
@@ -974,6 +980,16 @@ async def scheduled_crawl():
             await fn()
         except Exception:  # noqa: BLE001
             log.exception("Schemalagd %s misslyckades", label)
+
+
+async def scheduled_ica_ecom():
+    """Schemalagt ICA ecom-pris-crawl (ica_ecom_cron, default 05:00 - EFTER katalog/quicksearch så
+    cid->gtin-mappen är färsk). Cap/natt (ICA_ECOM_CRON_CAP) -> rotation över dagar. Skriver ica_ecom_prices
+    (parallell-fasen). Skild från scheduled_crawl så ecom inte piggybackar på ICA-lasten direkt."""
+    try:
+        await ica_ecom.crawl_all_ecom(cap=config.ICA_ECOM_CRON_CAP)
+    except Exception:  # noqa: BLE001
+        log.exception("Schemalagd ICA ecom-pris-crawl misslyckades")
 
 
 @app.post("/v1/admin/catalog/warm-eans")
