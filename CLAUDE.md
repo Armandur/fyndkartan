@@ -436,18 +436,24 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
     per butik. -> Crawl-plan: (1) quicksearch per butik = {consumerItemId -> gtin} (redan implementerat),
     (2) ecom product-pages/products = {retailerProductId -> pris}, (3) joina på consumerItemId==retailerProductId
     -> per-butik-pris nyckelbart på gtin. Integration GENOMFÖRBAR.
-  - **AWS-WAF-lösning VALIDERAD (prototyp 2026-07-01, driftbar):** ecom-originet är AWS-WAF-gatat (403
-    CloudFront mot headless/server-side), MEN en **headed Chromium under xvfb** (`headless=False`, riktig
-    Firefox-UA, `--disable-blink-features=AutomationControlled`) löser WAF-JS-challengen automatiskt vid
-    sidladdning. Bekräftat: `page.goto("https://handlaprivatkund.ica.se/stores/{accountId}/")` -> 200
-    "Startsida ICA Handla Online" + `aws-waf-token`-cookie satt. **Butiksvals-UI:t behövs INTE** - navigera
-    direkt till `/stores/{accountId}/` (accountId har vi ur butiksdatan). **En WAF-lösning betjänar ALLA
-    butiker:** efter en goto räcker det att byta accountId i fetch-URL:en (API:et är same-origin, accountId
-    i pathen) - testat 3 butiker med olika priser ur samma kontext, alla 200. GET product-pages behöver
-    INGEN CSRF; bara PUT products gör det (fångas ur SPA:ns egna request-headers vid behov). Anropen MÅSTE
-    vara same-origin (page.evaluate(fetch) på handlaprivatkund; cross-origin från handla.ica.se CORS-blockas,
-    ctx.request WAF-403:as). **Bonus: product-pages ger även ERBJUDANDEN** (`promotions[]`, `promoPrice`,
-    `promoUnitPrice`) utöver ordinarie pris + jämförpris. Token har TTL -> re-goto vid 403.
+  - **INGEN WAF-blockering server-side för GET (bekräftat 2026-07-01, KORRIGERING):** ren `httpx`/`curl`
+    med **riktig Firefox-UA + `ecom-request-source: web`, UTAN cookies**, får 200 JSON på GET-endpointsen
+    (categories, product-pages, bop). Ingen browser/xvfb/WAF-token behövs. Mina tidigare 403:or berodde på
+    (a) browser-NAVIGERING till HTML-sidan (utmanas), och (b) `ctx.request` med en TRASIG/utmanad `aws-waf-
+    token` i sparad state - en request UTAN cookies släpps igenom. -> **crawlern blir ren async-httpx som
+    övriga, inget SPOF-WAF-steg.** (Bara skrivande PUT `products` kräver `X-CSRF-TOKEN`; behövs troligen inte
+    - product-pages GET decorerar priser direkt.)
+  - **Crawl-loop (ren httpx per butik):** `GET .../webproductpagews/v1/categories?decoration=false&
+    categoryDepth=N` -> kategoriträd (löv-`categoryId`). Per löv: `GET .../v6/product-pages?categoryId=X&
+    maxPageSize=100&maxProductsToDecorate=100&tag=web&tag=category-item` -> produkter (pris, jämförpris,
+    `retailerProductId`, ERBJUDANDEN via `promotions[]`/`promoPrice`), paginering via token i svarets
+    `metadata`/`additionalPageInfo`. Mappa `retailerProductId`->`gtin` via quicksearch (`ean_cache`/vår crawl).
+  - **Fler ecom-endpoints (agent-kartlagt, `/api/<service>/`):** `webproductpagews/v5/products/bop?
+    retailerProductId=X` = full produktdetalj (ingredienser/näring/ursprung/förvaring - potentiell ersättare
+    för den WAF-känsliga `handla.ica.se/produkt/`-SSR-scrapen i `details.py`); `productquerylayer .../v1/pages/
+    promotions` = strukturerade erbjudanden; `recipes`/`meals` = recept/måltid; GraphQL på `{base}/graphql`
+    (adverts/moduler). Fullständig service-lista: webproductpagews, search, product-listing-pages, promotions,
+    recipes, meals, adverts, cart, order, customer, chat m.fl.
 - **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
   scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
   sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
