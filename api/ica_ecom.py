@@ -15,10 +15,15 @@ Svaren bär INGEN gtin/EAN - bara retailerProductId. EAN-bryggan görs av anropa
 """
 import asyncio
 import logging
+from datetime import datetime, timezone
 
-from . import apilog
+from . import apilog, database
 
 log = logging.getLogger("matbutiker")
+
+
+def _now():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 _BASE = "https://handlaprivatkund.ica.se/stores/{acct}/api"
 _UA = "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0"
@@ -125,3 +130,69 @@ async def fetch_store_products(client, acct, pace=None):
             raise
         yield name, rows, len(rows) < pc
         await asyncio.sleep(pace)
+
+
+_STORE_CONC = 4     # samtidiga butiker (bunden; snäll mot ICA)
+_STORE_PACE = 0.5   # paus efter varje butik
+
+# Parallell-fasens live-state för konsolen (per-process, som övriga crawl-states).
+ECOM_STATE = {"running": False, "done": 0, "total": 0, "stores_ok": 0, "products": 0, "mapped": 0,
+              "errors": 0, "current": None, "started_at": None, "finished_at": None, "last_error": None}
+
+
+async def crawl_store(client, acct):
+    """Crawla en ICA-butiks hela ecom-sortiment -> ica_ecom_prices (separat tabell). Mappar
+    retailerProductId -> gtin via ica_cid_ean (quicksearch-byggd). Returnerar stats-dict."""
+    products, ncat, capped = {}, 0, 0
+    async for _name, rows, cap in fetch_store_products(client, acct):
+        ncat += 1
+        capped += 1 if cap else 0
+        for r in rows:
+            products[r["retailer_product_id"]] = r  # dedup över kategorier
+    eanmap = await asyncio.to_thread(database.ica_ean_for_cids, list(products))
+    for rid, r in products.items():
+        r["ean"] = eanmap.get(rid)
+    written = await asyncio.to_thread(database.upsert_ica_ecom_prices, acct, list(products.values()))
+    return {"products": len(products), "categories": ncat, "capped": capped, "written": written,
+            "priced": sum(1 for r in products.values() if r["price"] is not None),
+            "mapped": sum(1 for r in products.values() if r["ean"]),
+            "promos": sum(1 for r in products.values() if r["promo_price"])}
+
+
+async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
+    """Kör ecom-pris-crawlen för de enabled+frågbara ICA-butikerna (bunden samtidighet). Skriver till
+    ica_ecom_prices + en crawl_runs-rad (kind='ecom_prices'). Parallellt med quicksearch-crawlen; rör
+    inte dess rotation/last_crawled. `max_age_hours=None/0` = alla valda butiker."""
+    st = ECOM_STATE
+    if st["running"]:
+        return {"status": "running"}
+    queue = [a for _, a in database.stores_to_crawl(chain="ica", cap=cap, max_age_hours=max_age_hours)]
+    st.update(running=True, done=0, total=len(queue), stores_ok=0, products=0, mapped=0, errors=0,
+              current=None, last_error=None, started_at=_now(), finished_at=None)
+    sem = asyncio.Semaphore(concurrency or _STORE_CONC)
+    try:
+        async with apilog.make_client(follow_redirects=True) as client:
+            async def one(acct):
+                async with sem:
+                    try:
+                        r = await crawl_store(client, acct)
+                        st["stores_ok"] += 1
+                        st["products"] += r["products"]
+                        st["mapped"] += r["mapped"]
+                        st["current"] = f"ICA {acct}: {r['products']} prod ({r['mapped']} mappade)"
+                    except Exception as e:  # noqa: BLE001
+                        st["errors"] += 1
+                        st["last_error"] = f"{acct}: {type(e).__name__}: {e}"[:200]
+                        log.warning("ica_ecom: butik %s fel: %s", acct, e)
+                    finally:
+                        st["done"] += 1
+                    await asyncio.sleep(_STORE_PACE)
+            await asyncio.gather(*(one(a) for a in queue), return_exceptions=True)
+    finally:
+        st.update(running=False, finished_at=_now(), current=None)
+        await asyncio.to_thread(
+            database.record_crawl_run, "ecom_prices", "ica", started=st["started_at"],
+            finished=st["finished_at"], status=("ok_med_fel" if st["errors"] else "ok"),
+            rows=st["products"], changed=st["mapped"], errors=st["errors"],
+            stores_ok=st["stores_ok"], stores_total=st["total"], last_error=st["last_error"])
+    return st

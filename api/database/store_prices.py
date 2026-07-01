@@ -406,3 +406,45 @@ def store_prices_stats():
             "price_rows": v.get("price_rows", 0), "price_stores": v.get("price_stores", 0),
         }
     return out
+
+
+def upsert_ica_ecom_prices(store, rows):
+    """Batch-upsert ICA ecom-pris-crawlens rader till `ica_ecom_prices` (separat tabell, parallell-fasen).
+    `rows` = ica_ecom-normaliserade dicts (retailer_product_id, name, brand, price, comparison_value/unit,
+    promo_price/text, available) + `ean` (gtin, ev. None). Nyckel (store, retailer_product_id). Returnerar
+    antal skrivna rader."""
+    rows = [r for r in rows if r.get("retailer_product_id")]
+    if not rows:
+        return 0
+    now = _now()
+    payload = [{"store": str(store), "rid": str(r["retailer_product_id"]), "ean": r.get("ean"),
+                "name": r.get("name"), "brand": r.get("brand"), "price": r.get("price"),
+                "cv": r.get("comparison_value"), "cu": r.get("comparison_unit"),
+                "pp": r.get("promo_price"), "pt": r.get("promo_text"),
+                "av": 1 if r.get("available") else 0, "now": now} for r in rows]
+    conn = get_conn()
+    conn.execute(
+        text("INSERT INTO ica_ecom_prices (store, retailer_product_id, ean, name, brand, price, "
+             "comparison_value, comparison_unit, promo_price, promo_text, available, fetched_at) VALUES "
+             "(:store, :rid, :ean, :name, :brand, :price, :cv, :cu, :pp, :pt, :av, :now) "
+             "ON CONFLICT (store, retailer_product_id) DO UPDATE SET ean=excluded.ean, name=excluded.name, "
+             "brand=excluded.brand, price=excluded.price, comparison_value=excluded.comparison_value, "
+             "comparison_unit=excluded.comparison_unit, promo_price=excluded.promo_price, "
+             "promo_text=excluded.promo_text, available=excluded.available, fetched_at=excluded.fetched_at"),
+        payload)
+    conn.commit()
+    conn.close()
+    return len(payload)
+
+
+def ica_ecom_coverage():
+    """Snabböversikt för parallell-jämförelsen: rader, distinkta butiker, mappnings-grad (ean ifyllt),
+    med-pris i ica_ecom_prices."""
+    conn = get_conn()
+    r = conn.execute(text(
+        "SELECT COUNT(*) rows, COUNT(DISTINCT store) stores, "
+        "COUNT(ean) mapped, COUNT(price) priced, COUNT(promo_price) promos, MAX(fetched_at) last "
+        "FROM ica_ecom_prices")).fetchone()
+    conn.close()
+    return {"rows": r["rows"], "stores": r["stores"], "mapped": r["mapped"],
+            "priced": r["priced"], "promos": r["promos"], "last": r["last"]}

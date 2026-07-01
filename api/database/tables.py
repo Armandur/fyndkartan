@@ -283,6 +283,20 @@ ica_cid_ean = Table(
     Column("cid", Text, primary_key=True), Column("ean", Text), Column("fetched_at", Text),
 )
 
+# ICA ecom-pris-crawlens (api/ica_ecom.py) utdata - SEPARAT från catalog_store_prices under parallell-fasen
+# (ingen interferens med quicksearch-crawlen). Nyckel = (store, retailer_product_id); `ean` (gtin) fylls via
+# ica_cid_ean-mappen (nullable tills mappen har den). Bär ordinariepris + jämförpris + reapris (erbjudande).
+ica_ecom_prices = Table(
+    "ica_ecom_prices", metadata,
+    Column("store", Text, primary_key=True),
+    Column("retailer_product_id", Text, primary_key=True),
+    Column("ean", Text), Column("name", Text), Column("brand", Text),
+    Column("price", Float), Column("comparison_value", Float), Column("comparison_unit", Text),
+    Column("promo_price", Float), Column("promo_text", Text),
+    Column("available", Integer), Column("fetched_at", Text),
+    Index("idx_ica_ecom_ean", "ean"),
+)
+
 product_images = Table(
     "product_images", metadata,
     Column("ean", Text, primary_key=True), Column("size", Text, primary_key=True),

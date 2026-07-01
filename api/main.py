@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, images, manufacturers, schemas, settings, store_crawl, store_measure, tags
+from . import apilog, auth, brands, catalog_crawl, categories, config, database, deps, ica_ecom, images, manufacturers, schemas, settings, store_crawl, store_measure, tags
 from .routes import admin_vocab, compare as compare_routes, products as products_routes, stores as stores_routes
 from .database import (
     get_conn,
@@ -896,6 +896,25 @@ async def store_price_crawl_status(_=Depends(require_admin)):
             "cron": settings.get("catalog_crawl_cron"),
             "next_run": _next_cron(settings.get("catalog_crawl_cron")),
             "last_runs": {c: runs.get(("store_prices", c)) for c in ("ica", "coop")}}
+
+
+@app.post("/v1/admin/store-prices/crawl-ecom")
+async def trigger_ica_ecom_crawl(cap: int | None = None, concurrency: int | None = None,
+                                 max_age_hours: int | None = None, _=Depends(require_admin)):
+    """Starta ICA ecom-pris-crawlen (handlaprivatkund) i bakgrunden -> ica_ecom_prices (separat tabell,
+    parallell-fasen). `cap` = max butiker. `max_age_hours` None/0 = alla valda ICA-butiker. Kör parallellt
+    med quicksearch-crawlen; rör inte dess rotation. EAN-mappning fylls av quicksearch (ica_cid_ean)."""
+    if ica_ecom.ECOM_STATE["running"]:
+        return {"status": "running", "detail": "ICA ecom-crawl pågår redan."}
+    asyncio.create_task(ica_ecom.crawl_all_ecom(cap=cap, concurrency=concurrency, max_age_hours=max_age_hours))
+    return {"status": "started", "cap": cap, "max_age_hours": max_age_hours}
+
+
+@app.get("/v1/admin/store-prices/crawl-ecom/status")
+async def ica_ecom_crawl_status(_=Depends(require_admin)):
+    runs = database.last_crawl_runs(kind="ecom_prices")
+    return {**ica_ecom.ECOM_STATE, "coverage": database.ica_ecom_coverage(),
+            "last_run": runs.get(("ecom_prices", "ica"))}
 
 
 @app.get("/v1/admin/crawl-history")
