@@ -414,8 +414,23 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   per butik men NULL-priser (18,7M av 18,8M ICA-rader är prislösa; enda ifyllda är 06-05..06-15). Följd:
   `catalog_store_prices.price` NULL -> `upsert_store_prices` `changed=0` alltid för ICA (pris-vakten
   hoppar över ändrings-/historik-blocket) OCH `/v1/products/{ean}/prices` ger prislösa ICA-poster.
-  **Steg 6 per-butik-pris är alltså trasigt för ICA tills en alternativ priskälla hittas** (ICA:s
-  pris ligger nu troligen bakom en separat pricing-endpoint / den WAF-skyddade ehandeln - kräver research).
+  **Steg 6 per-butik-pris är alltså trasigt för ICA tills en alternativ priskälla hittas.**
+  **Research 2026-07-01 (Playwright-nätverksfångst mot handla.ica.se): priskällan HITTAD men WAF-blockerad.**
+  Priserna ligger nu i ehandeln `handlaprivatkund.ica.se`, butik i URL-PATHEN:
+  - Butiksval: `GET handla.ica.se/api/store/v1?zip=NNNNN` (eller `?groupby=citygroup`) -> butikslista med
+    `accountId` (= samma ICA-kontonummer vi redan crawlar), `retailerSiteId`, `slug`. Att välja butik i UI:t
+    sätter cookies `basePath=/stores/{accountId}`, `store-cookie`, `aws-waf-token`, och ett butiks-scopat
+    `regionId`.
+  - Pris-endpoint: `GET handlaprivatkund.ica.se/stores/{accountId}/api/webproductpagews/v5/product-pages
+    ?decoratedOnly=true&limit=27&tag=web&tag=lohp` (startsidans produktrutnät med pris; sök-varianter finns).
+    Butiken är i pathen (`/stores/{accountId}/`) -> passar vår per-butik-modell perfekt.
+  - **BLOCKERARE: den endpointen returnerar 403 (AWS-WAF/CloudFront "Request blocked") även i riktig
+    headless-Chromium i det fulla butiksvals-flödet**, medan syskon-endpoints (`search/v1/suggestions`,
+    `search/v1/redirects`) ger 200. ICA:s WAF blockar alltså specifikt produkt/pris-endpointen mot
+    automation/headless. En crawl kräver därför WAF-bypass (`aws-waf-token`-lösning, ömtålig katt-och-råtta)
+    eller icke-headless riktig browser på ren/residential IP - väsentligt svårare än gamla gateway-API:t.
+    Metod som fungerade för fångsten: Playwright + riktig Chromium, butiksval via ort-listan
+    ("Hitta butik efter ort" -> ort-länk -> "Välj butik"-knapp), fånga XHR mot handlaprivatkund.ica.se.
 - **Coop OCH ICA: pris + sortiment är BUTIKSSPECIFIKT (bekräftat empiriskt).** Båda sök-API:erna
   scopar på butik (`store={ledger}` resp. `accountNumber`) och returnerar olika pris OCH olika
   sortiment per butik - inte nationellt. Mätt: samma EAN 26,03 kr (Coop 251300) vs 33,08 kr (Coop
