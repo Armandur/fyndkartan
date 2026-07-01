@@ -98,3 +98,25 @@ Butikslista (annan host, ingen WAF): `GET https://handla.ica.se/api/store/v1?zip
 4. Skriv per-butik-pris (+ ev. erbjudanden) till `catalog_store_prices` (upsert, som befintliga crawlen).
 
 Ren async-`httpx` som övriga crawlers; inget browser/WAF-steg. Vid ev. 403 (WAF-drift): backa av/retry.
+
+### GOTCHA: pageToken-paginering fungerar INTE statslöst (verifierat 2026-07-01)
+
+`pageToken` (nästa sida) returnerar **0 produkter på sida 2** med ren httpx utan cookies - SPA:n håller
+server-side token-state (cookie/session) som en statslös klient inte replikerar. Gäller både
+`product-pages` och promotions-endpointen. -> Med vår statslösa metod får vi bara **första sidan** per vy.
+Utvägar för full täckning:
+- **Hög `maxPageSize`** (t.ex. 500-1000) på LÖV-kategorier (de flesta av ~1836 löv är små nog att rymmas
+  i en sida) -> undvik paginering helt. Verifiera per-kategori `productCount` ur kategoriträdet.
+- Alternativt: etablera en session-cookie först (en initial request mot butiken) så pageToken funkar.
+
+## Erbjudanden (offers)
+
+**Behåll `ica_offers.py` (weeklyOffers) - INTE ecom.** ICA:s reklamblad (`/erbjudanden/{slug}-{accountNumber}/`
+SSR `window.__INITIAL_DATA__.weeklyOffers`) är oförändrat och friskt (verifierat 2026-07-01: 52/144 offers
+på två butiker), med `price_text`/mekanik, `eans[]` INLINE, och `validTo` - allt vår offers-cache behöver.
+
+Ecom-erbjudanden finns (`promotions[]`/`promoPrice` i product-pages + `product-listing-pages/v1/pages/
+promotions?regionId={UUID}`, regionId skrapas ur butiks-HTML) men är SÄMRE: ingen giltighetstid (`valid_to`),
+EAN ej inline (kräver `retailerProductId->gtin`-brygga via den capade quicksearchen), och pageToken-
+begränsningen ovan. Främst intressant som KOMPLEMENT: erbjudande-flaggan (`promotions`/`promoPrice`) fås
+gratis i SAMMA product-pages-anrop som hyllpriset, om vi vill baka in den i katalog-crawlen.
