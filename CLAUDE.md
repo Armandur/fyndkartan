@@ -416,7 +416,8 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   hoppar över ändrings-/historik-blocket) OCH `/v1/products/{ean}/prices` ger prislösa ICA-poster.
   **Steg 6 per-butik-pris är alltså trasigt för ICA tills en alternativ priskälla hittas.**
   **Research 2026-07-01 (Playwright-nätverksfångst mot handla.ica.se): priskällan HITTAD men WAF-blockerad.**
-  Priserna ligger nu i ehandeln `handlaprivatkund.ica.se`, butik i URL-PATHEN:
+  Priserna ligger nu i ehandeln `handlaprivatkund.ica.se`, butik i URL-PATHEN (**full endpoint-referens:
+  `ICA-ECOM-API.md`**):
   - Butiksval: `GET handla.ica.se/api/store/v1?zip=NNNNN` (eller `?groupby=citygroup`) -> butikslista med
     `accountId` (= samma ICA-kontonummer vi redan crawlar), `retailerSiteId`, `slug`. Att välja butik i UI:t
     sätter cookies `basePath=/stores/{accountId}`, `store-cookie`, `aws-waf-token`, och ett butiks-scopat
