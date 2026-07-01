@@ -30,7 +30,8 @@ _UA = "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0"
 _HDRS = {"User-Agent": _UA, "Accept": "application/json; charset=utf-8",
          "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.7", "ecom-request-source": "web"}
 _PAGE_SIZE = 1000       # hög -> ryms i EN sida (pageToken paginerar inte statslöst, se ICA-ECOM-API.md)
-_PAGE_PACE = 0.25       # paus mellan kategori-anrop (snäll mot ICA)
+_PAGE_PACE = 0.4        # paus mellan kategori-anrop - ICA:s WAF är rate-baserad och trippar under last
+                        # (challengar då butiker med 200 text/html i st.f. JSON), så håll takten låg
 
 
 def _num(v):
@@ -43,13 +44,28 @@ def _num(v):
         return None
 
 
+async def _get_json(client, url, params, retries=3):
+    """GET -> JSON med retry/backoff. ICA:s WAF/rate-limit ger sporadiskt 403 (CloudFront-HTML) eller
+    tomt svar under samtidig last -> retas i st.f. att fälla hela butiken. Höjer efter sista försöket."""
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            r = await client.get(url, params=params, headers=_HDRS, timeout=30)
+            if r.status_code == 200 and "json" in r.headers.get("content-type", ""):
+                return r.json()
+            last = f"HTTP {r.status_code} {r.headers.get('content-type', '')[:20]}"
+        except Exception as e:  # noqa: BLE001 (transport/JSON)
+            last = f"{type(e).__name__}"
+        if attempt < retries:
+            await asyncio.sleep(1.0 + attempt * 1.5)  # backoff: 1s, 2.5s, 4s
+    raise RuntimeError(f"ica_ecom _get_json misslyckades ({last}): {url.split('/api/')[-1][:40]}")
+
+
 async def fetch_categories(client, acct):
     """Hämta butikens kategoriträd MED produkt-antal (`decoration=true`; `false` ger productCount=0).
     Returnerar topp-noderna (rekursiv `childCategories` behålls) - walken nedan väljer browse-nivå."""
     url = f"{_BASE.format(acct=acct)}/webproductpagews/v1/categories"
-    r = await client.get(url, params={"decoration": "true", "categoryDepth": 5}, headers=_HDRS, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    return await _get_json(client, url, {"decoration": "true", "categoryDepth": 5})
 
 
 def _browse_plan(nodes, page_size):
@@ -97,9 +113,7 @@ async def fetch_category_products(client, acct, category_id, page_size=None):
     url = f"{_BASE.format(acct=acct)}/webproductpagews/v6/product-pages"
     params = {"categoryId": category_id, "maxPageSize": size, "maxProductsToDecorate": size,
               "tag": ["web", "category-item"]}
-    r = await client.get(url, params=params, headers=_HDRS, timeout=30)
-    r.raise_for_status()
-    data = r.json()
+    data = await _get_json(client, url, params)
     seen, out = set(), []
     for grp in data.get("productGroups") or []:
         for p in grp.get("decoratedProducts") or []:
@@ -132,8 +146,10 @@ async def fetch_store_products(client, acct, pace=None):
         await asyncio.sleep(pace)
 
 
-_STORE_CONC = 4     # samtidiga butiker (bunden; snäll mot ICA)
-_STORE_PACE = 0.5   # paus efter varje butik
+_STORE_CONC = 2     # LÅG cross-store-samtidighet: ICA:s WAF är rate-baserad och challengar butiker under
+                    # last (fler samtidiga -> fler 200-text/html-challenges). _get_json retar transienta;
+                    # persistent challengeade butiker (en minoritet) skippas och retas nästa körning.
+_STORE_PACE = 0.8   # paus efter varje butik
 
 # Parallell-fasens live-state för konsolen (per-process, som övriga crawl-states).
 ECOM_STATE = {"running": False, "done": 0, "total": 0, "stores_ok": 0, "products": 0, "mapped": 0,

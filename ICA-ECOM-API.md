@@ -99,6 +99,20 @@ Butikslista (annan host, ingen WAF): `GET https://handla.ica.se/api/store/v1?zip
 
 Ren async-`httpx` som övriga crawlers; inget browser/WAF-steg. Vid ev. 403 (WAF-drift): backa av/retry.
 
+### GOTCHA: WAF är RATE-BASERAD - challengar under last (verifierat 2026-07-01)
+
+GET fungerar server-side utan token vid LÅG takt, men ICA:s AWS-WAF är rate-baserad: under samtidig
+crawl-last börjar den challenga (svarar **`200 text/html`** = CloudFront-challenge-sida i st.f. JSON).
+Mätt: sekventiellt ~85% butiker OK, men cap=20 med samtidighet 3-4 -> ~50% butiker fel (`JSONDecodeError`/
+"HTTP 200 text/html"). En MINORITET butiker (t.ex. 1003400) challengeas dessutom PERSISTENT (även en headed
+browser fick ingen `aws-waf-token` för den). Hantering i `ica_ecom.py`:
+- `_get_json` verifierar `content-type: json` (inte bara status) och retar med backoff (transienta löses).
+- Låg cross-store-samtidighet (`_STORE_CONC`=2) + pace (`_PAGE_PACE`=0.4, `_STORE_PACE`=0.8) håller under
+  tröskeln. Persistent challengeade butiker skippas (`ok_med_fel`) och retas nästa körning - vi har ändå
+  quicksearch-närvaro för dem.
+- Om högre täckning/takt behövs: hämta `aws-waf-token` via headed browser (xvfb, se prototyp) och skicka
+  som cookie i httpx - exempterar från challengen. Ej byggt (låg takt räcker för parallell-fasen).
+
 ### GOTCHA: pageToken-paginering fungerar INTE statslöst (verifierat 2026-07-01)
 
 `pageToken` (nästa sida) returnerar **0 produkter på sida 2** med ren httpx utan cookies - SPA:n håller
