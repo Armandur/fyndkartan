@@ -81,22 +81,31 @@ def _emit(chain, sname, cat_label, cat_total):
     STORE_PRICE_STATE["recent"] = ([item] + STORE_PRICE_STATE["recent"])[:_FEED_CAP]
 
 
-def _write_ica(acct, buf):
-    """Synkron DB-skrivning (catalog_store_prices + union-metadata) - körs i tråd via to_thread så
-    event-loopen inte blockeras. Returnerar antal ändrade rader."""
+def _write_ica_prices(acct, buf):
+    """Per-butik-priser (catalog_store_prices, PK har store -> disjunkta rader per butik = concurrent-safe).
+    Returnerar antal ändrade rader."""
     _new, changed = database.upsert_store_prices("ica", acct, buf)
-    database.catalog_upsert_metadata("ica", buf)  # union-metadata -> bläddra-vyn behåller produkten
     return changed
 
 
-async def _crawl_one_ica(client, gate, acct, cs):
+async def _crawl_one_ica(client, gate, meta_lock, acct, cs):
     """Crawla en ICA-butiks hela katalog -> catalog_store_prices + historik. Returnerar antal produkter.
-    `gate` = delad AIMD-grind (parallell sidhämtning + back-off) över alla butiker i körningen.
-    Skrivningarna BATCHAS (_FLUSH_ROWS) och offloadas till tråd: den parallella hämtningen ger sidor
-    ~20x tätare än förut, och synkrona per-sida-commits på loopen gjorde annars hela API:t oresponsivt
-    under crawl."""
+    `gate` = delad AIMD-grind (parallell sidhämtning). Skrivningarna BATCHAS (_FLUSH_ROWS) och offloadas
+    till tråd (loop-responsivitet). PRISER skrivs concurrent (disjunkta per-butik-rader); METADATA
+    (`catalog_upsert_metadata` -> catalog_products, DELADE rader över butiker) serialiseras via `meta_lock`
+    - annars deadlockar parallella butiker på samma product-rader (Postgres, sett i 07-01-körningen)."""
     sname = database.store_name("ica", acct)
     total_rows, prev, buf = 0, None, []  # prev = (kategori, antal) -> emit en feed-post vid kategori-byte
+
+    async def _flush():
+        nonlocal buf
+        if not buf:
+            return
+        cs["changed"] += await asyncio.to_thread(_write_ica_prices, acct, buf)  # concurrent (disjunkt)
+        async with meta_lock:  # serialiserad (delade catalog_products-rader -> annars deadlock)
+            await asyncio.to_thread(database.catalog_upsert_metadata, "ica", buf)
+        buf = []
+
     async for rows, total, _page, cat in catalog_crawl._ica_fetch_store(client, acct, gate=gate):
         if prev and cat[0] != prev[0]:
             _emit("ica", sname, prev[0], prev[1])
@@ -106,30 +115,37 @@ async def _crawl_one_ica(client, gate, acct, cs):
             total_rows += len(rows)
             cs["rows"] += len(rows)
             if len(buf) >= _FLUSH_ROWS:
-                cs["changed"] += await asyncio.to_thread(_write_ica, acct, buf)
-                buf = []
+                await _flush()
         cs["current"] = f"ICA {sname}: {total_rows}/{total}"
-    if buf:
-        cs["changed"] += await asyncio.to_thread(_write_ica, acct, buf)
+    await _flush()
     if prev:
         _emit("ica", sname, prev[0], prev[1])
     await asyncio.to_thread(database.mark_store_crawled, "ica", acct, total_rows)
     return total_rows
 
 
-def _write_coop(ledger, buf):
-    """Synkron Coop-DB-skrivning - körs i tråd via to_thread. Returnerar antal ändrade rader."""
+def _write_coop_prices(ledger, buf):
+    """Per-butik-priser (disjunkta per-butik-rader = concurrent-safe). Returnerar antal ändrade rader."""
     _new, changed = database.upsert_store_prices("coop", ledger, buf)
-    database.catalog_upsert_metadata("coop", buf)  # union-metadata -> bläddra-vyn behåller produkten
     return changed
 
 
-async def _crawl_one_coop(client, ledger, cs):
+async def _crawl_one_coop(client, meta_lock, ledger, cs):
     """Crawla en Coop-butiks (ledger) katalog -> catalog_store_prices + historik. Returnerar antal.
-    Skrivningarna batchas + offloadas till tråd (som ICA) - vid kombinerad ICA+Coop-crawl ligger annars
-    en loop-skrivning här och väntar på SQLite-skrivlåset (busy_timeout) som ICA-tråden håller -> hänger."""
+    Skrivningarna batchas + offloadas till tråd (som ICA); metadata serialiseras via `meta_lock` (delade
+    catalog_products-rader -> annars deadlock mellan parallella butiker)."""
     sname = database.store_name("coop", ledger)
     total_rows, prev, buf = 0, None, []
+
+    async def _flush():
+        nonlocal buf
+        if not buf:
+            return
+        cs["changed"] += await asyncio.to_thread(_write_coop_prices, ledger, buf)
+        async with meta_lock:
+            await asyncio.to_thread(database.catalog_upsert_metadata, "coop", buf)
+        buf = []
+
     async for rows, _t, _p, cat in catalog_crawl._coop_fetch_store(client, ledger, pace=_PAGE_PACE):
         if prev and cat[0] != prev[0]:
             _emit("coop", sname, prev[0], prev[1])
@@ -139,11 +155,9 @@ async def _crawl_one_coop(client, ledger, cs):
             total_rows += len(rows)
             cs["rows"] += len(rows)
             if len(buf) >= _FLUSH_ROWS:
-                cs["changed"] += await asyncio.to_thread(_write_coop, ledger, buf)
-                buf = []
+                await _flush()
         cs["current"] = f"Coop {sname}: {total_rows}"
-    if buf:
-        cs["changed"] += await asyncio.to_thread(_write_coop, ledger, buf)
+    await _flush()
     if prev:
         _emit("coop", sname, prev[0], prev[1])
     await asyncio.to_thread(database.mark_store_crawled, "coop", ledger, total_rows)
@@ -166,6 +180,10 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
     # körningen. Total ICA-in-flight bunden av grindens target (self-tunar mot ICA:s tak). Coop paginerar
     # fortfarande sekventiellt per butik (cross-store-AIMD räcker; ingen take-cap-press där).
     ica_gate = catalog_crawl._AdaptiveGate() if chain == "ica" else None
+    # Serialiserar catalog_products-metadata-skrivningar över kedjans butiker (delade rader per product_id
+    # -> parallella upserts deadlockar i Postgres). Pris-skrivningarna (disjunkta per-butik-rader) förblir
+    # concurrent. Per kedja (ICA/Coop skriver olika chain-rader -> deadlockar inte varandra).
+    meta_lock = asyncio.Lock()
     err_counts = {}  # fel-HÄNDELSE-histogram {feltyp: antal} -> beständigt i crawl_runs (se VAD som gick fel;
                      # räknar varje fel-tillfälle, kan därför överstiga len(failed) om en butik felar två ggr)
     failed = {}      # acct -> senaste felsträng. Sanningskälla för "kvar felande" (cs["errors"] = len(failed))
@@ -174,9 +192,9 @@ async def _run_chain(client, chain, cap, concurrency, max_age_hours):
         cs["active"] += 1
         try:
             if chain == "ica":
-                await _crawl_one_ica(client, ica_gate, acct, cs)
+                await _crawl_one_ica(client, ica_gate, meta_lock, acct, cs)
             else:  # coop - nyckeln resolvas i _coop_post (cachad, re-key vid 401/403)
-                await _crawl_one_coop(client, acct, cs)
+                await _crawl_one_coop(client, meta_lock, acct, cs)
             cs["stores_ok"] += 1
             failed.pop(acct, None)        # lyckad omkörning -> faller ur felmängden
             cs["errors"] = len(failed)
