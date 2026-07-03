@@ -111,6 +111,18 @@ fönster oavsett; rotation över nätter fyller resten. (En "låg-och-stadig + l
 återuppta"-strategi skulle ev. exploatera budget-refill, men är ej byggd - kräver försiktig mätning över
 DAGAR, inte aggressiv testning som bränner budgeten ytterligare.)
 
+**PIA-VPN-proxy testat 2026-07-03 (flera regioner) - hjälper INTE.** Hypotesen var att en färsk exit-IP
+nollställer budgeten, men WAF:en väger IP-REPUTATION + GEO. Mätt (8-12 butiker/IP):
+- Vår egen residential-IP (färsk): ~40%. **Bäst.**
+- Svensk PIA (se_stockholm, 2 olika IP): ~17-25% - VPN-straff, ej geo-straff.
+- Utländsk PIA (norway/netherlands/de_germany): **0/8** - geo-flaggade (ICA-shopen är Sverige-låst) OVANPÅ
+  VPN-straffet. uk_london 2/8 (mindre flaggat block, ändå lågt).
+-> Svenska VPN-IP:n är förflaggade (lägre tak än vår residential), utländska är dessutom geo-blockade.
+Att rotera PIA-IP:n (någon region) ger alltså flaggade IP:n med LÄGRE budget än vår egen IP -> ingen vinst. **aws-waf-token**-testet
+kunde inte genomföras när budgeten var bränd (headed browser fick `aws-waf-token: False` - challengen är
+olöslig även för browser när budgeten är slut); en färsk token MÅSTE testas med oberörd budget för att
+avgöra om token-innehavare är exempt från budget-regeln (öppen fråga).
+
 ### GOTCHA: WAF challengar under last (verifierat 2026-07-01)
 
 GET fungerar server-side utan token vid LÅG takt, men ICA:s AWS-WAF är rate-baserad: under samtidig
