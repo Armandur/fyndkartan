@@ -158,3 +158,25 @@ promotions?regionId={UUID}`, regionId skrapas ur butiks-HTML) men är SÄMRE: in
 EAN ej inline (kräver `retailerProductId->gtin`-brygga via den capade quicksearchen), och pageToken-
 begränsningen ovan. Främst intressant som KOMPLEMENT: erbjudande-flaggan (`promotions`/`promoPrice`) fås
 gratis i SAMMA product-pages-anrop som hyllpriset, om vi vill baka in den i katalog-crawlen.
+
+## Crawl-avgränsning: bara e-handelsbutiker (2026-07-03)
+
+**Bara ~348 av 1288 ICA-butiker har e-handel.** De övriga ~940 är fysiska-bara-butiker som **302:ar till
+`handla.ica.se?chooseStore=true`** vid `/stores/{acct}/api/...` - `follow_redirects` landar då på en HTML-sida
+som vår `_get_json` läser som WAF-challenge (200 text/html). Att crawla dem **bränner WAF-budget och räknas
+som falska fel**. Filtrera därför kön:
+
+- **`ica_ecom.ecom_accounts(client)`** hämtar `GET handla.ica.se/api/store/v1?groupby=citygroup&customerType=B2C`
+  (ingen WAF, ingen auth) och plockar alla `accountId` med `onlineVersion>=2` -> set med ~348 e-handelsbutiker.
+- `crawl_all_ecom` filtrerar rotationskön mot detta set FÖRE cap. -> Hela ecom-täckningen = **348 butiker,
+  inte 1288**; med WAF-budget ~110/fönster tar ett varv **~3 nätter** (inte ~2 veckor). `ICA_ECOM_CRON_CAP`
+  sänkt till 150 (nära budgeten).
+- Om store/v1 är nere crawlas ofiltrerat (bättre än inget), med en varning i loggen.
+
+## 991-taket (produkter/svar)
+
+Servern capar hårt vid **~991 dekorerade produkter/svar** oavsett `maxPageSize` (2000/5000 ger samma 991).
+`_browse_plan` descendar därför noder > `_BROWSE_MAX` (950, inte `_PAGE_SIZE`=1000) - annars skulle en nod med
+992-1000 produkter tyst huggas av på sin enda sida. Bekräftat att `pageToken` ger HTTP 400 på sida 2 statslöst,
+GraphQL-schemat saknar pris, och det finns ingen bulk/ID-dump-endpoint - så requests/butik är strukturellt
+bundet till antalet kategori-noder (~50-60 för en stor butik), ingen genväg finns.

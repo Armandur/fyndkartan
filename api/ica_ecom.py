@@ -29,9 +29,37 @@ _BASE = "https://handlaprivatkund.ica.se/stores/{acct}/api"
 _UA = "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0"
 _HDRS = {"User-Agent": _UA, "Accept": "application/json; charset=utf-8",
          "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.7", "ecom-request-source": "web"}
-_PAGE_SIZE = 1000       # hög -> ryms i EN sida (pageToken paginerar inte statslöst, se ICA-ECOM-API.md)
+_PAGE_SIZE = 1000       # maxPageSize (servern capar dock hårt vid ~991 dekorerade/svar)
+_BROWSE_MAX = 950       # browse-tröskel: descenda noder > detta. Servern capar vid ~991, så en nod med
+                        # 992-1000 produkter skulle tyst huggas av på EN sida -> descenda i st.f. (marginal).
 _PAGE_PACE = 0.4        # paus mellan kategori-anrop - ICA:s WAF är rate-baserad och trippar under last
                         # (challengar då butiker med 200 text/html i st.f. JSON), så håll takten låg
+_STORE_V1 = "https://handla.ica.se/api/store/v1"  # e-handelsbutik-lista (ingen WAF) -> filtrera bort
+                                                  # icke-ecom-butiker (302:ar till chooseStore, bränner budget)
+
+
+async def ecom_accounts(client):
+    """Set med accountId för de ICA-butiker som FAKTISKT har e-handel (onlineVersion>=2), ur store/v1
+    (ingen WAF). ~348 av 1288 ICA-butiker; resten är fysiska-bara och 302:ar -> slöseri om de crawlas."""
+    r = await client.get(_STORE_V1, params={"groupby": "citygroup", "customerType": "B2C"},
+                         headers={"User-Agent": _UA, "Accept": "application/json"}, timeout=30)
+    r.raise_for_status()
+    out = set()
+
+    def _walk(o):
+        if isinstance(o, dict):
+            if "accountId" in o:
+                ov = str(o.get("onlineVersion") or "")
+                if ov.isdigit() and int(ov) >= 2:
+                    out.add(str(o["accountId"]))
+            else:
+                for v in o.values():
+                    _walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                _walk(v)
+    _walk(r.json())
+    return out
 
 
 def _num(v):
@@ -134,7 +162,7 @@ async def fetch_store_products(client, acct, pace=None):
     ändå gav färre än productCount (då finns produkter vi inte når statslöst)."""
     pace = _PAGE_PACE if pace is None else pace
     tree = await fetch_categories(client, acct)
-    for cat_id, name, pc in _browse_plan(tree, _PAGE_SIZE):
+    for cat_id, name, pc in _browse_plan(tree, _BROWSE_MAX):
         if not cat_id:
             continue
         try:
@@ -182,12 +210,24 @@ async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
     st = ECOM_STATE
     if st["running"]:
         return {"status": "running"}
-    queue = database.ica_ecom_stores_to_crawl(cap=cap, max_age_hours=max_age_hours)
-    st.update(running=True, done=0, total=len(queue), stores_ok=0, products=0, mapped=0, errors=0,
+    st.update(running=True, done=0, total=0, stores_ok=0, products=0, mapped=0, errors=0,
               current=None, last_error=None, started_at=_now(), finished_at=None)
     sem = asyncio.Semaphore(concurrency or _STORE_CONC)
     try:
         async with apilog.make_client(follow_redirects=True) as client:
+            # Filtrera bort icke-ecom-butiker (73% av ICA-butikerna 302:ar till chooseStore -> bränner
+            # WAF-budget + räknas som falska fel). Rotation FÖRST, sedan ecom-filter, sedan cap.
+            try:
+                ecom = await ecom_accounts(client)
+            except Exception as e:  # noqa: BLE001 (store/v1 nere -> crawla ofiltrerat hellre än inget)
+                log.warning("ica_ecom: ecom_accounts misslyckades (%s) - crawlar ofiltrerat", e)
+                ecom = None
+            allq = database.ica_ecom_stores_to_crawl(cap=None, max_age_hours=max_age_hours)
+            queue = [a for a in allq if ecom is None or a in ecom]
+            if cap:
+                queue = queue[:cap]
+            st["total"] = len(queue)
+
             async def one(acct):
                 async with sem:
                     try:
