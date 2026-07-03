@@ -99,7 +99,19 @@ Butikslista (annan host, ingen WAF): `GET https://handla.ica.se/api/store/v1?zip
 
 Ren async-`httpx` som övriga crawlers; inget browser/WAF-steg. Vid ev. 403 (WAF-drift): backa av/retry.
 
-### GOTCHA: WAF är RATE-BASERAD - challengar under last (verifierat 2026-07-01)
+### WAF är BUDGET-baserad, inte rate-baserad - AIMD/ramp-up är KONTRAPRODUKTIVT (verifierat 2026-07-03)
+
+Mätt empiriskt att ICA:s WAF har en **kumulativ budget** (~110 butiker/fönster), inte bara en rate: när
+budgeten spräcks challengeas ALLT (200 text/html) tills den fylls på. Konsekvens: att RAMPA UPP
+samtidigheten (AIMD, som quicksearch-grinden) BRÄNNER budgeten snabbt och gör det VÄRRE. Mätt:
+- Fast låg samtidighet (`_STORE_CONC`=2): cap=10 -> ~50% lyckade, cap=300 -> 110/300 (37%, budget).
+- **Adaptiv AIMD-grind (rampade till 12): cap=100 -> 3/100 (3%)** - rampen sprängde budgeten på 3 butiker.
+-> **Behåll FAST låg samtidighet.** Rampa ALDRIG upp mot denna WAF. Coverage-taket är ~110 butiker/budget-
+fönster oavsett; rotation över nätter fyller resten. (En "låg-och-stadig + lång paus vid budget-slut +
+återuppta"-strategi skulle ev. exploatera budget-refill, men är ej byggd - kräver försiktig mätning över
+DAGAR, inte aggressiv testning som bränner budgeten ytterligare.)
+
+### GOTCHA: WAF challengar under last (verifierat 2026-07-01)
 
 GET fungerar server-side utan token vid LÅG takt, men ICA:s AWS-WAF är rate-baserad: under samtidig
 crawl-last börjar den challenga (svarar **`200 text/html`** = CloudFront-challenge-sida i st.f. JSON).
