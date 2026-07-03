@@ -180,3 +180,19 @@ Servern capar hårt vid **~991 dekorerade produkter/svar** oavsett `maxPageSize`
 992-1000 produkter tyst huggas av på sin enda sida. Bekräftat att `pageToken` ger HTTP 400 på sida 2 statslöst,
 GraphQL-schemat saknar pris, och det finns ingen bulk/ID-dump-endpoint - så requests/butik är strukturellt
 bundet till antalet kategori-noder (~50-60 för en stor butik), ingen genväg finns.
+
+## Gateway-spåret uttömt: ingen budget-fri hyllpris-källa (2026-07-03)
+
+Playwright-fångst av `www.ica.se`:s nätverkstrafik (startsida, recept, `/handla/`) för att hitta en
+budget-fri pristjänst på `apimgw-pub.ica.se`-gatewayen. Resultat: **www.ica.se hämtar aldrig hyllpris** -
+handla-flödet lämnar över till WAF-SPA:n (`handlaprivatkund`). Gatewayens produkt-yta är komplett:
+- `digx/globalsearch/v1/search/quicksearch` - vår quicksearch (`price` alltid null sedan 2026-06-16).
+- `digx/offerreader/v1/offers/tv[?accountNumber|storeId=]` - NATIONELLA reklamblad-erbjudanden (validFrom/To,
+  `discountValue`, `description` "Kaffe 3f149kr", articleGroup). Budget-fritt, men ERBJUDANDEN, inte hyllpris,
+  och nationellt - ger inget utöver vår per-butik `ica_offers.py` (weeklyOffers SSR, har EAN inline).
+- `digx/offerreader/v1/offers/store/{acct}` - finns (200) men returnerar 0 items.
+- `digx/mdsastoresearch/...` - butikssök (steg 1), inget pris.
+
+**Slutsats: hyllpris finns ENDAST på `handlaprivatkund` (AWS-WAF, budget ~110 butiker/fönster).** Det finns
+ingen budget-fri väg. Enda strategin för Steg 6 per-butik-pris är den redan implementerade: ecom-filtrerad
+kö (348 butiker) + låg samtidighet + rotation över ~3 nätter/varv mot WAF-budgeten.
