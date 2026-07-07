@@ -1152,6 +1152,13 @@
     function ensureCatalogSkeleton() {
       if (document.getElementById("catalogFeed")) return;
       document.getElementById("catalog").innerHTML = `
+        <div class="card p-3 mb-3">
+          <div class="d-flex align-items-center mb-2">
+            <h5 class="mb-0">Automatik-hälsa</h5>
+            <span class="ms-2 small text-muted">schemalagda jobb - kördes de, gick det bra, när kör nästa?</span>
+          </div>
+          <div id="catalogHealth"><div class="text-muted small">Laddar…</div></div>
+        </div>
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Fulla sortiment</h5>
           <span id="catalogStatus" class="ms-3 small text-muted"></span>
@@ -1504,6 +1511,51 @@
       }
     }
 
+    function renderCatalogHealth(d, spc, ecom) {
+      const el = document.getElementById("catalogHealth");
+      if (!el) return;
+      const now = Date.now(), P = (t) => t ? Date.parse(t) : 0, fmt = (n) => (n || 0).toLocaleString("sv-SE");
+      const ago = (t) => { if (!P(t)) return ""; const h = (now - P(t)) / 3.6e6; return h < 1 ? "nyss" : h < 24 ? `${Math.round(h)} h sedan` : `${Math.round(h / 24)} d sedan`; };
+      const badge = (status, fin, running, staleH = 30) => {
+        if (running) return '<span class="st-running">● kör…</span>';
+        if (status === "fel" || status === "avbruten") return '<span class="badge bg-danger">fel</span>';
+        if (fin && (now - P(fin)) > staleH * 3.6e6) return '<span class="badge bg-danger">försenad</span>';
+        if (status === "ok_med_fel") return '<span class="badge bg-warning text-dark">ok, med fel</span>';
+        if (status === "ok") return '<span class="badge bg-success">ok</span>';
+        return '<span class="badge bg-secondary">okänd</span>';
+      };
+      const natC = ["citygross", "willys", "hemkop"];
+      const natRuns = natC.map(c => (d.last_runs || {})[c]).filter(Boolean);  // beständigt ur crawl_runs
+      const natFin = natRuns.map(r => r.finished).filter(Boolean).sort().slice(-1)[0] || d.finished_at;
+      const natErr = natRuns.reduce((a, r) => a + (r.errors || 0), 0);
+      const natBad = natRuns.some(r => r.status === "fel" || r.status === "avbruten");
+      const natProd = natC.reduce((a, c) => a + (((d.stats || {})[c] || {}).total || 0), 0);
+      const er = ecom.last_run || {}, ec = ecom.coverage || {};
+      const cr = (spc.last_runs || {}).coop || {}, coopRun = ((spc.chains || {}).coop || {}).running;
+      const pu = d.partial_upgrade || {}, puC = pu.counts || {};
+      const jobs = [
+        { label: "Katalog (CG/Willys/Hemköp)", fin: natFin, running: d.running, next: d.next_run,
+          status: d.running ? "" : natBad ? "fel" : natErr ? "ok_med_fel" : (natFin ? "ok" : ""),
+          errors: natErr, metric: `${fmt(natProd)} produkter cachade` },
+        { label: "ICA ecom-pris", fin: er.finished || ec.last, status: er.status, running: ecom.running,
+          next: ecom.next_run, errors: er.errors, metric: `${fmt(ec.stores)} butiker &middot; ${fmt(ec.priced)} priser` },
+        { label: "Coop per-butik-pris", fin: cr.finished, status: cr.status, running: coopRun, next: spc.next_run,
+          errors: cr.errors, metric: cr.stores_total ? `${fmt(cr.stores_ok)}/${fmt(cr.stores_total)} butiker` : "" },
+        { label: "Näring (partial-uppgradering)", running: pu.running, next: pu.next_run,
+          fin: (pu.last_run || {}).finished, status: (pu.last_run || {}).status, errors: (pu.last_run || {}).errors,
+          metric: puC.partial != null ? `${fmt(puC.sparse)} glesa av ${fmt(puC.partial)} partials` : "" },
+      ];
+      el.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead><tr><th>Jobb</th><th>Senast klar</th><th>Status</th><th>Nästa</th><th>Täckning</th></tr></thead>
+        <tbody>${jobs.map(j => `<tr>
+          <td class="fw-semibold">${esc(j.label)}</td>
+          <td class="text-muted small">${j.fin ? esc(fmtTs(j.fin)) : "-"}${j.fin ? ` <span class="text-nowrap">(${ago(j.fin)})</span>` : ""}</td>
+          <td>${badge(j.status, j.fin, j.running)}${j.errors ? ` <span class="text-danger small">${fmt(j.errors)} fel</span>` : ""}</td>
+          <td class="mono small text-muted">${j.next ? esc(fmtTs(j.next)) : "-"}</td>
+          <td class="small text-muted">${j.metric || "-"}</td>
+        </tr>`).join("")}</tbody></table></div>`;
+    }
+
     async function loadCatalog() {
       ensureCatalogSkeleton();  // rendera flikens layout DIREKT (status-anropen blockerar inte UI:t)
       const [d, ms, spc, ecom] = await Promise.all([  // oberoende status-anrop -> parallellt, inte sekventiellt
@@ -1512,6 +1564,7 @@
         api("/v1/admin/store-prices/crawl/status").then(r => r.json()),
         api("/v1/admin/store-prices/crawl-ecom/status").then(r => r.json()).catch(() => ({})),
       ]);
+      renderCatalogHealth(d, spc, ecom || {});  // hälso-panelen överst - daglig uppföljning
       const _spcCh = spc.chains || {};
       const spcRun = !!(_spcCh.ica && _spcCh.ica.running) || !!(_spcCh.coop && _spcCh.coop.running);
       const spcStart = (_spcCh.ica && _spcCh.ica.started_at) || (_spcCh.coop && _spcCh.coop.started_at) || "";

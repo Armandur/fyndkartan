@@ -1007,13 +1007,18 @@ async def trigger_catalog_ean_warm(cap: int | None = None, chain: str | None = N
 
 @app.get("/v1/admin/catalog/crawl/status")
 async def catalog_crawl_status(_=Depends(require_admin)):
+    # DURABLE last_runs ur crawl_runs (in-memory CRAWL_STATE nollställs vid omstart) -> hälso-panelen
+    # visar "senast klar" även efter omstart.
+    runs = database.last_crawl_runs()  # alla kinds -> katalog + partial durable last-run
     return {**catalog_crawl.CRAWL_STATE, "stats": database.catalog_stats(),
             "cron": settings.get("catalog_crawl_cron"),
             "next_run": _next_cron(settings.get("catalog_crawl_cron")),
+            "last_runs": {c: runs.get(("catalog", c)) for c in catalog_crawl.CATALOG_CHAINS},
             "ean_warm": CATALOG_EAN_STATE,
             "partial_upgrade": {**PARTIAL_UPGRADE_STATE,
                                 "cron": settings.get("partial_upgrade_cron"),
                                 "next_run": _next_cron(settings.get("partial_upgrade_cron")),
+                                "last_run": runs.get(("partial_upgrade", "ica")),
                                 "counts": database.partial_info_counts()}}
 
 

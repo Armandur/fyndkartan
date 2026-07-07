@@ -23,6 +23,7 @@ from .database import (
     ica_offer_eans,
     invalidate_stats,
     product_info_eans,
+    record_crawl_run,
     replace_chain,
     save_ean_meta,
     save_product_info,
@@ -210,6 +211,10 @@ async def upgrade_sparse_partials(cap=None):
             await asyncio.gather(*(one(e) for e in eans))
     finally:
         PARTIAL_UPGRADE_STATE.update(running=False, finished_at=_now())
+    _st = PARTIAL_UPGRADE_STATE  # beständig last-run -> hälso-panelen visar "senast klar" efter omstart
+    await asyncio.to_thread(record_crawl_run, "partial_upgrade", "ica", started=_st["started_at"],
+                            finished=_st["finished_at"], status=("ok_med_fel" if _st["failed"] else "ok"),
+                            rows=_st["upgraded"], errors=_st["failed"])
     invalidate_stats()  # partial-rader uppgraderade -> räkna om partial/ean-stats
     log.info("Partial-uppgradering klar: %d/%d uppgraderade, %d fel",
              PARTIAL_UPGRADE_STATE["upgraded"], PARTIAL_UPGRADE_STATE["total"], PARTIAL_UPGRADE_STATE["failed"])
