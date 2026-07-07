@@ -1022,4 +1022,6 @@ async def catalog_price_changes(chain: str | None = None, q: str | None = None,
                                 sort: str = "recent", limit: int = 500, _=Depends(require_admin)):
     """Hyllpris-ändringar ur katalogen (beständiga, append-only). Filtrerbart på kedja + namn,
     sorterbart (recent/abs_desc/abs_asc/inc/dec)."""
-    return {"changes": database.catalog_price_changes(chain=chain, q=q, sort=sort, limit=min(limit, 2000))}
+    changes = await asyncio.to_thread(
+        database.catalog_price_changes, chain=chain, q=q, sort=sort, limit=min(limit, 2000))
+    return {"changes": changes}

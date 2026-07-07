@@ -96,11 +96,14 @@ catalog_price_observations = Table(
     "catalog_price_observations", metadata,
     Column("id", Integer, primary_key=True),
     Column("chain", Text), Column("product_id", Text), Column("ean", Text),
-    Column("price", Float), Column("comparison_value", Float), Column("comparison_unit", Text),
+    Column("price", Float), Column("prev_price", Float),
+    Column("comparison_value", Float), Column("comparison_unit", Text),
     Column("observed_at", Text), Column("store", Text),
     Index("idx_cpo_product", "chain", "product_id"),
     Index("idx_cpo_ean", "ean"),
     Index("idx_cpo_store", "chain", "product_id", "store"),
+    # Prisändrings-panelen: bara rader med lagrat föregående pris (faktiska ändringar) -> liten delmängd.
+    Index("idx_cpo_changes", "chain", "observed_at", postgresql_where=text("prev_price IS NOT NULL")),
 )
 
 catalog_store_prices = Table(

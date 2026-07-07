@@ -203,7 +203,7 @@ def upsert_store_prices(chain, store, rows):
             pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
             o = {"chain": chain, "product_id": pid, "store": store, "ean": r.get("ean"),
                  "price": price, "comparison_value": cv,
-                 "comparison_unit": r.get("comparison_unit"), "observed_at": now}
+                 "comparison_unit": r.get("comparison_unit"), "observed_at": now, "prev_price": None}
             if pid not in existing:
                 new += 1
                 if price is not None:
@@ -212,6 +212,7 @@ def upsert_store_prices(chain, store, rows):
                 op, ocv = existing[pid]
                 if price is not None and (_pdiff(op, price) or _pdiff(ocv, cv)):
                     changed += 1
+                    o["prev_price"] = op  # föregående pris lagras -> läsqueryn slipper LAG-fönster
                     obs.append(o)
         conn.executemany(
             text("INSERT INTO catalog_store_prices (chain, product_id, store, ean, price, comparison_value, "
@@ -227,9 +228,9 @@ def upsert_store_prices(chain, store, rows):
         if obs:
             conn.executemany(
                 text("INSERT INTO catalog_price_observations (chain, product_id, store, ean, price, "
-                     "comparison_value, comparison_unit, observed_at) VALUES "
-                     "(:chain, :product_id, :store, :ean, :price, :comparison_value, :comparison_unit, "
-                     ":observed_at)"), obs)
+                     "prev_price, comparison_value, comparison_unit, observed_at) VALUES "
+                     "(:chain, :product_id, :store, :ean, :price, :prev_price, :comparison_value, "
+                     ":comparison_unit, :observed_at)"), obs)
         conn.commit()
     finally:
         conn.close()

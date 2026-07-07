@@ -101,11 +101,11 @@ def catalog_names_for_codes(chain, codes):
 
 
 _PC_SORT = {
-    "recent": "id DESC",
-    "abs_desc": "ABS(price - prev_price) DESC",   # största ändring (oavsett riktning)
-    "abs_asc": "ABS(price - prev_price) ASC",      # minsta ändring
-    "inc": "(price - prev_price) DESC",            # största höjning
-    "dec": "(price - prev_price) ASC",             # största sänkning
+    "recent": "o.id DESC",
+    "abs_desc": "ABS(o.price - o.prev_price) DESC",   # största ändring (oavsett riktning)
+    "abs_asc": "ABS(o.price - o.prev_price) ASC",      # minsta ändring
+    "inc": "(o.price - o.prev_price) DESC",            # största höjning
+    "dec": "(o.price - o.prev_price) ASC",             # största sänkning
 }
 
 
@@ -139,31 +139,39 @@ def catalog_price_history(ean):
 def catalog_price_changes(chain=None, q=None, sort="recent", limit=500):
     """Hyllpris-ÄNDRINGAR (föregående -> nytt) ur catalog_price_observations, med produktnamn.
     Beständig per kedja (append-only obs); rensas aldrig. Filtrerbar på kedja och namn (`q`),
-    sorterbar (`sort`: recent/abs_desc/abs_asc/inc/dec). Bara faktiska ändringar (föregående
-    observation finns, annat pris). LAG-fönster för föregående pris (ett pass, sorterbart på diffen)."""
-    where, params = [], {"limit": int(limit)}
+    sorterbar (`sort`: recent/abs_desc/abs_asc/inc/dec). Bara faktiska ändringar (prev_price satt).
+
+    prev_price lagras vid skrivning (bara vid faktisk prisändring) -> ingen LAG-fönsterfunktion över
+    hela tabellen (21M rader); idx_cpo_changes (partiellt: prev_price IS NOT NULL) ger snabb access.
+    Namn-joinen mot catalog_products görs EFTER limit (bara ~500 rader) utom vid namnsök, där den måste
+    ligga före limit - annars skulle magnitud-sorteringarna joina alla ~660k ändringar."""
+    where = ["o.prev_price IS NOT NULL", "o.prev_price != o.price"]
+    params = {"limit": int(limit)}
     if chain:
         where.append("o.chain=:chain")
         params["chain"] = chain
-    if q and len(q.strip()) >= 2:
-        where.append("cp.name LIKE :q")
-        params["q"] = f"%{q.strip()}%"
-    cond = (" WHERE " + " AND ".join(where)) if where else ""
     order = _PC_SORT.get(sort, _PC_SORT["recent"])
+    name_search = bool(q and len(q.strip()) >= 2)
+    if name_search:
+        params["q"] = f"%{q.strip()}%"
+        sql = f"""SELECT o.chain, o.product_id, o.ean, cp.name, o.prev_price, o.price,
+                     o.comparison_value, o.comparison_unit, o.observed_at
+            FROM catalog_price_observations o
+            JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
+            WHERE {" AND ".join(where)} AND cp.name LIKE :q
+            ORDER BY {order} LIMIT :limit"""
+    else:
+        sql = f"""SELECT o.chain, o.product_id, o.ean, cp.name, o.prev_price, o.price,
+                     o.comparison_value, o.comparison_unit, o.observed_at
+            FROM (SELECT chain, product_id, ean, prev_price, price, comparison_value, comparison_unit,
+                         observed_at, id
+                  FROM catalog_price_observations o
+                  WHERE {" AND ".join(where)}
+                  ORDER BY {order} LIMIT :limit) o
+            LEFT JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
+            ORDER BY {order}"""
     conn = get_conn()
-    rows = conn.execute(
-        text(f"""SELECT chain, product_id, ean, name, prev_price, price, comparison_value, comparison_unit, observed_at
-            FROM (
-              SELECT o.id, o.chain, o.product_id, o.ean, o.price, o.comparison_value, o.comparison_unit,
-                     o.observed_at, cp.name,
-                     LAG(o.price) OVER (PARTITION BY o.chain, o.product_id ORDER BY o.id) AS prev_price
-              FROM catalog_price_observations o
-              LEFT JOIN catalog_products cp ON cp.chain=o.chain AND cp.product_id=o.product_id
-              {cond}
-            ) sub
-            WHERE prev_price IS NOT NULL AND prev_price != price
-            ORDER BY {order} LIMIT :limit"""),
-        params).fetchall()
+    rows = conn.execute(text(sql), params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -251,7 +259,8 @@ def catalog_upsert(chain, rows):
         for r in rows:
             pid, price, cv = str(r["product_id"]), r.get("price"), r.get("comparison_value")
             o = {"chain": chain, "product_id": pid, "ean": r.get("ean"), "price": price,
-                 "comparison_value": cv, "comparison_unit": r.get("comparison_unit"), "observed_at": now}
+                 "comparison_value": cv, "comparison_unit": r.get("comparison_unit"),
+                 "observed_at": now, "prev_price": None}
             if pid not in existing:
                 new += 1
                 if price is not None:
@@ -260,6 +269,7 @@ def catalog_upsert(chain, rows):
                 op, ocv = existing[pid]
                 if price is not None and (_diff(op, price) or _diff(ocv, cv)):
                     changed += 1
+                    o["prev_price"] = op  # föregående pris lagras -> läsqueryn slipper LAG-fönster
                     obs.append(o)
         params = [{
             "chain": chain, "product_id": str(r["product_id"]), "ean": r.get("ean"), "name": r.get("name"),
@@ -291,9 +301,9 @@ def catalog_upsert(chain, rows):
         if obs:
             conn.executemany(
                 text("INSERT INTO catalog_price_observations "
-                     "(chain, product_id, ean, price, comparison_value, comparison_unit, observed_at) "
-                     "VALUES (:chain, :product_id, :ean, :price, :comparison_value, :comparison_unit, "
-                     ":observed_at)"), obs)
+                     "(chain, product_id, ean, price, prev_price, comparison_value, comparison_unit, "
+                     "observed_at) VALUES (:chain, :product_id, :ean, :price, :prev_price, "
+                     ":comparison_value, :comparison_unit, :observed_at)"), obs)
         conn.commit()
     finally:
         conn.close()
