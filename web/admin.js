@@ -1159,6 +1159,9 @@
           </div>
           <div id="catalogHealth"><div class="text-muted small">Laddar…</div></div>
         </div>
+        <details class="mb-3">
+        <summary class="h6 mb-0 py-2" style="cursor:pointer">Manuell körning och avancerat <span class="small text-muted fw-normal">- crawl-triggers, EAN-resolvning, näring, butiksurval (allt körs annars automatiskt via schemat ovan)</span></summary>
+        <div class="pt-3">
         <div class="d-flex align-items-center mb-3">
           <h5 class="mb-0">Fulla sortiment</h5>
           <span id="catalogStatus" class="ms-3 small text-muted"></span>
@@ -1241,6 +1244,7 @@
             <span id="spcStatus" class="ms-2 small text-muted"></span>
           </div>
           <div class="text-muted small mb-2">Crawlar de VALDA butikernas hela sortiment → per-butik-pris + historik (catalog_store_prices). Adaptiv parallellitet som självtunar mot WAF (mål rampar upp, halveras + cooldown vid block). Äldst-crawlad-först. Full körning är stor (timmar) - rotera över flera nätter.</div>
+          <div class="alert alert-secondary py-1 px-2 small mb-2"><strong>OBS ICA:</strong> quicksearch ger inte längre pris (null sedan 2026-06-16) - denna körning skriver ICA:s <strong>närvaro + cid→ean-brygga</strong> som ecom-pris-crawlen behöver. ICA:s faktiska hyllpriser kommer från <strong>ICA ecom-pris</strong>-kortet nedan. Coop crawlar riktiga priser här.</div>
           <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
             <span id="spcStats" class="small text-muted"></span>
             <span class="ms-auto"></span>
@@ -1263,6 +1267,8 @@
             </div>
           </div>
         </div>
+        </div>
+        </details>
         <div class="card p-3 mt-3">
           <div class="d-flex align-items-center gap-2 mb-2">
             <h6 class="mb-0">Crawl-historik</h6>
