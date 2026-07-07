@@ -254,6 +254,22 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   skalet på dem, (3) data som inte behövs för första vyn laddas LAZY/på-begäran (t.ex. butiksurvalet
   ~2000 rader bakom en "Hantera butiksurval"-toggle). `show()` lägger dessutom en spinner-platshållare i
   en ännu-tom flik så ingen flik blir blank. (Sortiment-fliken + spinnern är gjorda; se ROADMAP "Konsol-UI".)
+- **Sortiment-fliken är monitoring-först (nu när allt går på cron):** överst en `Automatik-hälsa`-panel
+  (`renderCatalogHealth` i `admin.js`) - en rad per schemalagt jobb (katalog, ICA ecom-pris, Coop per-butik-pris,
+  näring) med senast klar + status-badge (ok/fel/`försenad` om > 30h) + nästa körning + täckning. Beständig
+  last-run läses ur `crawl_runs` (`last_crawl_runs()`), INTE in-memory-state (nollställs vid omstart): katalog-
+  status-endpointen exponerar `last_runs` (kind=catalog), och partial-uppgraderingen loggar numera en crawl_run
+  (kind=`partial_upgrade`) + exponerar `last_run`. De manuella trigger-korten ligger under en hopfälld
+  `<details>`-accordion ("Manuell körning och avancerat"); Crawl-historik + Prisändringar stannar synliga.
+- **Prisändrings-panelen (`catalog_price_changes`) får ALDRIG fönstra hela `catalog_price_observations`
+  (21M rader):** föregående pris lagras i en `prev_price`-kolumn vid skrivning (`upsert_store_prices`/
+  `upsert_catalog` känner redan `op`) - läsqueryn blir en indexerad SELECT utan `LAG`-fönster. Partiellt index
+  `idx_cpo_changes` (`WHERE prev_price IS NOT NULL`) ger den lilla ändrings-delmängden (~660k av 21M) snabbt;
+  namn-joinen mot `catalog_products` görs EFTER limit utom vid namnsök. Endpointen offloadas till
+  `asyncio.to_thread`. (Tidigare: `LAG() OVER (...)` över hela tabellen synkront på event-loopen -> öppen
+  Sortiment-flik frös HELA API:t i 5 min. Se DESIGNPRINCIP om async-DB ovan.) `prev_price` bakfylldes en gång
+  på Postgres (ALTER + `LAG`-UPDATE per kedja + `CREATE INDEX CONCURRENTLY`) - create_all lägger inte till
+  kolumner på befintliga tabeller.
 - **Versionerad stats-memo (`@stats_memo` + `invalidate_stats`/`stats_version` i `database/_conn.py`):**
   dyra argumentlösa konsol-aggregat som bara ändras vid data-skrivning (inte mellan laddningar) cachas på
   funktionsnivå: `ean_stats` (UNION-distinct ~1,3s), `catalog_stats`, `partial_info_counts` -> varm 0ms.
