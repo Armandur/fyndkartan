@@ -181,7 +181,8 @@ _STORE_PACE = 0.8   # paus efter varje butik
 
 # Parallell-fasens live-state för konsolen (per-process, som övriga crawl-states).
 ECOM_STATE = {"running": False, "done": 0, "total": 0, "stores_ok": 0, "products": 0, "mapped": 0,
-              "errors": 0, "current": None, "started_at": None, "finished_at": None, "last_error": None}
+              "changes": 0, "errors": 0, "current": None, "started_at": None, "finished_at": None,
+              "last_error": None}
 
 
 async def crawl_store(client, acct):
@@ -196,8 +197,9 @@ async def crawl_store(client, acct):
     eanmap = await asyncio.to_thread(database.ica_ean_for_cids, list(products))
     for rid, r in products.items():
         r["ean"] = eanmap.get(rid)
-    written = await asyncio.to_thread(database.upsert_ica_ecom_prices, acct, list(products.values()))
+    written, changes = await asyncio.to_thread(database.upsert_ica_ecom_prices, acct, list(products.values()))
     return {"products": len(products), "categories": ncat, "capped": capped, "written": written,
+            "changes": changes,
             "priced": sum(1 for r in products.values() if r["price"] is not None),
             "mapped": sum(1 for r in products.values() if r["ean"]),
             "promos": sum(1 for r in products.values() if r["promo_price"])}
@@ -210,7 +212,7 @@ async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
     st = ECOM_STATE
     if st["running"]:
         return {"status": "running"}
-    st.update(running=True, done=0, total=0, stores_ok=0, products=0, mapped=0, errors=0,
+    st.update(running=True, done=0, total=0, stores_ok=0, products=0, mapped=0, changes=0, errors=0,
               current=None, last_error=None, started_at=_now(), finished_at=None)
     sem = asyncio.Semaphore(concurrency or _STORE_CONC)
     try:
@@ -235,6 +237,7 @@ async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
                         st["stores_ok"] += 1
                         st["products"] += r["products"]
                         st["mapped"] += r["mapped"]
+                        st["changes"] += r["changes"]
                         st["current"] = f"ICA {acct}: {r['products']} prod ({r['mapped']} mappade)"
                     except Exception as e:  # noqa: BLE001
                         st["errors"] += 1
@@ -249,6 +252,6 @@ async def crawl_all_ecom(cap=None, max_age_hours=None, concurrency=None):
         await asyncio.to_thread(
             database.record_crawl_run, "ecom_prices", "ica", started=st["started_at"],
             finished=st["finished_at"], status=("ok_med_fel" if st["errors"] else "ok"),
-            rows=st["products"], changed=st["mapped"], errors=st["errors"],
+            rows=st["products"], changed=st["changes"], errors=st["errors"],
             stores_ok=st["stores_ok"], stores_total=st["total"], last_error=st["last_error"])
     return st

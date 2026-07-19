@@ -374,6 +374,16 @@ UnifiedStore-fältschemat och brand/tags-vokabulären beskrivs i `UNIFIED-API.md
   täcka flera fysiska butiker -> pris per fysisk butik, geo korrekt). Haversine-filter (delad `geo.haversine`),
   billigast först. Geo-scope = bara prissatta butiker; favorit/explicit = alla (pris null = inget data för
   butiken -> visa elegant). Bara ICA/Coop (butiksprissatta). Matkasse-jämförelse (`/compare/basket`) är nästa steg.
+- **ICA ecom-pris prisändrings-historik (`upsert_ica_ecom_prices`):** `ica_ecom_prices` är en REN snapshot
+  (upsert per `(store, retailer_product_id)`, skrivs över varje crawl) -> gav ingen historik trots dygnscrawl.
+  `upsert_ica_ecom_prices` speglar därför Coops `upsert_store_prices`-mönster: läser förra snapshotens pris
+  per `(store, rid)`, och NÄR pris/jämförvärde ändrats (eller produkten ses första gången) append:ar en rad
+  till `catalog_price_observations` (chain='ica', **`product_id` = nollpaddad GTIN** = samma rymd som
+  `catalog_products`/gamla ICA-observationer, så namn-join + `/history`-kontinuitet funkar; `store` = account,
+  `prev_price` lagrad). Kräver pris + EAN (EAN-lösa ecom-rader hoppas i historiken men skrivs ändå till snapshot).
+  `crawl_all_ecom` loggar nu RIKTIGA ändringar som `changed` i `crawl_runs` (ej mappnings-antalet). Historik
+  börjar vid deploy - ingen bakfyllning möjlig (snapshot minns inte gamla priser). Detta är HISTORIK-spåret;
+  läsvägen (`/{ean}/prices` mot ecom-priset för ICA) är fortf. separat, ROADMAP Steg 6.
 - **API-kontrakt (`schemas.py`, en sanningskälla).** Pydantic-modeller för alla konsument-
   endpoints, kopplade **dokumenterande** (`responses={200: {"model": M}}`) - INTE
   `response_model` (som skulle re-serialisera och tappa fält). /docs blir typat, och

@@ -410,32 +410,67 @@ def store_prices_stats():
 
 
 def upsert_ica_ecom_prices(store, rows):
-    """Batch-upsert ICA ecom-pris-crawlens rader till `ica_ecom_prices` (separat tabell, parallell-fasen).
-    `rows` = ica_ecom-normaliserade dicts (retailer_product_id, name, brand, price, comparison_value/unit,
-    promo_price/text, available) + `ean` (gtin, ev. None). Nyckel (store, retailer_product_id). Returnerar
-    antal skrivna rader."""
+    """Batch-upsert ICA ecom-pris-crawlens rader till `ica_ecom_prices` (senaste snapshot, nyckel
+    (store, retailer_product_id)) + append-on-change-historik till `catalog_price_observations`
+    (chain='ica', product_id=nollpaddad GTIN, store=account) NÄR pris/jämförvärde ändrats mot förra
+    ecom-snapshoten. Speglar Coops `upsert_store_prices`-mönster så ICA-hyllpriset får en prisändrings-
+    historik (ecom-tabellen är annars ren snapshot -> ingen historik). Historik kräver pris + EAN
+    (product_id = nollpaddad GTIN, samma rymd som catalog_products/gamla ICA-observationer). `rows` =
+    ica_ecom-normaliserade dicts + `ean` (gtin, ev. None). Returnerar (skrivna, ändrade-med-prev)."""
     rows = [r for r in rows if r.get("retailer_product_id")]
     if not rows:
-        return 0
+        return 0, 0
     now = _now()
-    payload = [{"store": str(store), "rid": str(r["retailer_product_id"]), "ean": r.get("ean"),
-                "name": r.get("name"), "brand": r.get("brand"), "price": r.get("price"),
-                "cv": r.get("comparison_value"), "cu": r.get("comparison_unit"),
-                "pp": r.get("promo_price"), "pt": r.get("promo_text"),
-                "av": 1 if r.get("available") else 0, "now": now} for r in rows]
+    store = str(store)
     conn = get_conn()
-    conn.execute(
-        text("INSERT INTO ica_ecom_prices (store, retailer_product_id, ean, name, brand, price, "
-             "comparison_value, comparison_unit, promo_price, promo_text, available, fetched_at) VALUES "
-             "(:store, :rid, :ean, :name, :brand, :price, :cv, :cu, :pp, :pt, :av, :now) "
-             "ON CONFLICT (store, retailer_product_id) DO UPDATE SET ean=excluded.ean, name=excluded.name, "
-             "brand=excluded.brand, price=excluded.price, comparison_value=excluded.comparison_value, "
-             "comparison_unit=excluded.comparison_unit, promo_price=excluded.promo_price, "
-             "promo_text=excluded.promo_text, available=excluded.available, fetched_at=excluded.fetched_at"),
-        payload)
-    conn.commit()
-    conn.close()
-    return len(payload)
+    try:
+        rids = [str(r["retailer_product_id"]) for r in rows]
+        existing = {r["retailer_product_id"]: (r["price"], r["comparison_value"]) for r in conn.execute(
+            text("SELECT retailer_product_id, price, comparison_value FROM ica_ecom_prices "
+                 "WHERE store=:store AND retailer_product_id IN :rids").bindparams(
+                bindparam("rids", expanding=True)),
+            {"store": store, "rids": rids})}
+        obs, changed = [], 0
+        for r in rows:
+            rid = str(r["retailer_product_id"])
+            price, cv, ean = r.get("price"), r.get("comparison_value"), r.get("ean")
+            if price is None or not ean:
+                continue  # historiken kräver pris + EAN (product_id = nollpaddad GTIN)
+            o = {"chain": "ica", "product_id": str(ean).zfill(14), "store": store, "ean": str(ean),
+                 "price": price, "comparison_value": cv, "comparison_unit": r.get("comparison_unit"),
+                 "observed_at": now, "prev_price": None}
+            if rid not in existing:
+                obs.append(o)  # första gången vi ser priset -> historik-startpunkt (prev_price=None)
+            else:
+                op, ocv = existing[rid]
+                if _pdiff(op, price) or _pdiff(ocv, cv):
+                    o["prev_price"] = op  # föregående pris lagras -> läsqueryn slipper LAG-fönster
+                    obs.append(o)
+                    changed += 1
+        payload = [{"store": store, "rid": str(r["retailer_product_id"]), "ean": r.get("ean"),
+                    "name": r.get("name"), "brand": r.get("brand"), "price": r.get("price"),
+                    "cv": r.get("comparison_value"), "cu": r.get("comparison_unit"),
+                    "pp": r.get("promo_price"), "pt": r.get("promo_text"),
+                    "av": 1 if r.get("available") else 0, "now": now} for r in rows]
+        conn.execute(
+            text("INSERT INTO ica_ecom_prices (store, retailer_product_id, ean, name, brand, price, "
+                 "comparison_value, comparison_unit, promo_price, promo_text, available, fetched_at) VALUES "
+                 "(:store, :rid, :ean, :name, :brand, :price, :cv, :cu, :pp, :pt, :av, :now) "
+                 "ON CONFLICT (store, retailer_product_id) DO UPDATE SET ean=excluded.ean, name=excluded.name, "
+                 "brand=excluded.brand, price=excluded.price, comparison_value=excluded.comparison_value, "
+                 "comparison_unit=excluded.comparison_unit, promo_price=excluded.promo_price, "
+                 "promo_text=excluded.promo_text, available=excluded.available, fetched_at=excluded.fetched_at"),
+            payload)
+        if obs:
+            conn.executemany(
+                text("INSERT INTO catalog_price_observations (chain, product_id, store, ean, price, "
+                     "prev_price, comparison_value, comparison_unit, observed_at) VALUES "
+                     "(:chain, :product_id, :store, :ean, :price, :prev_price, :comparison_value, "
+                     ":comparison_unit, :observed_at)"), obs)
+        conn.commit()
+    finally:
+        conn.close()
+    return len(payload), changed
 
 
 def ica_ecom_coverage():
