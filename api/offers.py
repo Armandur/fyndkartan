@@ -24,6 +24,13 @@ OFFERS_TTL = timedelta(hours=6)  # erbjudanden uppdateras veckovis; 6h cache rä
 OFFERS_MIN_REFRESH = timedelta(minutes=30)  # golv för validitets-driven tidig refresh
 SUPPORTED_OFFER_CHAINS = ("ica", "willys", "hemkop", "coop", "citygross")
 
+# Butiker som ska hoppas över av bulk-sweepen (nedlagda/borttagna hos kedjan, erbjudande-URL:en
+# 404:ar konsekvent). Raderas INTE ur `stores` - butiken kan fortfarande vara giltig på kartan,
+# det är bara erbjudande-hämtningen som är trasig. Par av (chain, store_id).
+SWEEP_SKIP_STORES = {
+    ("ica", "2679"),  # ICA Nära Torgboden, Falsterbo (accountNumber 1004171) - erbjudande-URL 404:ar (nedlagd/flyttad)
+}
+
 
 def _offers_expired(chain, store_id):
     """True om någon cachad offer har valid_to i det förflutna -> set:et är inte längre
@@ -157,6 +164,8 @@ async def sweep_offers(force=False):
                        started_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                        finished_at=None)
     by_chain = database.offer_stores(SUPPORTED_OFFER_CHAINS)
+    for c, stores in by_chain.items():
+        by_chain[c] = [s for s in stores if (c, str(s["store_id"])) not in SWEEP_SKIP_STORES]
     for c in SUPPORTED_OFFER_CHAINS:
         SWEEP_STATE["chains"][c].update(status="idle", total=len(by_chain.get(c, [])),
                                         fetched=0, skipped=0, errors=0)
